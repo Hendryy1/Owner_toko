@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer
+  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -103,6 +103,7 @@ export default function OwnerDashboard() {
         {page === "piutang" && <PiutangPage token={token} />}
         {page === "barang" && <BarangTerlarisPage token={token} />}
         {page === "sales" && <SalesPage token={token} />}
+        {page === "format_nota" && <FormatNotaPage token={token} />}
       </div>
     </div>
   );
@@ -164,6 +165,7 @@ function Sidebar({ page, setPage, profile, onLogout }) {
     { key: "piutang", label: "Piutang", icon: AlertCircle, roles: ["owner", "admin_keuangan"] },
     { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
     { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
+    { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
   ];
   const items = allItems.filter((it) => it.roles.includes(profile?.role));
   return (
@@ -330,6 +332,13 @@ function OrdersPage({ token }) {
   const [finishedIds, setFinishedIds] = useState({});
   const [printingOrder, setPrintingOrder] = useState(null);
   const [printingType, setPrintingType] = useState("nota"); // "nota" | "surat_jalan"
+  const [notaSettings, setNotaSettings] = useState(null);
+
+  useEffect(() => {
+    supabaseFetch(token, "nota_settings?select=*&limit=1")
+      .then((rows) => setNotaSettings(rows[0] || null))
+      .catch(() => setNotaSettings(null));
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -458,7 +467,7 @@ function OrdersPage({ token }) {
         ))
       )}
 
-      {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} onClose={() => setPrintingOrder(null)} />}
+      {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} settings={notaSettings} onClose={() => setPrintingOrder(null)} />}
     </div>
   );
 }
@@ -466,7 +475,12 @@ function OrdersPage({ token }) {
 // ============================================================
 // MODAL CETAK NOTA
 // ============================================================
-function NotaPrintModal({ order, type, onClose }) {
+function NotaPrintModal({ order, type, settings, onClose }) {
+  const s = settings || {
+    nama_perusahaan: COMPANY_NAME, alamat_perusahaan: "", telp_perusahaan: "",
+    teks_subjudul_nota: "NOTA PENJUALAN", teks_subjudul_surat_jalan: "SURAT JALAN",
+    teks_footer_nota: "Terima kasih atas pesanan Anda", catatan_tambahan: "",
+  };
   const items = order.order_items || [];
   const total = items.reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
   const isSuratJalan = type === "surat_jalan";
@@ -485,8 +499,10 @@ function NotaPrintModal({ order, type, onClose }) {
       <div style={{ background: "#fff", borderRadius: 14, width: 480, maxHeight: "90vh", overflowY: "auto", padding: 0 }}>
         <div className="nota-print-area" style={{ padding: 32 }}>
           <div style={{ textAlign: "center", marginBottom: 20, paddingBottom: 16, borderBottom: "2px solid #24272B" }}>
-            <p className="disp" style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{COMPANY_NAME}</p>
-            <p style={{ fontSize: 11, color: "#6B6F75", margin: "2px 0 0" }}>{isSuratJalan ? "SURAT JALAN" : "NOTA PENJUALAN"}</p>
+            <p className="disp" style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{s.nama_perusahaan}</p>
+            {s.alamat_perusahaan && <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "2px 0 0" }}>{s.alamat_perusahaan}</p>}
+            {s.telp_perusahaan && <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "1px 0 0" }}>{s.telp_perusahaan}</p>}
+            <p style={{ fontSize: 11, color: "#6B6F75", margin: "6px 0 0", fontWeight: 700 }}>{isSuratJalan ? s.teks_subjudul_surat_jalan : s.teks_subjudul_nota}</p>
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20, fontSize: 12.5 }}>
@@ -565,7 +581,10 @@ function NotaPrintModal({ order, type, onClose }) {
                   <span className="disp" style={{ fontWeight: 700, fontSize: 17 }}>{rupiah(total)}</span>
                 </div>
               </div>
-              <p style={{ textAlign: "center", fontSize: 10.5, color: "#9CA0A6", margin: 0 }}>Terima kasih atas pesanan Anda</p>
+              {s.catatan_tambahan && (
+                <p style={{ textAlign: "center", fontSize: 10, color: "#9CA0A6", margin: "0 0 8px", fontStyle: "italic" }}>{s.catatan_tambahan}</p>
+              )}
+              <p style={{ textAlign: "center", fontSize: 10.5, color: "#9CA0A6", margin: 0 }}>{s.teks_footer_nota}</p>
             </>
           )}
         </div>
@@ -891,6 +910,118 @@ function SalesPage({ token }) {
           </tbody>
         </table>
         {rows.length === 0 && <EmptyState text="Belum ada data sales." />}
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// FORMAT NOTA (khusus Owner)
+// ============================================================
+function FormatNotaPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState(null);
+  const [id, setId] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "nota_settings?select=*&limit=1");
+      if (rows[0]) { setForm(rows[0]); setId(rows[0].id); }
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function save() {
+    setSaving(true);
+    setSaved(false);
+    setError("");
+    try {
+      await supabaseFetch(token, `nota_settings?id=eq.${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          nama_perusahaan: form.nama_perusahaan,
+          alamat_perusahaan: form.alamat_perusahaan,
+          telp_perusahaan: form.telp_perusahaan,
+          teks_subjudul_nota: form.teks_subjudul_nota,
+          teks_subjudul_surat_jalan: form.teks_subjudul_surat_jalan,
+          teks_footer_nota: form.teks_footer_nota,
+          catatan_tambahan: form.catatan_tambahan,
+          updated_at: new Date().toISOString(),
+        }),
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  }
+
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  if (loading) return <LoadingState />;
+  if (error && !form) return <ErrorBox error={error} onRetry={load} />;
+  if (!form) return <EmptyState text="Pengaturan format belum ada." />;
+
+  return (
+    <div>
+      <PageHeader title="Format Nota" subtitle="Perubahan di sini otomatis dipakai semua orang saat cetak Nota & Surat Jalan" />
+
+      <Card style={{ maxWidth: 560 }}>
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Nama Perusahaan</label>
+          <input value={form.nama_perusahaan} onChange={set("nama_perusahaan")} style={fieldStyle} />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Alamat Perusahaan (opsional)</label>
+          <input value={form.alamat_perusahaan || ""} onChange={set("alamat_perusahaan")} placeholder="Jl. Contoh No. 1, Kota" style={fieldStyle} />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Telepon Perusahaan (opsional)</label>
+          <input value={form.telp_perusahaan || ""} onChange={set("telp_perusahaan")} placeholder="0761-xxxxxx" style={fieldStyle} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+          <div>
+            <label style={labelStyle}>Subjudul di Nota</label>
+            <input value={form.teks_subjudul_nota} onChange={set("teks_subjudul_nota")} style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Subjudul di Surat Jalan</label>
+            <input value={form.teks_subjudul_surat_jalan} onChange={set("teks_subjudul_surat_jalan")} style={fieldStyle} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Teks Penutup di Nota</label>
+          <input value={form.teks_footer_nota} onChange={set("teks_footer_nota")} style={fieldStyle} />
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Catatan Tambahan (opsional, misal syarat/ketentuan)</label>
+          <textarea value={form.catatan_tambahan || ""} onChange={set("catatan_tambahan")} rows={3} placeholder="Contoh: Barang yang sudah dibeli tidak dapat ditukar/dikembalikan." style={{ ...fieldStyle, resize: "vertical" }} />
+        </div>
+
+        {error && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBEAEA", color: "#C0392B", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 14 }}>
+            <AlertCircle size={14} /> {error}
+          </div>
+        )}
+        {saved && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", color: "#28685D", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 14, fontWeight: 600 }}>
+            <Check size={14} /> Tersimpan. Format baru langsung berlaku untuk semua orang.
+          </div>
+        )}
+
+        <button
+          onClick={save} disabled={saving}
+          style={{ padding: "11px 22px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}
+        >
+          {saving ? "Menyimpan..." : "Simpan Format"}
+        </button>
       </Card>
     </div>
   );
