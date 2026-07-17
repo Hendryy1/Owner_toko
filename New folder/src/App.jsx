@@ -383,10 +383,10 @@ function OrdersPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      // Ambil pesanan yang masih menunggu persetujuan, DAN yang baru saja diproses
-      // (disetujui/ditolak) - supaya tetap kelihatan di sini dengan status akhirnya,
-      // bukan langsung hilang begitu ditindak.
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan))&status=in.(menunggu_persetujuan,menunggu_pembayaran,ditolak)&order=created_at.desc");
+      // Ambil SEMUA order (limit wajar) - supaya ada riwayat permanen di sini,
+      // bukan cuma yang masih di tahap ini. Nanti dipisah jadi 2 bagian:
+      // "Menunggu Persetujuan" (aktif) dan "Riwayat" (sudah pernah diproses).
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan))&order=created_at.desc&limit=200");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -426,82 +426,91 @@ function OrdersPage({ token }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
-  const pendingCount = orders.filter((o) => o.status === "menunggu_persetujuan").length;
+  const pending = orders.filter((o) => o.status === "menunggu_persetujuan");
+  const riwayat = orders.filter((o) => o.status !== "menunggu_persetujuan");
+
+  function renderOrderCard(o) {
+    const isPending = o.status === "menunggu_persetujuan";
+    const isRejected = o.status === "ditolak";
+    const isChecked = !!o.stock_confirmation;
+    const isReady = o.stock_confirmation === "ready";
+    const isHabis = o.stock_confirmation === "stok_habis";
+    return (
+      <Card key={o.id} style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+            <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "4px 0 0" }}>
+              {new Date(o.created_at).toLocaleString("id-ID")} · Channel: {o.channel}
+              {o.is_dropship && <span style={{ marginLeft: 6, color: "#B8860B", fontWeight: 700 }}>DROPSHIP</span>}
+              {isChecked && isPending && (
+                <span style={{ marginLeft: 6, fontWeight: 700, color: isReady ? "#28685D" : "#C0392B" }}>
+                  · Konfirmasi: {isReady ? "Ready" : "Stok Habis"}
+                </span>
+              )}
+            </p>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {!isPending && !isRejected && (
+              <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
+                <Check size={14} /> Disetujui
+              </span>
+            )}
+            {isRejected && (
+              <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#FBEAEA", color: "#C0392B", fontSize: 12.5, fontWeight: 700 }}>
+                <X size={14} /> Ditolak
+              </span>
+            )}
+            {isPending && (
+              <>
+                <button
+                  onClick={() => setCheckingOrder(o)}
+                  style={{
+                    padding: "8px 14px", borderRadius: 9, fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5,
+                    border: isChecked ? "1.5px solid #B8E0C8" : "1.5px solid #E4E1DA",
+                    background: isChecked ? "#D8E9E6" : "#fff",
+                    color: isChecked ? "#28685D" : "#24272B",
+                  }}
+                >
+                  {isChecked ? <Check size={14} /> : <Eye size={14} />} Cek Pesanan
+                </button>
+                <button
+                  disabled={processingId === o.id || !isChecked || isReady}
+                  onClick={() => updateStatus(o.id, "ditolak")}
+                  style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #F0CFC7", background: (!isChecked || isReady) ? "#F7F5F1" : "#fff", color: (!isChecked || isReady) ? "#B5B2AA" : "#C0392B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
+                >
+                  <X size={14} /> Tolak
+                </button>
+                <button
+                  disabled={processingId === o.id || !isChecked || isHabis}
+                  onClick={() => updateStatus(o.id, "menunggu_pembayaran")}
+                  style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: (!isChecked || isHabis) ? "#E4E1DA" : "#E8A426", color: (!isChecked || isHabis) ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
+                >
+                  <Check size={14} /> Setujui
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <div>
-      <PageHeader title="Approve Pesanan" subtitle={`${pendingCount} menunggu persetujuan`} />
-      {orders.length === 0 ? (
-        <EmptyState text="Tidak ada pesanan yang perlu diproses saat ini." />
+      <PageHeader title="Approve Pesanan" subtitle={`${pending.length} menunggu persetujuan`} />
+      {pending.length === 0 ? (
+        <EmptyState text="Tidak ada pesanan yang menunggu persetujuan saat ini." />
       ) : (
-        orders.map((o) => {
-          const isPending = o.status === "menunggu_persetujuan";
-          const isApproved = o.status === "menunggu_pembayaran";
-          const isRejected = o.status === "ditolak";
-          const isChecked = !!o.stock_confirmation;
-          const isReady = o.stock_confirmation === "ready";
-          const isHabis = o.stock_confirmation === "stok_habis";
-          return (
-            <Card key={o.id} style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div>
-                  <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
-                  <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
-                  <p style={{ fontSize: 12, color: "#9CA0A6", margin: "4px 0 0" }}>
-                    {new Date(o.created_at).toLocaleString("id-ID")} · Channel: {o.channel}
-                    {o.is_dropship && <span style={{ marginLeft: 6, color: "#B8860B", fontWeight: 700 }}>DROPSHIP</span>}
-                    {isChecked && isPending && (
-                      <span style={{ marginLeft: 6, fontWeight: 700, color: isReady ? "#28685D" : "#C0392B" }}>
-                        · Konfirmasi: {isReady ? "Ready" : "Stok Habis"}
-                      </span>
-                    )}
-                  </p>
-                </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  {isApproved && (
-                    <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
-                      <Check size={14} /> Disetujui - lanjut ke Konfirmasi Pembayaran
-                    </span>
-                  )}
-                  {isRejected && (
-                    <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#FBEAEA", color: "#C0392B", fontSize: 12.5, fontWeight: 700 }}>
-                      <X size={14} /> Ditolak
-                    </span>
-                  )}
-                  {isPending && (
-                    <>
-                      <button
-                        onClick={() => setCheckingOrder(o)}
-                        style={{
-                          padding: "8px 14px", borderRadius: 9, fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5,
-                          border: isChecked ? "1.5px solid #B8E0C8" : "1.5px solid #E4E1DA",
-                          background: isChecked ? "#D8E9E6" : "#fff",
-                          color: isChecked ? "#28685D" : "#24272B",
-                        }}
-                      >
-                        {isChecked ? <Check size={14} /> : <Eye size={14} />} Cek Pesanan
-                      </button>
-                      <button
-                        disabled={processingId === o.id || !isChecked || isReady}
-                        onClick={() => updateStatus(o.id, "ditolak")}
-                        style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #F0CFC7", background: (!isChecked || isReady) ? "#F7F5F1" : "#fff", color: (!isChecked || isReady) ? "#B5B2AA" : "#C0392B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
-                      >
-                        <X size={14} /> Tolak
-                      </button>
-                      <button
-                        disabled={processingId === o.id || !isChecked || isHabis}
-                        onClick={() => updateStatus(o.id, "menunggu_pembayaran")}
-                        style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: (!isChecked || isHabis) ? "#E4E1DA" : "#E8A426", color: (!isChecked || isHabis) ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
-                      >
-                        <Check size={14} /> Setujui
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            </Card>
-          );
-        })
+        pending.map(renderOrderCard)
+      )}
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Riwayat</h2>
+      {riwayat.length === 0 ? (
+        <EmptyState text="Belum ada riwayat pesanan yang diproses." />
+      ) : (
+        riwayat.map(renderOrderCard)
       )}
 
       {checkingOrder && (
@@ -2034,9 +2043,10 @@ function KonfirmasiPembayaranPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      // Sertakan juga yang sudah "Nota Siap" (menunggu_pengiriman) supaya tetap
-      // kelihatan di sini dengan status akhirnya, bukan langsung hilang.
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan))&status=in.(menunggu_pembayaran,menunggu_pengiriman)&order=created_at.desc");
+      // Ambil order yang PERNAH masuk tahap ini: masih menunggu_pembayaran ATAU
+      // status_bayar sudah lunas (walau sekarang sudah lanjut ke tahap manapun) -
+      // supaya ada riwayat permanen, tidak hilang begitu pindah tahap berikutnya.
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan))&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -2069,71 +2079,81 @@ function KonfirmasiPembayaranPage({ token }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
-  const menungguCount = orders.filter((o) => o.status === "menunggu_pembayaran").length;
+  const menunggu = orders.filter((o) => o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas");
+  const riwayat = orders.filter((o) => o.status !== "menunggu_pembayaran" || o.status_bayar === "lunas");
+
+  function renderCard(o) {
+    const isSiapKirim = o.status !== "menunggu_pembayaran"; // sudah lanjut tahap berikutnya
+    const isLunas = o.status_bayar === "lunas";
+    const hasProof = !!o.bukti_transfer_url;
+    return (
+      <Card key={o.id} style={{ marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: (isLunas || isSiapKirim) ? 12 : 0 }}>
+          <div>
+            <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+            <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode}) · {o.clients?.jenis_pembayaran}</p>
+          </div>
+          {!isLunas && !isSiapKirim && (
+            hasProof ? (
+              <a href={o.bukti_transfer_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#B8860B", fontWeight: 700, textDecoration: "underline" }}>
+                Lihat Bukti Transfer
+              </a>
+            ) : (
+              <span style={{ fontSize: 12, color: "#9CA0A6", fontStyle: "italic" }}>Menunggu bukti transfer</span>
+            )
+          )}
+        </div>
+
+        {isSiapKirim ? (
+          <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700, width: "fit-content" }}>
+            <Check size={14} /> Nota Siap - lanjut ke Proses Pengiriman
+          </span>
+        ) : !isLunas ? (
+          <button
+            disabled={processingId === o.id || !hasProof}
+            onClick={() => confirmPayment(o.id)}
+            style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: hasProof ? "#E8A426" : "#E4E1DA", color: hasProof ? "#24272B" : "#9CA0A6", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
+          >
+            <Check size={14} /> Pembayaran Diterima
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
+              <Check size={14} /> Pembayaran Diterima
+            </span>
+            <button onClick={() => openPrint(o, "nota")} style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+              <Printer size={14} /> Cetak Nota
+            </button>
+            <button onClick={() => openPrint(o, "surat_jalan")} style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
+              <Printer size={14} /> Cetak Surat Jalan
+            </button>
+            <button
+              disabled={processingId === o.id}
+              onClick={() => confirmNotaSiap(o.id)}
+              style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+            >
+              Konfirmasi Nota Siap
+            </button>
+          </div>
+        )}
+      </Card>
+    );
+  }
 
   return (
     <div>
-      <PageHeader title="Konfirmasi Pembayaran" subtitle={`${menungguCount} pesanan menunggu konfirmasi pembayaran`} />
-      {orders.length === 0 ? (
+      <PageHeader title="Konfirmasi Pembayaran" subtitle={`${menunggu.length} pesanan menunggu konfirmasi pembayaran`} />
+      {menunggu.length === 0 ? (
         <EmptyState text="Tidak ada pesanan yang perlu diproses saat ini." />
       ) : (
-        orders.map((o) => {
-          const isSiapKirim = o.status === "menunggu_pengiriman";
-          const isLunas = o.status_bayar === "lunas";
-          const hasProof = !!o.bukti_transfer_url;
-          return (
-            <Card key={o.id} style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: (isLunas || isSiapKirim) ? 12 : 0 }}>
-                <div>
-                  <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
-                  <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode}) · {o.clients?.jenis_pembayaran}</p>
-                </div>
-                {!isLunas && !isSiapKirim && (
-                  hasProof ? (
-                    <a href={o.bukti_transfer_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#B8860B", fontWeight: 700, textDecoration: "underline" }}>
-                      Lihat Bukti Transfer
-                    </a>
-                  ) : (
-                    <span style={{ fontSize: 12, color: "#9CA0A6", fontStyle: "italic" }}>Menunggu bukti transfer</span>
-                  )
-                )}
-              </div>
+        menunggu.map(renderCard)
+      )}
 
-              {isSiapKirim ? (
-                <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700, width: "fit-content" }}>
-                  <Check size={14} /> Nota Siap - lanjut ke Proses Pengiriman
-                </span>
-              ) : !isLunas ? (
-                <button
-                  disabled={processingId === o.id || !hasProof}
-                  onClick={() => confirmPayment(o.id)}
-                  style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: hasProof ? "#E8A426" : "#E4E1DA", color: hasProof ? "#24272B" : "#9CA0A6", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
-                >
-                  <Check size={14} /> Pembayaran Diterima
-                </button>
-              ) : (
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
-                    <Check size={14} /> Pembayaran Diterima
-                  </span>
-                  <button onClick={() => openPrint(o, "nota")} style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
-                    <Printer size={14} /> Cetak Nota
-                  </button>
-                  <button onClick={() => openPrint(o, "surat_jalan")} style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
-                    <Printer size={14} /> Cetak Surat Jalan
-                  </button>
-                  <button
-                    disabled={processingId === o.id}
-                    onClick={() => confirmNotaSiap(o.id)}
-                    style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
-                  >
-                    Konfirmasi Nota Siap
-                  </button>
-                </div>
-              )}
-            </Card>
-          );
-        })
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Riwayat</h2>
+      {riwayat.length === 0 ? (
+        <EmptyState text="Belum ada riwayat pembayaran yang dikonfirmasi." />
+      ) : (
+        riwayat.map(renderCard)
       )}
 
       {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} settings={notaSettings} onClose={() => setPrintingOrder(null)} />}
