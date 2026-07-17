@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes
+  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -139,6 +139,7 @@ export default function OwnerDashboard() {
         {page === "piutang" && <PiutangPage token={token} />}
         {page === "barang" && <BarangTerlarisPage token={token} />}
         {page === "stock" && <StockItemPage token={token} />}
+        {page === "inbound" && <InboundPage token={token} />}
         {page === "rekap_toko" && <RekapTokoPage token={token} />}
         {page === "sales" && <SalesPage token={token} />}
         {page === "format_nota" && <FormatNotaPage token={token} />}
@@ -204,6 +205,7 @@ function Sidebar({ page, setPage, profile, onLogout }) {
     { key: "piutang", label: "Piutang", icon: AlertCircle, roles: ["owner", "admin_keuangan"] },
     { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
     { key: "stock", label: "Stock Item", icon: Boxes, roles: ["owner"] },
+    { key: "inbound", label: "Inbound", icon: PackagePlus, roles: ["owner"] },
     { key: "rekap_toko", label: "Rekap Toko", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
@@ -1650,6 +1652,132 @@ function StockItemPage({ token }) {
           </tbody>
         </table>
         {rows.length === 0 && <EmptyState text="Belum ada data barang." />}
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// INBOUND (khusus Owner) - catat stock barang masuk
+// ============================================================
+function InboundPage({ token }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [error, setError] = useState("");
+  const [form, setForm] = useState({ productId: "", qty: "", tanggal: today, keterangan: "" });
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [productRows, historyRows] = await Promise.all([
+        supabaseFetch(token, "products?select=id,kode,nama,satuan&aktif=eq.true&order=kode.asc"),
+        supabaseFetch(token, "stock_movements?select=*,products(kode,nama,satuan)&jenis=eq.masuk&order=created_at.desc&limit=30"),
+      ]);
+      setProducts(productRows);
+      setHistory(historyRows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function submit() {
+    if (!form.productId || !form.qty || Number(form.qty) <= 0) {
+      alert("Pilih barang dan isi qty yang benar dulu.");
+      return;
+    }
+    setSaving(true);
+    setSaveMsg("");
+    try {
+      const [inserted] = await supabaseFetch(token, "stock_movements", {
+        method: "POST",
+        body: JSON.stringify({
+          product_id: form.productId,
+          tanggal: form.tanggal,
+          jenis: "masuk",
+          qty: Number(form.qty),
+          keterangan: form.keterangan || null,
+        }),
+      });
+      const prod = products.find((p) => p.id === form.productId);
+      setHistory((prev) => [{ ...inserted, products: prod }, ...prev]);
+      setForm({ productId: "", qty: "", tanggal: today, keterangan: "" });
+      setSaveMsg("Stock masuk berhasil dicatat.");
+      setTimeout(() => setSaveMsg(""), 3000);
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  return (
+    <div>
+      <PageHeader title="Inbound" subtitle="Catat barang yang baru masuk / restock" />
+
+      <Card style={{ maxWidth: 520, marginBottom: 24 }}>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Pilih Barang</label>
+          <select value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })} style={fieldStyle}>
+            <option value="">-- Pilih barang --</option>
+            {products.map((p) => <option key={p.id} value={p.id}>{p.kode} - {p.nama}</option>)}
+          </select>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+          <div>
+            <label style={labelStyle}>Qty Masuk</label>
+            <input type="number" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} placeholder="0" style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Tanggal</label>
+            <input type="date" value={form.tanggal} onChange={(e) => setForm({ ...form, tanggal: e.target.value })} style={fieldStyle} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          <label style={labelStyle}>Keterangan (opsional)</label>
+          <input value={form.keterangan} onChange={(e) => setForm({ ...form, keterangan: e.target.value })} placeholder="Misal: Kiriman dari supplier X" style={fieldStyle} />
+        </div>
+        {saveMsg && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", color: "#28685D", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 14, fontWeight: 600 }}>
+            <Check size={14} /> {saveMsg}
+          </div>
+        )}
+        <button onClick={submit} disabled={saving} style={{ padding: "11px 22px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}>
+          <PackagePlus size={16} /> {saving ? "Menyimpan..." : "Catat Stock Masuk"}
+        </button>
+      </Card>
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Riwayat Inbound Terakhir</h2>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Tanggal", "Barang", "Qty", "Keterangan"].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {history.map((h) => (
+              <tr key={h.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px" }}>{new Date(h.tanggal).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 600 }}>{h.products?.kode} - {h.products?.nama}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 700, color: "#28685D" }}>+{h.qty} {h.products?.satuan}</td>
+                <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{h.keterangan || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {history.length === 0 && <EmptyState text="Belum ada riwayat stock masuk." />}
       </Card>
     </div>
   );
