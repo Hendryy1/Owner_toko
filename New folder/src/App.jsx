@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud
+  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -136,6 +136,7 @@ export default function OwnerDashboard() {
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "proses_kirim" && <ProsesPengirimanPage token={token} />}
         {page === "riwayat" && <RiwayatOrderPage token={token} />}
+        {page === "transaksi" && <TransaksiPage token={token} />}
         {page === "rekap_nota" && <RekapNotaPage token={token} />}
         {page === "clients" && <ClientsPage token={token} />}
         {page === "keuangan" && <KeuanganPage token={token} />}
@@ -205,6 +206,7 @@ function Sidebar({ page, setPage, profile, onLogout }) {
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "admin_transaksi"] },
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
+    { key: "transaksi", label: "Transaksi", icon: Table2, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "rekap_nota", label: "Rekap Nota", icon: Receipt, roles: ["owner", "admin_keuangan"] },
     { key: "clients", label: "Approve Toko Baru", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "keuangan", label: "Laporan Keuangan", icon: Wallet, roles: ["owner", "admin_keuangan"] },
@@ -2293,6 +2295,140 @@ function ProsesPengirimanPage({ token }) {
           );
         })
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// TRANSAKSI (detail per item barang)
+// ============================================================
+function TransaksiPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState([]);
+  const [error, setError] = useState("");
+  const now = new Date();
+  const [filterYear, setFilterYear] = useState(now.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(0); // 0 = semua bulan
+  const [search, setSearch] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(
+        token,
+        "orders?select=no_nota,created_at,clients(nama,kode),order_items(qty,harga_satuan,harga_dropship,subtotal_setelah_diskon,products(kode,nama,satuan))&status=neq.ditolak&status=neq.menunggu_persetujuan&order=created_at.desc&limit=500"
+      );
+      setOrders(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  const BULAN = ["Semua Bulan", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const yearsAvailable = Array.from(new Set(orders.map((o) => new Date(o.created_at).getFullYear()))).sort((a, b) => b - a);
+  if (yearsAvailable.length === 0) yearsAvailable.push(now.getFullYear());
+  if (!yearsAvailable.includes(Number(filterYear))) yearsAvailable.unshift(Number(filterYear));
+
+  // Ratakan jadi 1 baris per item barang (bukan per order)
+  const rows = [];
+  orders.forEach((o) => {
+    const d = new Date(o.created_at);
+    if (d.getFullYear() !== Number(filterYear)) return;
+    if (filterMonth !== 0 && d.getMonth() + 1 !== Number(filterMonth)) return;
+    (o.order_items || []).forEach((it) => {
+      if (search && !it.products?.nama?.toLowerCase().includes(search.toLowerCase()) && !it.products?.kode?.toLowerCase().includes(search.toLowerCase())) return;
+      const hargaSatuan = Number(it.harga_dropship || it.harga_satuan);
+      const subSebelum = hargaSatuan * it.qty;
+      const subSesudah = Number(it.subtotal_setelah_diskon || 0);
+      const diskonPct = subSebelum > 0 ? Math.round((1 - subSesudah / subSebelum) * 100) : 0;
+      rows.push({
+        noNota: o.no_nota, tanggal: o.created_at, toko: o.clients?.nama, kodeToko: o.clients?.kode,
+        kodeBarang: it.products?.kode, namaBarang: it.products?.nama, satuan: it.products?.satuan,
+        qty: it.qty, hargaSatuan, diskonPct, subtotal: subSesudah,
+      });
+    });
+  });
+
+  const totalSubtotal = rows.reduce((s, r) => s + r.subtotal, 0);
+
+  function exportCSV() {
+    const header = ["No Nota", "Tanggal", "Kode Toko", "Nama Toko", "Kode Barang", "Nama Barang", "Qty", "Satuan", "Harga Satuan", "Diskon %", "Subtotal"];
+    const csvRows = rows.map((r) => [
+      r.noNota, new Date(r.tanggal).toLocaleDateString("id-ID"), r.kodeToko, r.toko,
+      r.kodeBarang, r.namaBarang, r.qty, r.satuan, r.hargaSatuan, r.diskonPct, r.subtotal,
+    ]);
+    const csvContent = [header, ...csvRows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\r\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `transaksi-${filterYear}${filterMonth ? "-" + String(filterMonth).padStart(2, "0") : ""}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  return (
+    <div>
+      <PageHeader title="Transaksi" subtitle="Detail penjualan per item barang" />
+
+      <Card style={{ marginBottom: 16, display: "inline-block" }}>
+        <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Total Transaksi (sesuai filter)</p>
+        <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(totalSubtotal)}</p>
+      </Card>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 18, alignItems: "center" }}>
+        <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {yearsAvailable.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {BULAN.map((b, i) => <option key={i} value={i}>{b}</option>)}
+        </select>
+        <input
+          value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama/kode barang..."
+          style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, width: 220 }}
+        />
+        <div style={{ flex: 1 }} />
+        <button
+          onClick={exportCSV} disabled={rows.length === 0}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "none", background: "#24272B", color: "#fff", fontSize: 13, fontWeight: 700 }}
+        >
+          <Download size={14} /> Export CSV
+        </button>
+      </div>
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["No Nota", "Tanggal", "Toko", "Kode Barang", "Nama Barang", "Qty", "Harga Satuan", "Diskon", "Subtotal"].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{r.noNota}</td>
+                <td style={{ padding: "12px 14px" }}>{new Date(r.tanggal).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                <td style={{ padding: "12px 14px" }}>{r.toko} ({r.kodeToko})</td>
+                <td style={{ padding: "12px 14px" }}>{r.kodeBarang}</td>
+                <td style={{ padding: "12px 14px" }}>{r.namaBarang}</td>
+                <td style={{ padding: "12px 14px" }}>{r.qty} {r.satuan}</td>
+                <td style={{ padding: "12px 14px" }}>{rupiah(r.hargaSatuan)}</td>
+                <td style={{ padding: "12px 14px" }}>{r.diskonPct}%</td>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(r.subtotal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length === 0 && <EmptyState text="Tidak ada transaksi pada periode/filter ini." />}
+      </Card>
     </div>
   );
 }
