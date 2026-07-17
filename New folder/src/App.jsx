@@ -841,6 +841,9 @@ function PiutangPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -853,12 +856,36 @@ function PiutangPage({ token }) {
   }
   useEffect(() => { load(); }, []);
 
+  function startEdit(r) {
+    setEditingId(r.client_id);
+    setEditValue(r.limit_kredit || "");
+  }
+
+  async function saveLimit(clientId) {
+    setSaving(true);
+    try {
+      await supabaseFetch(token, `clients?id=eq.${clientId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ limit_kredit: editValue === "" ? null : Number(editValue) }),
+      });
+      setRows((prev) => prev.map((r) => {
+        if (r.client_id !== clientId) return r;
+        const newLimit = editValue === "" ? null : Number(editValue);
+        return { ...r, limit_kredit: newLimit, melebihi_limit: newLimit !== null && r.total_piutang > newLimit };
+      }));
+      setEditingId(null);
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
   return (
     <div>
-      <PageHeader title="Piutang per Toko" subtitle="Toko dengan tagihan belum lunas" />
+      <PageHeader title="Piutang per Toko" subtitle="Toko dengan tagihan belum lunas - klik Limit Kredit untuk ubah" />
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
@@ -873,7 +900,27 @@ function PiutangPage({ token }) {
               <tr key={r.client_id} style={{ borderTop: "1px solid #EDEAE3" }}>
                 <td style={{ padding: "12px 14px", fontWeight: 600 }}>{r.nama}</td>
                 <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(r.total_piutang)}</td>
-                <td style={{ padding: "12px 14px" }}>{r.limit_kredit ? rupiah(r.limit_kredit) : "-"}</td>
+                <td style={{ padding: "12px 14px" }}>
+                  {editingId === r.client_id ? (
+                    <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input
+                        type="number" value={editValue} onChange={(e) => setEditValue(e.target.value)}
+                        autoFocus
+                        style={{ width: 120, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }}
+                      />
+                      <button onClick={() => saveLimit(r.client_id)} disabled={saving} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11.5, fontWeight: 700 }}>
+                        Simpan
+                      </button>
+                      <button onClick={() => setEditingId(null)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11.5 }}>
+                        Batal
+                      </button>
+                    </div>
+                  ) : (
+                    <button onClick={() => startEdit(r)} style={{ background: "none", border: "none", padding: 0, color: "#24272B", fontSize: 13, cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted" }}>
+                      {r.limit_kredit ? rupiah(r.limit_kredit) : "Belum diatur"}
+                    </button>
+                  )}
+                </td>
                 <td style={{ padding: "12px 14px" }}>
                   {r.melebihi_limit ? (
                     <span style={{ background: "#FBEAEA", color: "#C0392B", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>MELEBIHI LIMIT</span>
@@ -950,53 +997,178 @@ function SalesPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
+  const now = new Date();
+  const [filterYear, setFilterYear] = useState(now.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
+  const [expandedId, setExpandedId] = useState(null);
+  const [detailCache, setDetailCache] = useState({}); // { sales_id: {loading, data} }
+  const [editingId, setEditingId] = useState(null);
+  const [editValue, setEditValue] = useState("");
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const data = await supabaseFetch(token, "v_rekap_sales_bulanan?select=*&order=bulan.desc&limit=20");
+      const data = await supabaseFetch(token, "v_rekap_sales_bulanan?select=*&order=bulan.desc&limit=300");
       setRows(data);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
 
+  const BULAN = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const yearsAvailable = Array.from(new Set(rows.map((r) => r.bulan ? new Date(r.bulan).getFullYear() : now.getFullYear()))).sort((a, b) => b - a);
+  if (yearsAvailable.length === 0) yearsAvailable.push(now.getFullYear());
+  if (!yearsAvailable.includes(Number(filterYear))) yearsAvailable.unshift(Number(filterYear));
+
+  const filtered = rows.filter((r) => {
+    if (!r.bulan) return false;
+    const d = new Date(r.bulan);
+    return d.getFullYear() === Number(filterYear) && d.getMonth() + 1 === Number(filterMonth);
+  });
+
+  function startEdit(r) {
+    setEditingId(r.sales_id);
+    setEditValue(r.target_omzet_bulanan || "");
+  }
+
+  async function saveTarget(salesId) {
+    setSaving(true);
+    try {
+      await supabaseFetch(token, `sales?id=eq.${salesId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ target_omzet_bulanan: editValue === "" ? 0 : Number(editValue) }),
+      });
+      setRows((prev) => prev.map((r) => (r.sales_id === salesId ? { ...r, target_omzet_bulanan: Number(editValue) || 0 } : r)));
+      setEditingId(null);
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function toggleExpand(salesId) {
+    if (expandedId === salesId) { setExpandedId(null); return; }
+    setExpandedId(salesId);
+    if (detailCache[salesId]) return; // sudah pernah dimuat
+    setDetailCache((prev) => ({ ...prev, [salesId]: { loading: true } }));
+    try {
+      const orders = await supabaseFetch(token, `orders?select=created_at,order_items(subtotal_setelah_diskon)&sales_id=eq.${salesId}&status=neq.ditolak`);
+      const totalOmzet = orders.reduce((sum, o) => sum + (o.order_items || []).reduce((s, it) => s + Number(it.subtotal_setelah_diskon || 0), 0), 0);
+      const hariSet = new Set(), mingguSet = new Set(), bulanSet = new Set(), tahunSet = new Set();
+      orders.forEach((o) => {
+        const d = new Date(o.created_at);
+        const dayOfYear = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
+        hariSet.add(d.toISOString().slice(0, 10));
+        mingguSet.add(`${d.getFullYear()}-W${Math.ceil(dayOfYear / 7)}`);
+        bulanSet.add(`${d.getFullYear()}-${d.getMonth()}`);
+        tahunSet.add(d.getFullYear());
+      });
+      const safeDiv = (a, b) => (b > 0 ? a / b : 0);
+      setDetailCache((prev) => ({
+        ...prev,
+        [salesId]: {
+          loading: false,
+          totalOmzet, totalOrder: orders.length,
+          rataHari: safeDiv(totalOmzet, hariSet.size),
+          rataMinggu: safeDiv(totalOmzet, mingguSet.size),
+          rataBulan: safeDiv(totalOmzet, bulanSet.size),
+          rataTahun: safeDiv(totalOmzet, tahunSet.size),
+        },
+      }));
+    } catch (e) {
+      setDetailCache((prev) => ({ ...prev, [salesId]: { loading: false, error: e.message } }));
+    }
+  }
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
   return (
     <div>
-      <PageHeader title="Rekap Sales" subtitle="Performa tiap sales per bulan" />
-      <Card style={{ padding: 0, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: "#F7F5F1" }}>
-              {["Bulan", "Sales", "Jumlah Toko", "Omzet Bulan", "Target", "Pencapaian"].map((h) => (
-                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => {
-              const pencapaian = r.target_omzet_bulanan > 0 ? (r.omzet_bulan / r.target_omzet_bulanan * 100) : 0;
-              return (
-                <tr key={i} style={{ borderTop: "1px solid #EDEAE3" }}>
-                  <td style={{ padding: "12px 14px" }}>{r.bulan ? new Date(r.bulan).toLocaleDateString("id-ID", { month: "short", year: "numeric" }) : "-"}</td>
-                  <td style={{ padding: "12px 14px", fontWeight: 600 }}>{r.nama}</td>
-                  <td style={{ padding: "12px 14px" }}>{r.jumlah_toko}</td>
-                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(r.omzet_bulan)}</td>
-                  <td style={{ padding: "12px 14px" }}>{rupiah(r.target_omzet_bulanan)}</td>
-                  <td style={{ padding: "12px 14px" }}>
-                    <span style={{ color: pencapaian >= 100 ? "#28685D" : "#B8860B", fontWeight: 700 }}>{pencapaian.toFixed(0)}%</span>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {rows.length === 0 && <EmptyState text="Belum ada data sales." />}
-      </Card>
+      <PageHeader title="Rekap Sales" subtitle="Klik nama sales untuk lihat rata-rata omzet. Target bisa diedit langsung." />
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
+        <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {yearsAvailable.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {BULAN.map((b, i) => <option key={i + 1} value={i + 1}>{b}</option>)}
+        </select>
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState text="Belum ada data sales pada periode ini." />
+      ) : (
+        filtered.map((r) => {
+          const pencapaian = r.target_omzet_bulanan > 0 ? (r.omzet_bulan / r.target_omzet_bulanan * 100) : 0;
+          const expanded = expandedId === r.sales_id;
+          const detail = detailCache[r.sales_id];
+          return (
+            <Card key={r.sales_id} style={{ marginBottom: 12, padding: 0, overflow: "hidden" }}>
+              <button
+                onClick={() => toggleExpand(r.sales_id)}
+                style={{ width: "100%", background: "none", border: "none", padding: 16, display: "flex", justifyContent: "space-between", alignItems: "center", textAlign: "left" }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <ChevronRight size={16} color="#9CA0A6" style={{ transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+                  <div>
+                    <p style={{ fontWeight: 700, fontSize: 14, margin: 0, color: "#24272B" }}>{r.nama}</p>
+                    <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{r.jumlah_toko} toko dilayani bulan ini</p>
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                  <div style={{ textAlign: "right" }}>
+                    <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 2px" }}>Omzet Bulan</p>
+                    <p style={{ fontWeight: 700, fontSize: 14, margin: 0 }}>{rupiah(r.omzet_bulan)}</p>
+                  </div>
+                  <div style={{ textAlign: "right" }}>
+                    <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 2px" }}>Pencapaian</p>
+                    <p style={{ fontWeight: 700, fontSize: 14, margin: 0, color: pencapaian >= 100 ? "#28685D" : "#B8860B" }}>{pencapaian.toFixed(0)}%</p>
+                  </div>
+                </div>
+              </button>
+
+              {expanded && (
+                <div style={{ padding: "0 16px 16px", borderTop: "1px solid #EDEAE3" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 0 10px" }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75" }}>Target Omzet Bulanan:</span>
+                    {editingId === r.sales_id ? (
+                      <>
+                        <input
+                          type="number" value={editValue} onChange={(e) => setEditValue(e.target.value)} autoFocus
+                          style={{ width: 150, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }}
+                        />
+                        <button onClick={() => saveTarget(r.sales_id)} disabled={saving} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11.5, fontWeight: 700 }}>Simpan</button>
+                        <button onClick={() => setEditingId(null)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11.5 }}>Batal</button>
+                      </>
+                    ) : (
+                      <button onClick={() => startEdit(r)} style={{ background: "none", border: "none", padding: 0, color: "#24272B", fontSize: 13, fontWeight: 700, cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted" }}>
+                        {rupiah(r.target_omzet_bulanan)}
+                      </button>
+                    )}
+                  </div>
+
+                  {!detail || detail.loading ? (
+                    <p style={{ fontSize: 12.5, color: "#9CA0A6", padding: "8px 0" }}>Memuat rata-rata omzet...</p>
+                  ) : detail.error ? (
+                    <p style={{ fontSize: 12.5, color: "#C0392B", padding: "8px 0" }}>Gagal memuat: {detail.error}</p>
+                  ) : (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12 }}>
+                      <MiniStat label="Rata-rata / Hari" value={rupiah(detail.rataHari)} />
+                      <MiniStat label="Rata-rata / Minggu" value={rupiah(detail.rataMinggu)} />
+                      <MiniStat label="Rata-rata / Bulan" value={rupiah(detail.rataBulan)} />
+                      <MiniStat label="Rata-rata / Tahun" value={rupiah(detail.rataTahun)} />
+                    </div>
+                  )}
+                  <p style={{ fontSize: 10.5, color: "#B5B2AA", margin: "10px 0 0" }}>*Dihitung dari rata-rata di periode sales ini aktif berjualan (all-time), bukan cuma bulan yang difilter di atas.</p>
+                </div>
+              )}
+            </Card>
+          );
+        })
+      )}
     </div>
   );
 }
