@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2
+  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -144,6 +144,7 @@ export default function OwnerDashboard() {
         {page === "barang" && <BarangTerlarisPage token={token} />}
         {page === "stock" && <StockItemPage token={token} />}
         {page === "inbound" && <InboundPage token={token} />}
+        {page === "cashback" && <CashbackPage token={token} />}
         {page === "rekap_toko" && <RekapTokoPage token={token} />}
         {page === "sales" && <SalesPage token={token} />}
         {page === "format_nota" && <FormatNotaPage token={token} />}
@@ -214,6 +215,7 @@ function Sidebar({ page, setPage, profile, onLogout }) {
     { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
     { key: "stock", label: "Stock Item", icon: Boxes, roles: ["owner"] },
     { key: "inbound", label: "Inbound", icon: PackagePlus, roles: ["owner"] },
+    { key: "cashback", label: "Cashback", icon: Gift, roles: ["owner"] },
     { key: "rekap_toko", label: "Rekap Toko", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
@@ -2428,6 +2430,203 @@ function TransaksiPage({ token }) {
           </tbody>
         </table>
         {rows.length === 0 && <EmptyState text="Tidak ada transaksi pada periode/filter ini." />}
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// CASHBACK (khusus Owner) - atur aturan cashback
+// ============================================================
+function CashbackPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [rules, setRules] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    jenisRule: "nominal_bulanan",
+    minimalOmzetBulan: "", productId: "", minimalQty: "",
+    jenisCashback: "persen", nilaiCashback: "",
+  });
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [ruleRows, productRows] = await Promise.all([
+        supabaseFetch(token, "cashback_rules?select=*,products(kode,nama,satuan)&order=created_at.desc"),
+        supabaseFetch(token, "products?select=id,kode,nama,satuan&aktif=eq.true&order=kode.asc"),
+      ]);
+      setRules(ruleRows);
+      setProducts(productRows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  function resetForm() {
+    setForm({ jenisRule: "nominal_bulanan", minimalOmzetBulan: "", productId: "", minimalQty: "", jenisCashback: "persen", nilaiCashback: "" });
+  }
+
+  async function submitRule() {
+    if (form.jenisRule === "nominal_bulanan" && (!form.minimalOmzetBulan || !form.nilaiCashback)) {
+      alert("Isi dulu minimal omzet dan nilai cashback-nya.");
+      return;
+    }
+    if (form.jenisRule === "per_barang" && (!form.productId || !form.minimalQty || !form.nilaiCashback)) {
+      alert("Pilih barang, isi minimal qty, dan nilai cashback-nya dulu.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const [inserted] = await supabaseFetch(token, "cashback_rules", {
+        method: "POST",
+        body: JSON.stringify({
+          jenis_rule: form.jenisRule,
+          minimal_omzet_bulan: form.jenisRule === "nominal_bulanan" ? Number(form.minimalOmzetBulan) : null,
+          product_id: form.jenisRule === "per_barang" ? form.productId : null,
+          minimal_qty: form.jenisRule === "per_barang" ? Number(form.minimalQty) : null,
+          jenis_cashback: form.jenisCashback,
+          nilai_cashback: Number(form.nilaiCashback),
+          aktif: true,
+        }),
+      });
+      const prod = products.find((p) => p.id === form.productId);
+      setRules((prev) => [{ ...inserted, products: prod }, ...prev]);
+      resetForm();
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function toggleAktif(ruleId, aktif) {
+    try {
+      await supabaseFetch(token, `cashback_rules?id=eq.${ruleId}`, { method: "PATCH", body: JSON.stringify({ aktif: !aktif }) });
+      setRules((prev) => prev.map((r) => (r.id === ruleId ? { ...r, aktif: !aktif } : r)));
+    } catch (e) { alert("Gagal update: " + e.message); }
+  }
+
+  async function hapusRule(ruleId) {
+    if (!confirm("Hapus aturan cashback ini?")) return;
+    try {
+      await supabaseFetch(token, `cashback_rules?id=eq.${ruleId}`, { method: "DELETE" });
+      setRules((prev) => prev.filter((r) => r.id !== ruleId));
+    } catch (e) { alert("Gagal hapus: " + e.message); }
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  return (
+    <div>
+      <PageHeader title="Cashback" subtitle="Atur aturan cashback berdasarkan omzet bulanan atau per barang" />
+
+      <Card style={{ maxWidth: 560, marginBottom: 24 }}>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Jenis Aturan</label>
+          <div style={{ display: "flex", gap: 10 }}>
+            <button
+              onClick={() => setForm({ ...form, jenisRule: "nominal_bulanan" })}
+              style={{ flex: 1, padding: 10, borderRadius: 9, border: form.jenisRule === "nominal_bulanan" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: form.jenisRule === "nominal_bulanan" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+            >
+              Nominal Transaksi/Bulan
+            </button>
+            <button
+              onClick={() => setForm({ ...form, jenisRule: "per_barang" })}
+              style={{ flex: 1, padding: 10, borderRadius: 9, border: form.jenisRule === "per_barang" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: form.jenisRule === "per_barang" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+            >
+              Per Barang (Qty)
+            </button>
+          </div>
+        </div>
+
+        {form.jenisRule === "nominal_bulanan" ? (
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Minimal Transaksi dalam Sebulan (Rp)</label>
+            <input type="number" value={form.minimalOmzetBulan} onChange={(e) => setForm({ ...form, minimalOmzetBulan: e.target.value })} placeholder="misal 10000000" style={fieldStyle} />
+          </div>
+        ) : (
+          <>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Pilih Barang</label>
+              <select value={form.productId} onChange={(e) => setForm({ ...form, productId: e.target.value })} style={fieldStyle}>
+                <option value="">-- Pilih barang --</option>
+                {products.map((p) => <option key={p.id} value={p.id}>{p.kode} - {p.nama}</option>)}
+              </select>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Minimal Qty (pcs/set/koli sesuai satuan barang)</label>
+              <input type="number" value={form.minimalQty} onChange={(e) => setForm({ ...form, minimalQty: e.target.value })} placeholder="misal 20" style={fieldStyle} />
+            </div>
+          </>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+          <div>
+            <label style={labelStyle}>Jenis Cashback</label>
+            <select value={form.jenisCashback} onChange={(e) => setForm({ ...form, jenisCashback: e.target.value })} style={fieldStyle}>
+              <option value="persen">Persen (%)</option>
+              <option value="rupiah">Rupiah (Rp)</option>
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Nilai Cashback</label>
+            <input type="number" value={form.nilaiCashback} onChange={(e) => setForm({ ...form, nilaiCashback: e.target.value })} placeholder={form.jenisCashback === "persen" ? "misal 5" : "misal 50000"} style={fieldStyle} />
+          </div>
+        </div>
+
+        <button onClick={submitRule} disabled={saving} style={{ padding: "11px 22px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}>
+          <Gift size={16} /> {saving ? "Menyimpan..." : "Tambah Aturan"}
+        </button>
+      </Card>
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Daftar Aturan</h2>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Jenis", "Syarat", "Cashback", "Status", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rules.map((r) => (
+              <tr key={r.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 600 }}>
+                  {r.jenis_rule === "nominal_bulanan" ? "Nominal/Bulan" : "Per Barang"}
+                </td>
+                <td style={{ padding: "12px 14px" }}>
+                  {r.jenis_rule === "nominal_bulanan"
+                    ? `Transaksi ≥ ${rupiah(r.minimal_omzet_bulan)} / bulan`
+                    : `${r.products?.kode} - ${r.products?.nama}, min. ${r.minimal_qty} ${r.products?.satuan}`}
+                </td>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>
+                  {r.jenis_cashback === "persen" ? `${r.nilai_cashback}%` : rupiah(r.nilai_cashback)}
+                </td>
+                <td style={{ padding: "12px 14px" }}>
+                  <button
+                    onClick={() => toggleAktif(r.id, r.aktif)}
+                    style={{ background: r.aktif ? "#D8E9E6" : "#F7F5F1", color: r.aktif ? "#28685D" : "#9CA0A6", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, border: "none" }}
+                  >
+                    {r.aktif ? "Aktif" : "Nonaktif"}
+                  </button>
+                </td>
+                <td style={{ padding: "12px 14px" }}>
+                  <button onClick={() => hapusRule(r.id)} style={{ background: "none", border: "none", color: "#C0392B", fontSize: 11.5, fontWeight: 700 }}>
+                    Hapus
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rules.length === 0 && <EmptyState text="Belum ada aturan cashback." />}
       </Card>
     </div>
   );
