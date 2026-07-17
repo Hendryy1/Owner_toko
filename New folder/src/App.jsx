@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download
+  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -138,6 +138,7 @@ export default function OwnerDashboard() {
         {page === "keuangan" && <KeuanganPage token={token} />}
         {page === "piutang" && <PiutangPage token={token} />}
         {page === "barang" && <BarangTerlarisPage token={token} />}
+        {page === "stock" && <StockItemPage token={token} />}
         {page === "rekap_toko" && <RekapTokoPage token={token} />}
         {page === "sales" && <SalesPage token={token} />}
         {page === "format_nota" && <FormatNotaPage token={token} />}
@@ -202,6 +203,7 @@ function Sidebar({ page, setPage, profile, onLogout }) {
     { key: "keuangan", label: "Laporan Keuangan", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "piutang", label: "Piutang", icon: AlertCircle, roles: ["owner", "admin_keuangan"] },
     { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
+    { key: "stock", label: "Stock Item", icon: Boxes, roles: ["owner"] },
     { key: "rekap_toko", label: "Rekap Toko", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
@@ -1574,6 +1576,80 @@ function RekapTokoPage({ token }) {
           </tbody>
         </table>
         {clients.length === 0 && <EmptyState text="Belum ada toko aktif." />}
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// STOCK ITEM (khusus Owner)
+// ============================================================
+function StockItemPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [rows, setRows] = useState([]);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [products, stock] = await Promise.all([
+        supabaseFetch(token, "products?select=id,kode,nama,kategori,satuan,harga_modal&aktif=eq.true&order=kode.asc"),
+        supabaseFetch(token, "v_stock_akhir?select=product_id,stock_akhir"),
+      ]);
+      const stockMap = {};
+      stock.forEach((s) => { stockMap[s.product_id] = s.stock_akhir; });
+      const merged = products.map((p) => {
+        const stockAkhir = stockMap[p.id] ?? 0;
+        const hargaModal = Number(p.harga_modal || 0);
+        return { ...p, stock_akhir: stockAkhir, total_modal: stockAkhir * hargaModal };
+      });
+      setRows(merged);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const grandTotal = rows.reduce((sum, r) => sum + r.total_modal, 0);
+
+  return (
+    <div>
+      <PageHeader title="Stock Item" subtitle="Nilai modal barang berdasarkan stock akhir - data rahasia, hanya Owner" />
+
+      <Card style={{ marginBottom: 16, display: "inline-block" }}>
+        <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Total Modal Seluruh Stock</p>
+        <p className="disp" style={{ fontSize: 26, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(grandTotal)}</p>
+      </Card>
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Kode", "Nama Barang", "Kategori", "Satuan", "Stock", "Harga Modal", "Total Modal"].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{r.kode}</td>
+                <td style={{ padding: "12px 14px" }}>{r.nama}</td>
+                <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{r.kategori}</td>
+                <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{r.satuan}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 600, color: r.stock_akhir < 0 ? "#C0392B" : "#24272B" }}>
+                  {r.stock_akhir}{r.stock_akhir < 0 && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#C0392B" }}>MINUS!</span>}
+                </td>
+                <td style={{ padding: "12px 14px" }}>{rupiah(r.harga_modal)}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(r.total_modal)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length === 0 && <EmptyState text="Belum ada data barang." />}
       </Card>
     </div>
   );
