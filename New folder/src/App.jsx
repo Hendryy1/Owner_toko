@@ -1804,7 +1804,7 @@ function RekapNotaPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,jatuh_tempo,status_bayar,clients(nama,kode,jenis_pembayaran),order_items(subtotal_setelah_diskon),cashback_ledger(id,nilai_cashback,status)&status=neq.ditolak&order=created_at.desc&limit=500"
+        "orders?select=id,no_nota,created_at,jatuh_tempo,status_bayar,bukti_transfer_url,clients(nama,kode,jenis_pembayaran),order_items(subtotal_setelah_diskon),cashback_ledger(id,nilai_cashback,status)&status=neq.ditolak&order=created_at.desc&limit=500"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -1899,6 +1899,8 @@ function RekapNotaPage({ token }) {
             {filtered.map((o) => {
               const isLunas = o.status_bayar === "lunas";
               const cb = o.cashback_ledger?.[0];
+              const needsProof = o.clients?.jenis_pembayaran === "Transfer";
+              const hasProof = !!o.bukti_transfer_url;
               return (
                 <tr key={o.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                   <td style={{ padding: "12px 14px", fontWeight: 700 }}>{o.no_nota}</td>
@@ -1909,6 +1911,17 @@ function RekapNotaPage({ token }) {
                     <span style={{ background: isLunas ? "#D8E9E6" : "#FBEAEA", color: isLunas ? "#28685D" : "#C0392B", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
                       {isLunas ? "Lunas" : "Belum Lunas"}
                     </span>
+                    {!isLunas && needsProof && (
+                      <div style={{ marginTop: 4 }}>
+                        {hasProof ? (
+                          <a href={o.bukti_transfer_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 10.5, color: "#B8860B", fontWeight: 700, textDecoration: "underline" }}>
+                            Lihat Bukti Transfer
+                          </a>
+                        ) : (
+                          <span style={{ fontSize: 10.5, color: "#9CA0A6", fontStyle: "italic" }}>Menunggu bukti transfer</span>
+                        )}
+                      </div>
+                    )}
                   </td>
                   <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(orderTotal(o))}</td>
                   <td style={{ padding: "12px 14px" }}>
@@ -1920,10 +1933,15 @@ function RekapNotaPage({ token }) {
                   </td>
                   <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", gap: 6 }}>
-                      {!isLunas && (
+                      {!isLunas && (needsProof ? hasProof : true) && (
                         <button disabled={processingId === o.id} onClick={() => tandaiLunas(o.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700 }}>
                           Tandai Lunas
                         </button>
+                      )}
+                      {!isLunas && needsProof && !hasProof && (
+                        <span style={{ padding: "6px 10px", borderRadius: 7, background: "#F7F5F1", color: "#B5B2AA", fontSize: 11, fontWeight: 600 }}>
+                          Belum bisa - tunggu bukti
+                        </span>
                       )}
                       {cb && cb.status === "belum_dibayar" && (
                         <button disabled={processingId === o.id} onClick={() => tandaiCashbackDibayar(o.id, cb.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 700 }}>
