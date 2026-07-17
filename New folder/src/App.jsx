@@ -1447,7 +1447,7 @@ function RekapTokoPage({ token }) {
     setError("");
     try {
       const [clientRows, salesRows] = await Promise.all([
-        supabaseFetch(token, "clients?select=*,sales(id,kode,nama)&status=eq.aktif&order=nama.asc"),
+        supabaseFetch(token, "clients?select=*,sales!clients_sales_id_fkey(id,kode,nama)&status=eq.aktif&order=nama.asc"),
         supabaseFetch(token, "sales?select=id,kode,nama&order=kode.asc"),
       ]);
       setClients(clientRows);
