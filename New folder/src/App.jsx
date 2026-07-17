@@ -998,6 +998,7 @@ function BarangTerlarisPage({ token }) {
 function SalesPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+  const [allSales, setAllSales] = useState([]);
   const [error, setError] = useState("");
   const now = new Date();
   const [filterYear, setFilterYear] = useState(now.getFullYear());
@@ -1012,8 +1013,12 @@ function SalesPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const data = await supabaseFetch(token, "v_rekap_sales_bulanan?select=*&order=bulan.desc&limit=300");
-      setRows(data);
+      const [rekapData, salesData] = await Promise.all([
+        supabaseFetch(token, "v_rekap_sales_bulanan?select=*&order=bulan.desc&limit=300"),
+        supabaseFetch(token, "sales?select=id,kode,nama,target_omzet_bulanan&order=kode.asc"),
+      ]);
+      setRows(rekapData);
+      setAllSales(salesData);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -1024,10 +1029,21 @@ function SalesPage({ token }) {
   if (yearsAvailable.length === 0) yearsAvailable.push(now.getFullYear());
   if (!yearsAvailable.includes(Number(filterYear))) yearsAvailable.unshift(Number(filterYear));
 
-  const filtered = rows.filter((r) => {
-    if (!r.bulan) return false;
-    const d = new Date(r.bulan);
-    return d.getFullYear() === Number(filterYear) && d.getMonth() + 1 === Number(filterMonth);
+  // Gabungkan SEMUA sales dengan data omzet bulan yang difilter - supaya sales
+  // yang belum ada order sama sekali di bulan itu tetap muncul (omzet 0),
+  // bukan hilang begitu saja karena tidak ada baris di view untuk bulan itu.
+  const filtered = allSales.map((s) => {
+    const match = rows.find((r) => {
+      if (!r.bulan || r.sales_id !== s.id) return false;
+      const d = new Date(r.bulan);
+      return d.getFullYear() === Number(filterYear) && d.getMonth() + 1 === Number(filterMonth);
+    });
+    return {
+      sales_id: s.id, kode: s.kode, nama: s.nama,
+      target_omzet_bulanan: s.target_omzet_bulanan || 0,
+      jumlah_toko: match?.jumlah_toko || 0,
+      omzet_bulan: match?.omzet_bulan || 0,
+    };
   });
 
   function startEdit(r) {
@@ -1042,7 +1058,7 @@ function SalesPage({ token }) {
         method: "PATCH",
         body: JSON.stringify({ target_omzet_bulanan: editValue === "" ? 0 : Number(editValue) }),
       });
-      setRows((prev) => prev.map((r) => (r.sales_id === salesId ? { ...r, target_omzet_bulanan: Number(editValue) || 0 } : r)));
+      setAllSales((prev) => prev.map((s) => (s.id === salesId ? { ...s, target_omzet_bulanan: Number(editValue) || 0 } : s)));
       setEditingId(null);
     } catch (e) {
       alert("Gagal simpan: " + e.message);
