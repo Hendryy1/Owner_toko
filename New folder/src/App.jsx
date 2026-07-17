@@ -3226,9 +3226,59 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
     cashbackPerKoli: product.cashback_per_koli || "", deskripsi: product.deskripsi || "", aktif: product.aktif ?? true,
   });
   const [gambarUrl, setGambarUrl] = useState(product.gambar_url || "");
+  const [galeri, setGaleri] = useState([]); // [{id, url}] - foto tambahan untuk deskripsi
+  const [uploadingGaleri, setUploadingGaleri] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!product.id) return;
+    supabaseFetch(token, `product_images?select=id,url&product_id=eq.${product.id}&order=urutan.asc`)
+      .then(setGaleri)
+      .catch(() => setGaleri([]));
+  }, [product.id]);
+
+  async function uploadGaleriFoto(file) {
+    setUploadingGaleri(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `${form.kode || "produk"}-galeri-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+      if (isNew) {
+        // Produk belum tersimpan - simpan dulu ke state, di-insert setelah produk jadi (submit())
+        setGaleri((prev) => [...prev, { id: `temp-${Date.now()}`, url, isTemp: true }]);
+      } else {
+        const [inserted] = await supabaseFetch(token, "product_images", {
+          method: "POST",
+          body: JSON.stringify({ product_id: product.id, url, urutan: galeri.length }),
+        });
+        setGaleri((prev) => [...prev, inserted]);
+      }
+    } catch (e) {
+      alert("Gagal upload foto galeri: " + e.message);
+    }
+    setUploadingGaleri(false);
+  }
+
+  async function hapusGaleriFoto(img) {
+    if (img.isTemp) {
+      setGaleri((prev) => prev.filter((g) => g.id !== img.id));
+      return;
+    }
+    try {
+      await supabaseFetch(token, `product_images?id=eq.${img.id}`, { method: "DELETE" });
+      setGaleri((prev) => prev.filter((g) => g.id !== img.id));
+    } catch (e) {
+      alert("Gagal hapus foto: " + e.message);
+    }
+  }
 
   async function uploadGambar(file) {
     setUploading(true);
@@ -3268,6 +3318,14 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
       if (isNew) {
         const [inserted] = await supabaseFetch(token, "products", { method: "POST", body: JSON.stringify(body) });
         saved = inserted;
+        // Simpan galeri yang sempat ditumpuk sementara (sebelum produk ini punya id asli)
+        const tempImages = galeri.filter((g) => g.isTemp);
+        if (tempImages.length > 0) {
+          await supabaseFetch(token, "product_images", {
+            method: "POST",
+            body: JSON.stringify(tempImages.map((g, i) => ({ product_id: saved.id, url: g.url, urutan: i }))),
+          });
+        }
       } else {
         const [updated] = await supabaseFetch(token, `products?id=eq.${product.id}`, { method: "PATCH", body: JSON.stringify(body) });
         saved = updated;
@@ -3323,6 +3381,27 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
         <div style={{ marginBottom: 12 }}>
           <label style={labelStyle}>Deskripsi (opsional)</label>
           <textarea value={form.deskripsi} onChange={set("deskripsi")} rows={3} placeholder="Deskripsi produk untuk ditampilkan ke toko" style={{ ...fieldStyle, resize: "vertical" }} />
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Galeri Foto Tambahan (opsional, buat lengkapi deskripsi)</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {galeri.map((img) => (
+              <div key={img.id} style={{ position: "relative", width: 60, height: 60 }}>
+                <div style={{ width: 60, height: 60, borderRadius: 8, background: `url(${img.url}) center/cover` }} />
+                <button
+                  onClick={() => hapusGaleriFoto(img)}
+                  style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C0392B", border: "2px solid #fff", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+            <label style={{ width: 60, height: 60, borderRadius: 8, border: "1.5px dashed #E8A426", background: "#FFFBF0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              {uploadingGaleri ? <Loader2 size={16} color="#8A6A1A" /> : <PackagePlus size={18} color="#8A6A1A" />}
+              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingGaleri} onChange={(e) => { if (e.target.files[0]) uploadGaleriFoto(e.target.files[0]); }} />
+            </label>
+          </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
