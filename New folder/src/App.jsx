@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift
+  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -145,6 +145,7 @@ export default function OwnerDashboard() {
         {page === "stock" && <StockItemPage token={token} />}
         {page === "inbound" && <InboundPage token={token} />}
         {page === "cashback" && <CashbackPage token={token} />}
+        {page === "ongkir" && <FreeOngkirPage token={token} />}
         {page === "rekap_toko" && <RekapTokoPage token={token} />}
         {page === "sales" && <SalesPage token={token} />}
         {page === "format_nota" && <FormatNotaPage token={token} />}
@@ -216,6 +217,7 @@ function Sidebar({ page, setPage, profile, onLogout }) {
     { key: "stock", label: "Stock Item", icon: Boxes, roles: ["owner"] },
     { key: "inbound", label: "Inbound", icon: PackagePlus, roles: ["owner"] },
     { key: "cashback", label: "Cashback", icon: Gift, roles: ["owner"] },
+    { key: "ongkir", label: "Free Ongkir", icon: Navigation, roles: ["owner", "admin_transaksi"] },
     { key: "rekap_toko", label: "Rekap Toko", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
@@ -2839,6 +2841,193 @@ function CashbackPage({ token }) {
             </button>
           </>
         )}
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// FREE ONGKIR (tabel tarif manual, base gudang Pekanbaru)
+// ============================================================
+function FreeOngkirPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [rates, setRates] = useState([]);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ kotaTujuan: "", tarifPerKg: "", estimasiHari: "", keterangan: "" });
+
+  // Kalkulator cek cepat
+  const [calcKota, setCalcKota] = useState("");
+  const [calcBerat, setCalcBerat] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "ongkir_rates?select=*&order=kota_tujuan.asc");
+      setRates(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  function resetForm() {
+    setForm({ kotaTujuan: "", tarifPerKg: "", estimasiHari: "", keterangan: "" });
+    setEditingId(null);
+  }
+
+  function startEdit(r) {
+    setEditingId(r.id);
+    setForm({ kotaTujuan: r.kota_tujuan, tarifPerKg: r.tarif_per_kg, estimasiHari: r.estimasi_hari || "", keterangan: r.keterangan || "" });
+  }
+
+  async function submitForm() {
+    if (!form.kotaTujuan.trim() || !form.tarifPerKg) {
+      alert("Isi dulu kota tujuan dan tarif per kg-nya.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = {
+        kota_tujuan: form.kotaTujuan.trim(),
+        tarif_per_kg: Number(form.tarifPerKg),
+        estimasi_hari: form.estimasiHari || null,
+        keterangan: form.keterangan || null,
+        updated_at: new Date().toISOString(),
+      };
+      if (editingId) {
+        await supabaseFetch(token, `ongkir_rates?id=eq.${editingId}`, { method: "PATCH", body: JSON.stringify(body) });
+        setRates((prev) => prev.map((r) => (r.id === editingId ? { ...r, ...body } : r)));
+      } else {
+        const [inserted] = await supabaseFetch(token, "ongkir_rates", { method: "POST", body: JSON.stringify(body) });
+        setRates((prev) => [...prev, inserted].sort((a, b) => a.kota_tujuan.localeCompare(b.kota_tujuan)));
+      }
+      resetForm();
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function hapusRate(id) {
+    if (!confirm("Hapus tarif kota ini?")) return;
+    try {
+      await supabaseFetch(token, `ongkir_rates?id=eq.${id}`, { method: "DELETE" });
+      setRates((prev) => prev.filter((r) => r.id !== id));
+    } catch (e) { alert("Gagal hapus: " + e.message); }
+  }
+
+  const calcResult = (() => {
+    if (!calcKota || !calcBerat) return null;
+    const r = rates.find((x) => x.id === calcKota);
+    if (!r) return null;
+    return { rate: r, total: r.tarif_per_kg * Number(calcBerat) };
+  })();
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  return (
+    <div>
+      <PageHeader title="Free Ongkir" subtitle="Tabel tarif kirim dari gudang Pekanbaru (diisi manual, referensi dari Baraka Express)" />
+
+      {/* KALKULATOR CEK CEPAT */}
+      <Card style={{ maxWidth: 560, marginBottom: 24 }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 14px" }}>Cek Ongkir Cepat</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+          <div>
+            <label style={labelStyle}>Kota Tujuan</label>
+            <select value={calcKota} onChange={(e) => setCalcKota(e.target.value)} style={fieldStyle}>
+              <option value="">-- Pilih kota --</option>
+              {rates.map((r) => <option key={r.id} value={r.id}>{r.kota_tujuan}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={labelStyle}>Berat (Kg)</label>
+            <input type="number" value={calcBerat} onChange={(e) => setCalcBerat(e.target.value)} placeholder="misal 10" style={fieldStyle} />
+          </div>
+        </div>
+        {calcResult && (
+          <div style={{ background: "#FBF0D9", borderRadius: 10, padding: 14 }}>
+            <p style={{ fontSize: 11.5, color: "#8A6A1A", margin: "0 0 4px" }}>
+              Pekanbaru &rarr; {calcResult.rate.kota_tujuan} · {rupiah(calcResult.rate.tarif_per_kg)}/kg
+              {calcResult.rate.estimasi_hari && ` · Estimasi ${calcResult.rate.estimasi_hari}`}
+            </p>
+            <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(calcResult.total)}</p>
+          </div>
+        )}
+      </Card>
+
+      {/* FORM TAMBAH/EDIT TARIF */}
+      <Card style={{ maxWidth: 560, marginBottom: 24 }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 14px" }}>{editingId ? "Edit Tarif" : "Tambah Tarif Kota Baru"}</p>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Kota Tujuan</label>
+          <input value={form.kotaTujuan} onChange={(e) => setForm({ ...form, kotaTujuan: e.target.value })} placeholder="misal Jakarta" style={fieldStyle} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+          <div>
+            <label style={labelStyle}>Tarif per Kg (Rp)</label>
+            <input type="number" value={form.tarifPerKg} onChange={(e) => setForm({ ...form, tarifPerKg: e.target.value })} placeholder="misal 15000" style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Estimasi Hari (opsional)</label>
+            <input value={form.estimasiHari} onChange={(e) => setForm({ ...form, estimasiHari: e.target.value })} placeholder="misal 3-5 hari" style={fieldStyle} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          <label style={labelStyle}>Keterangan (opsional)</label>
+          <input value={form.keterangan} onChange={(e) => setForm({ ...form, keterangan: e.target.value })} placeholder="misal jalur darat, cek terakhir 1 Juli 2026" style={fieldStyle} />
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={submitForm} disabled={saving} style={{ padding: "11px 22px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+            {saving ? "Menyimpan..." : editingId ? "Simpan Perubahan" : "Tambah Tarif"}
+          </button>
+          {editingId && (
+            <button onClick={resetForm} style={{ padding: "11px 22px", borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+              Batal
+            </button>
+          )}
+        </div>
+      </Card>
+
+      {/* DAFTAR TARIF */}
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Daftar Tarif</h2>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Kota Tujuan", "Tarif/Kg", "Estimasi", "Keterangan", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rates.map((r) => (
+              <tr key={r.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{r.kota_tujuan}</td>
+                <td style={{ padding: "12px 14px" }}>{rupiah(r.tarif_per_kg)}</td>
+                <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{r.estimasi_hari || "-"}</td>
+                <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{r.keterangan || "-"}</td>
+                <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => startEdit(r)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 600 }}>
+                      Edit
+                    </button>
+                    <button onClick={() => hapusRate(r.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "none", color: "#C0392B", fontSize: 11, fontWeight: 700 }}>
+                      Hapus
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rates.length === 0 && <EmptyState text="Belum ada tarif ongkir. Tambahkan dulu di form atas." />}
       </Card>
     </div>
   );
