@@ -327,7 +327,9 @@ function OrdersPage({ token }) {
   const [error, setError] = useState("");
   const [processingId, setProcessingId] = useState(null);
   const [approvedIds, setApprovedIds] = useState({});
+  const [finishedIds, setFinishedIds] = useState({});
   const [printingOrder, setPrintingOrder] = useState(null);
+  const [printingType, setPrintingType] = useState("nota"); // "nota" | "surat_jalan"
 
   async function load() {
     setLoading(true);
@@ -359,8 +361,14 @@ function OrdersPage({ token }) {
     setProcessingId(null);
   }
 
+  function openPrint(order, type) {
+    setPrintingOrder(order);
+    setPrintingType(type);
+  }
+
   function selesai(orderId) {
-    setOrders((prev) => prev.filter((o) => o.id !== orderId));
+    // Tidak dihapus dari daftar - cuma ditandai selesai, tetap kelihatan di halaman ini
+    setFinishedIds((prev) => ({ ...prev, [orderId]: true }));
   }
 
   if (loading) return <LoadingState />;
@@ -368,7 +376,7 @@ function OrdersPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Approve Pesanan" subtitle={`${orders.length} pesanan menunggu persetujuan`} />
+      <PageHeader title="Approve Pesanan" subtitle={`${orders.length} pesanan diproses hari ini`} />
       {orders.length === 0 ? (
         <EmptyState text="Tidak ada pesanan yang menunggu persetujuan saat ini." />
       ) : (
@@ -384,16 +392,40 @@ function OrdersPage({ token }) {
                 </p>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                {approvedIds[o.id] ? (
+                {finishedIds[o.id] ? (
+                  <>
+                    <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#EFE1BE", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700 }}>
+                      <Check size={14} /> Selesai
+                    </span>
+                    <button
+                      onClick={() => openPrint(o, "nota")}
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      <Printer size={14} /> Nota
+                    </button>
+                    <button
+                      onClick={() => openPrint(o, "surat_jalan")}
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      <Printer size={14} /> Surat Jalan
+                    </button>
+                  </>
+                ) : approvedIds[o.id] ? (
                   <>
                     <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
                       <Check size={14} /> Disetujui
                     </span>
                     <button
-                      onClick={() => setPrintingOrder(o)}
+                      onClick={() => openPrint(o, "nota")}
                       style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
                     >
                       <Printer size={14} /> Cetak Nota
+                    </button>
+                    <button
+                      onClick={() => openPrint(o, "surat_jalan")}
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      <Printer size={14} /> Cetak Surat Jalan
                     </button>
                     <button
                       onClick={() => selesai(o.id)}
@@ -426,7 +458,7 @@ function OrdersPage({ token }) {
         ))
       )}
 
-      {printingOrder && <NotaPrintModal order={printingOrder} onClose={() => setPrintingOrder(null)} />}
+      {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} onClose={() => setPrintingOrder(null)} />}
     </div>
   );
 }
@@ -434,9 +466,10 @@ function OrdersPage({ token }) {
 // ============================================================
 // MODAL CETAK NOTA
 // ============================================================
-function NotaPrintModal({ order, onClose }) {
+function NotaPrintModal({ order, type, onClose }) {
   const items = order.order_items || [];
   const total = items.reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+  const isSuratJalan = type === "surat_jalan";
 
   return (
     <div className="nota-print-overlay" style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
@@ -453,7 +486,7 @@ function NotaPrintModal({ order, onClose }) {
         <div className="nota-print-area" style={{ padding: 32 }}>
           <div style={{ textAlign: "center", marginBottom: 20, paddingBottom: 16, borderBottom: "2px solid #24272B" }}>
             <p className="disp" style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{COMPANY_NAME}</p>
-            <p style={{ fontSize: 11, color: "#6B6F75", margin: "2px 0 0" }}>NOTA PENJUALAN</p>
+            <p style={{ fontSize: 11, color: "#6B6F75", margin: "2px 0 0" }}>{isSuratJalan ? "SURAT JALAN" : "NOTA PENJUALAN"}</p>
           </div>
 
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20, fontSize: 12.5 }}>
@@ -466,40 +499,75 @@ function NotaPrintModal({ order, onClose }) {
               )}
             </div>
             <div style={{ textAlign: "right" }}>
-              <p style={{ margin: "0 0 3px" }}><strong>No Nota:</strong> {order.no_nota}</p>
+              <p style={{ margin: "0 0 3px" }}><strong>{isSuratJalan ? "No Surat Jalan" : "No Nota"}:</strong> {order.no_nota}</p>
               <p style={{ margin: 0 }}>{new Date(order.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
             </div>
           </div>
 
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 16 }}>
-            <thead>
-              <tr style={{ borderBottom: "1.5px solid #24272B" }}>
-                <th style={{ textAlign: "left", padding: "6px 4px" }}>Barang</th>
-                <th style={{ textAlign: "center", padding: "6px 4px" }}>Qty</th>
-                <th style={{ textAlign: "right", padding: "6px 4px" }}>Harga</th>
-                <th style={{ textAlign: "right", padding: "6px 4px" }}>Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it) => (
-                <tr key={it.id} style={{ borderBottom: "1px solid #EDEAE3" }}>
-                  <td style={{ padding: "6px 4px" }}>{it.products?.nama}</td>
-                  <td style={{ padding: "6px 4px", textAlign: "center" }}>{it.qty} {it.products?.satuan}</td>
-                  <td style={{ padding: "6px 4px", textAlign: "right" }}>{rupiah(it.harga_dropship || it.harga_satuan)}</td>
-                  <td style={{ padding: "6px 4px", textAlign: "right" }}>{rupiah((it.harga_dropship || it.harga_satuan) * it.qty)}</td>
+          {isSuratJalan ? (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 16 }}>
+              <thead>
+                <tr style={{ borderBottom: "1.5px solid #24272B" }}>
+                  <th style={{ textAlign: "left", padding: "6px 4px", width: 36 }}>No</th>
+                  <th style={{ textAlign: "left", padding: "6px 4px" }}>Barang</th>
+                  <th style={{ textAlign: "center", padding: "6px 4px" }}>Qty</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {items.map((it, i) => (
+                  <tr key={it.id} style={{ borderBottom: "1px solid #EDEAE3" }}>
+                    <td style={{ padding: "6px 4px" }}>{i + 1}</td>
+                    <td style={{ padding: "6px 4px" }}>{it.products?.nama}</td>
+                    <td style={{ padding: "6px 4px", textAlign: "center" }}>{it.qty} {it.products?.satuan}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 16 }}>
+              <thead>
+                <tr style={{ borderBottom: "1.5px solid #24272B" }}>
+                  <th style={{ textAlign: "left", padding: "6px 4px" }}>Barang</th>
+                  <th style={{ textAlign: "center", padding: "6px 4px" }}>Qty</th>
+                  <th style={{ textAlign: "right", padding: "6px 4px" }}>Harga</th>
+                  <th style={{ textAlign: "right", padding: "6px 4px" }}>Subtotal</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it) => (
+                  <tr key={it.id} style={{ borderBottom: "1px solid #EDEAE3" }}>
+                    <td style={{ padding: "6px 4px" }}>{it.products?.nama}</td>
+                    <td style={{ padding: "6px 4px", textAlign: "center" }}>{it.qty} {it.products?.satuan}</td>
+                    <td style={{ padding: "6px 4px", textAlign: "right" }}>{rupiah(it.harga_dropship || it.harga_satuan)}</td>
+                    <td style={{ padding: "6px 4px", textAlign: "right" }}>{rupiah((it.harga_dropship || it.harga_satuan) * it.qty)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
 
-          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
-            <div style={{ width: 200, display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "1.5px solid #24272B" }}>
-              <span style={{ fontWeight: 700, fontSize: 13.5 }}>TOTAL</span>
-              <span className="disp" style={{ fontWeight: 700, fontSize: 17 }}>{rupiah(total)}</span>
+          {isSuratJalan ? (
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 40, fontSize: 12 }}>
+              <div style={{ textAlign: "center", width: "45%" }}>
+                <p style={{ margin: "0 0 50px" }}>Pengirim,</p>
+                <p style={{ margin: 0, borderTop: "1px solid #24272B", paddingTop: 6 }}>( ......................... )</p>
+              </div>
+              <div style={{ textAlign: "center", width: "45%" }}>
+                <p style={{ margin: "0 0 50px" }}>Penerima,</p>
+                <p style={{ margin: 0, borderTop: "1px solid #24272B", paddingTop: 6 }}>( ......................... )</p>
+              </div>
             </div>
-          </div>
-
-          <p style={{ textAlign: "center", fontSize: 10.5, color: "#9CA0A6", margin: 0 }}>Terima kasih atas pesanan Anda</p>
+          ) : (
+            <>
+              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+                <div style={{ width: 200, display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "1.5px solid #24272B" }}>
+                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>TOTAL</span>
+                  <span className="disp" style={{ fontWeight: 700, fontSize: 17 }}>{rupiah(total)}</span>
+                </div>
+              </div>
+              <p style={{ textAlign: "center", fontSize: 10.5, color: "#9CA0A6", margin: 0 }}>Terima kasih atas pesanan Anda</p>
+            </>
+          )}
         </div>
 
         <div className="no-print" style={{ display: "flex", gap: 10, padding: "16px 32px 24px" }}>
