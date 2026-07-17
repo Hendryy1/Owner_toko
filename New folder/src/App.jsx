@@ -142,6 +142,7 @@ export default function OwnerDashboard() {
         {page === "keuangan" && <KeuanganPage token={token} />}
         {page === "piutang" && <PiutangPage token={token} />}
         {page === "barang" && <BarangTerlarisPage token={token} />}
+        {page === "produk" && <ProductPage token={token} />}
         {page === "stock" && <StockItemPage token={token} />}
         {page === "inbound" && <InboundPage token={token} />}
         {page === "cashback" && <CashbackPage token={token} />}
@@ -214,6 +215,7 @@ function Sidebar({ page, setPage, profile, onLogout }) {
     { key: "keuangan", label: "Laporan Keuangan", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "piutang", label: "Piutang", icon: AlertCircle, roles: ["owner", "admin_keuangan"] },
     { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
+    { key: "produk", label: "Product", icon: Package, roles: ["owner"] },
     { key: "stock", label: "Stock Item", icon: Boxes, roles: ["owner"] },
     { key: "inbound", label: "Inbound", icon: PackagePlus, roles: ["owner"] },
     { key: "cashback", label: "Cashback", icon: Gift, roles: ["owner"] },
@@ -3116,6 +3118,273 @@ function FreeOngkirPage({ token }) {
         </table>
         {products.length === 0 && <EmptyState text="Belum ada barang." />}
       </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// PRODUCT (khusus Owner) - CRUD lengkap + gambar
+// ============================================================
+function ProductPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState([]);
+  const [error, setError] = useState("");
+  const [editingProduct, setEditingProduct] = useState(null); // null = tutup modal, {} = tambah baru, {...} = edit
+  const [deletingId, setDeletingId] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "products?select=*&order=kode.asc");
+      setProducts(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function hapusProduk(id) {
+    if (!confirm("Hapus produk ini? Data yang sudah pernah dipakai di order lama tetap aman, cuma produk ini tidak akan bisa dipesan lagi.")) return;
+    setDeletingId(id);
+    try {
+      await supabaseFetch(token, `products?id=eq.${id}`, { method: "DELETE" });
+      setProducts((prev) => prev.filter((p) => p.id !== id));
+    } catch (e) {
+      alert("Gagal hapus (mungkin produk ini masih dipakai di order lama - coba nonaktifkan saja lewat Edit): " + e.message);
+    }
+    setDeletingId(null);
+  }
+
+  function handleSaved(saved) {
+    setProducts((prev) => {
+      const exists = prev.some((p) => p.id === saved.id);
+      const next = exists ? prev.map((p) => (p.id === saved.id ? saved : p)) : [...prev, saved];
+      return next.sort((a, b) => a.kode.localeCompare(b.kode));
+    });
+    setEditingProduct(null);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 22 }}>
+        <PageHeader title="Product" subtitle={`${products.length} produk terdaftar`} />
+        <button
+          onClick={() => setEditingProduct({})}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}
+        >
+          <PackagePlus size={16} /> Tambah Produk
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14 }}>
+        {products.map((p) => (
+          <Card key={p.id} style={{ padding: 14 }}>
+            <div style={{ width: "100%", aspectRatio: "1", borderRadius: 10, background: p.gambar_url ? `url(${p.gambar_url}) center/cover` : "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
+              {!p.gambar_url && <Package size={32} color="#D8D6D0" />}
+            </div>
+            <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700 }}>{p.kode}</p>
+            <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 4px", lineHeight: 1.3 }}>{p.nama}</p>
+            <p className="disp" style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>{rupiah(p.harga_jual)}</p>
+            <span style={{ display: "inline-block", background: p.aktif ? "#D8E9E6" : "#F7F5F1", color: p.aktif ? "#28685D" : "#9CA0A6", padding: "2px 9px", borderRadius: 999, fontSize: 10.5, fontWeight: 700, marginBottom: 10 }}>
+              {p.aktif ? "Aktif" : "Nonaktif"}
+            </span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={() => setEditingProduct(p)} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
+                <FileEdit size={11} /> Edit
+              </button>
+              <button disabled={deletingId === p.id} onClick={() => hapusProduk(p.id)} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid #F0CFC7", background: "#fff", color: "#C0392B", fontSize: 11.5, fontWeight: 600 }}>
+                Hapus
+              </button>
+            </div>
+          </Card>
+        ))}
+      </div>
+      {products.length === 0 && <EmptyState text="Belum ada produk. Klik 'Tambah Produk' untuk mulai." />}
+
+      {editingProduct !== null && (
+        <ProductFormModal token={token} product={editingProduct} onClose={() => setEditingProduct(null)} onSaved={handleSaved} />
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// MODAL FORM PRODUCT (tambah / edit)
+// ============================================================
+function ProductFormModal({ token, product, onClose, onSaved }) {
+  const isNew = !product.id;
+  const [form, setForm] = useState({
+    kode: product.kode || "", nama: product.nama || "", kategori: product.kategori || "", satuan: product.satuan || "",
+    hargaJual: product.harga_jual || "", hargaAsli: product.harga_asli || "", hargaModal: product.harga_modal || "",
+    stockAwal: product.stock_awal ?? 0, isiPerKoli: product.isi_per_koli || "", diskonKoliPct: product.diskon_koli_pct ? Number(product.diskon_koli_pct) * 100 : "",
+    cashbackPerKoli: product.cashback_per_koli || "", deskripsi: product.deskripsi || "", aktif: product.aktif ?? true,
+  });
+  const [gambarUrl, setGambarUrl] = useState(product.gambar_url || "");
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function uploadGambar(file) {
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `${form.kode || "produk"}-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setGambarUrl(`${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`);
+    } catch (e) {
+      alert("Gagal upload gambar: " + e.message);
+    }
+    setUploading(false);
+  }
+
+  async function submit() {
+    if (!form.kode.trim() || !form.nama.trim() || !form.satuan.trim() || !form.hargaJual) {
+      setError("Kode, Nama, Satuan, dan Harga Jual wajib diisi.");
+      return;
+    }
+    setError("");
+    setSaving(true);
+    try {
+      const body = {
+        kode: form.kode.trim().toUpperCase(), nama: form.nama.trim(), kategori: form.kategori || null, satuan: form.satuan.trim(),
+        harga_jual: Number(form.hargaJual), harga_asli: form.hargaAsli ? Number(form.hargaAsli) : null,
+        harga_modal: form.hargaModal ? Number(form.hargaModal) : null, stock_awal: Number(form.stockAwal) || 0,
+        isi_per_koli: Number(form.isiPerKoli) || 0, diskon_koli_pct: (Number(form.diskonKoliPct) || 0) / 100,
+        cashback_per_koli: Number(form.cashbackPerKoli) || 0, deskripsi: form.deskripsi || null,
+        gambar_url: gambarUrl || null, aktif: form.aktif,
+      };
+      let saved;
+      if (isNew) {
+        const [inserted] = await supabaseFetch(token, "products", { method: "POST", body: JSON.stringify(body) });
+        saved = inserted;
+      } else {
+        const [updated] = await supabaseFetch(token, `products?id=eq.${product.id}`, { method: "PATCH", body: JSON.stringify(body) });
+        saved = updated;
+      }
+      onSaved(saved);
+    } catch (e) {
+      setError(e.message);
+    }
+    setSaving(false);
+  }
+
+  const fieldStyle = { width: "100%", padding: "9px 11px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13, outline: "none" };
+  const labelStyle = { fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 5, display: "block" };
+  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 14, width: 560, maxHeight: "88vh", overflowY: "auto", padding: 28 }}>
+        <h2 className="disp" style={{ fontSize: 20, fontWeight: 700, color: "#24272B", margin: "0 0 18px" }}>
+          {isNew ? "Tambah Produk" : `Edit Produk - ${product.kode}`}
+        </h2>
+
+        {/* GAMBAR */}
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Gambar Produk</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 70, height: 70, borderRadius: 10, background: gambarUrl ? `url(${gambarUrl}) center/cover` : "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              {!gambarUrl && <Package size={22} color="#D8D6D0" />}
+            </div>
+            <label style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+              {uploading ? "Mengupload..." : "Pilih Gambar"}
+              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploading} onChange={(e) => { if (e.target.files[0]) uploadGambar(e.target.files[0]); }} />
+            </label>
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div>
+            <label style={labelStyle}>Kode Barang</label>
+            <input value={form.kode} onChange={set("kode")} placeholder="misal B008" style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Kategori</label>
+            <input value={form.kategori} onChange={set("kategori")} placeholder="misal Sparepart" style={fieldStyle} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={labelStyle}>Nama Barang</label>
+          <input value={form.nama} onChange={set("nama")} placeholder="Nama produk" style={fieldStyle} />
+        </div>
+
+        <div style={{ marginBottom: 12 }}>
+          <label style={labelStyle}>Deskripsi (opsional)</label>
+          <textarea value={form.deskripsi} onChange={set("deskripsi")} rows={3} placeholder="Deskripsi produk untuk ditampilkan ke toko" style={{ ...fieldStyle, resize: "vertical" }} />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div>
+            <label style={labelStyle}>Satuan</label>
+            <input value={form.satuan} onChange={set("satuan")} placeholder="misal Set" style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Harga Jual (Rp)</label>
+            <input type="number" value={form.hargaJual} onChange={set("hargaJual")} style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Harga Asli (opsional)</label>
+            <input type="number" value={form.hargaAsli} onChange={set("hargaAsli")} style={fieldStyle} />
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div>
+            <label style={labelStyle}>Harga Modal (Rp) - rahasia</label>
+            <input type="number" value={form.hargaModal} onChange={set("hargaModal")} style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Stock Awal</label>
+            <input type="number" value={form.stockAwal} onChange={set("stockAwal")} style={fieldStyle} />
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
+          <div>
+            <label style={labelStyle}>Jumlah 1 Koli</label>
+            <input type="number" value={form.isiPerKoli} onChange={set("isiPerKoli")} style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Diskon Koli (%)</label>
+            <input type="number" value={form.diskonKoliPct} onChange={set("diskonKoliPct")} style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Cashback/Koli (Rp)</label>
+            <input type="number" value={form.cashbackPerKoli} onChange={set("cashbackPerKoli")} style={fieldStyle} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#24272B", cursor: "pointer" }}>
+            <input type="checkbox" checked={form.aktif} onChange={(e) => setForm({ ...form, aktif: e.target.checked })} />
+            Produk aktif (tampil di katalog Web App)
+          </label>
+        </div>
+
+        {error && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBEAEA", color: "#C0392B", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 16 }}>
+            <AlertCircle size={14} /> {error}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
+            Batal
+          </button>
+          <button onClick={submit} disabled={saving || uploading} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13 }}>
+            {saving ? "Menyimpan..." : isNew ? "Tambah Produk" : "Simpan Perubahan"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
