@@ -1875,6 +1875,15 @@ function RekapNotaPage({ token }) {
   const [filterMonth, setFilterMonth] = useState(0); // 0 = semua bulan
   const [filterStatus, setFilterStatus] = useState("semua");
   const [processingId, setProcessingId] = useState(null);
+  const [printingOrder, setPrintingOrder] = useState(null);
+  const [printingType, setPrintingType] = useState("nota");
+  const [notaSettings, setNotaSettings] = useState(null);
+
+  useEffect(() => {
+    supabaseFetch(token, "nota_settings?select=*&limit=1")
+      .then((rows) => setNotaSettings(rows[0] || null))
+      .catch(() => setNotaSettings(null));
+  }, []);
 
   async function load() {
     setLoading(true);
@@ -1882,13 +1891,27 @@ function RekapNotaPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,clients(nama,kode,jenis_pembayaran),order_items(subtotal_setelah_diskon),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
+        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  function openPrint(order, type) {
+    setPrintingOrder(order);
+    setPrintingType(type);
+  }
+
+  async function confirmNotaSiap(orderId) {
+    setProcessingId(orderId);
+    try {
+      await supabaseFetch(token, `orders?id=eq.${orderId}`, { method: "PATCH", body: JSON.stringify({ status: "menunggu_pengiriman" }) });
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "menunggu_pengiriman" } : o)));
+    } catch (e) { alert("Gagal update: " + e.message); }
+    setProcessingId(null);
+  }
 
   const BULAN = ["Semua Bulan", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
   const yearsAvailable = Array.from(new Set(orders.map((o) => new Date(o.created_at).getFullYear()))).sort((a, b) => b - a);
@@ -2004,11 +2027,26 @@ function RekapNotaPage({ token }) {
                     ) : "-"}
                   </td>
                   <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
-                    {cb && cb.status === "belum_dibayar" && (
-                      <button disabled={processingId === o.id} onClick={() => tandaiCashbackDibayar(o.id, cb.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 700 }}>
-                        Cashback Dibayar
-                      </button>
-                    )}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {o.status === "menunggu_pembayaran" && o.status_bayar === "lunas" && (
+                        <>
+                          <button onClick={() => openPrint(o, "nota")} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                            <Printer size={12} /> Nota
+                          </button>
+                          <button onClick={() => openPrint(o, "surat_jalan")} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
+                            <Printer size={12} /> Surat Jalan
+                          </button>
+                          <button disabled={processingId === o.id} onClick={() => confirmNotaSiap(o.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 700 }}>
+                            Konfirmasi Nota Siap
+                          </button>
+                        </>
+                      )}
+                      {cb && cb.status === "belum_dibayar" && (
+                        <button disabled={processingId === o.id} onClick={() => tandaiCashbackDibayar(o.id, cb.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 700 }}>
+                          Cashback Dibayar
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -2017,6 +2055,8 @@ function RekapNotaPage({ token }) {
         </table>
         {filtered.length === 0 && <EmptyState text="Tidak ada nota pada periode/filter ini." />}
       </Card>
+
+      {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} settings={notaSettings} onClose={() => setPrintingOrder(null)} />}
     </div>
   );
 }
@@ -2029,15 +2069,6 @@ function KonfirmasiPembayaranPage({ token }) {
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
   const [processingId, setProcessingId] = useState(null);
-  const [printingOrder, setPrintingOrder] = useState(null);
-  const [printingType, setPrintingType] = useState("nota");
-  const [notaSettings, setNotaSettings] = useState(null);
-
-  useEffect(() => {
-    supabaseFetch(token, "nota_settings?select=*&limit=1")
-      .then((rows) => setNotaSettings(rows[0] || null))
-      .catch(() => setNotaSettings(null));
-  }, []);
 
   async function load() {
     setLoading(true);
@@ -2046,7 +2077,7 @@ function KonfirmasiPembayaranPage({ token }) {
       // Ambil order yang PERNAH masuk tahap ini: masih menunggu_pembayaran ATAU
       // status_bayar sudah lunas (walau sekarang sudah lanjut ke tahap manapun) -
       // supaya ada riwayat permanen, tidak hilang begitu pindah tahap berikutnya.
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan))&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,bukti_transfer_url,clients(nama,kode,jenis_pembayaran)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -2062,53 +2093,36 @@ function KonfirmasiPembayaranPage({ token }) {
     setProcessingId(null);
   }
 
-  async function confirmNotaSiap(orderId) {
-    setProcessingId(orderId);
-    try {
-      await supabaseFetch(token, `orders?id=eq.${orderId}`, { method: "PATCH", body: JSON.stringify({ status: "menunggu_pengiriman" }) });
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "menunggu_pengiriman" } : o)));
-    } catch (e) { alert("Gagal update: " + e.message); }
-    setProcessingId(null);
-  }
-
-  function openPrint(order, type) {
-    setPrintingOrder(order);
-    setPrintingType(type);
-  }
-
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
   const menunggu = orders.filter((o) => o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas");
-  const riwayat = orders.filter((o) => o.status !== "menunggu_pembayaran" || o.status_bayar === "lunas");
+  const riwayat = orders.filter((o) => o.status_bayar === "lunas");
 
   function renderCard(o) {
-    const isSiapKirim = o.status !== "menunggu_pembayaran"; // sudah lanjut tahap berikutnya
     const isLunas = o.status_bayar === "lunas";
     const hasProof = !!o.bukti_transfer_url;
     return (
       <Card key={o.id} style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: (isLunas || isSiapKirim) ? 12 : 0 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: isLunas ? 0 : 12 }}>
           <div>
             <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
             <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode}) · {o.clients?.jenis_pembayaran}</p>
           </div>
-          {!isLunas && !isSiapKirim && (
-            hasProof ? (
-              <a href={o.bukti_transfer_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#B8860B", fontWeight: 700, textDecoration: "underline" }}>
-                Lihat Bukti Transfer
-              </a>
-            ) : (
-              <span style={{ fontSize: 12, color: "#9CA0A6", fontStyle: "italic" }}>Menunggu bukti transfer</span>
-            )
+          {isLunas ? (
+            <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
+              <Check size={14} /> Pembayaran Diterima
+            </span>
+          ) : hasProof ? (
+            <a href={o.bukti_transfer_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#B8860B", fontWeight: 700, textDecoration: "underline" }}>
+              Lihat Bukti Transfer
+            </a>
+          ) : (
+            <span style={{ fontSize: 12, color: "#9CA0A6", fontStyle: "italic" }}>Menunggu bukti transfer</span>
           )}
         </div>
 
-        {isSiapKirim ? (
-          <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700, width: "fit-content" }}>
-            <Check size={14} /> Nota Siap - lanjut ke Proses Pengiriman
-          </span>
-        ) : !isLunas ? (
+        {!isLunas && (
           <button
             disabled={processingId === o.id || !hasProof}
             onClick={() => confirmPayment(o.id)}
@@ -2116,25 +2130,6 @@ function KonfirmasiPembayaranPage({ token }) {
           >
             <Check size={14} /> Pembayaran Diterima
           </button>
-        ) : (
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
-              <Check size={14} /> Pembayaran Diterima
-            </span>
-            <button onClick={() => openPrint(o, "nota")} style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
-              <Printer size={14} /> Cetak Nota
-            </button>
-            <button onClick={() => openPrint(o, "surat_jalan")} style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}>
-              <Printer size={14} /> Cetak Surat Jalan
-            </button>
-            <button
-              disabled={processingId === o.id}
-              onClick={() => confirmNotaSiap(o.id)}
-              style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
-            >
-              Konfirmasi Nota Siap
-            </button>
-          </div>
         )}
       </Card>
     );
@@ -2155,8 +2150,6 @@ function KonfirmasiPembayaranPage({ token }) {
       ) : (
         riwayat.map(renderCard)
       )}
-
-      {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} settings={notaSettings} onClose={() => setPrintingOrder(null)} />}
     </div>
   );
 }
