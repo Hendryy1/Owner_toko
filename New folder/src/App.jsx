@@ -2028,7 +2028,7 @@ function RekapNotaPage({ token }) {
                   </td>
                   <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", gap: 6 }}>
-                      {o.status === "menunggu_pembayaran" && o.status_bayar === "lunas" && (
+                      {o.status_bayar === "lunas" && (
                         <>
                           <button onClick={() => openPrint(o, "nota")} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
                             <Printer size={12} /> Nota
@@ -2036,10 +2036,12 @@ function RekapNotaPage({ token }) {
                           <button onClick={() => openPrint(o, "surat_jalan")} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
                             <Printer size={12} /> Surat Jalan
                           </button>
-                          <button disabled={processingId === o.id} onClick={() => confirmNotaSiap(o.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 700 }}>
-                            Konfirmasi Nota Siap
-                          </button>
                         </>
+                      )}
+                      {o.status === "menunggu_pembayaran" && o.status_bayar === "lunas" && (
+                        <button disabled={processingId === o.id} onClick={() => confirmNotaSiap(o.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 700 }}>
+                          Konfirmasi Nota Siap
+                        </button>
                       )}
                       {cb && cb.status === "belum_dibayar" && (
                         <button disabled={processingId === o.id} onClick={() => tandaiCashbackDibayar(o.id, cb.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 700 }}>
@@ -2077,7 +2079,7 @@ function KonfirmasiPembayaranPage({ token }) {
       // Ambil order yang PERNAH masuk tahap ini: masih menunggu_pembayaran ATAU
       // status_bayar sudah lunas (walau sekarang sudah lanjut ke tahap manapun) -
       // supaya ada riwayat permanen, tidak hilang begitu pindah tahap berikutnya.
-      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,bukti_transfer_url,clients(nama,kode,jenis_pembayaran)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,bukti_transfer_url,clients(nama,kode,jenis_pembayaran),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -2102,12 +2104,14 @@ function KonfirmasiPembayaranPage({ token }) {
   function renderCard(o) {
     const isLunas = o.status_bayar === "lunas";
     const hasProof = !!o.bukti_transfer_url;
+    const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
     return (
       <Card key={o.id} style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: isLunas ? 0 : 12 }}>
           <div>
             <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
             <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode}) · {o.clients?.jenis_pembayaran}</p>
+            <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "4px 0 0" }}>{rupiah(total)}</p>
           </div>
           {isLunas ? (
             <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
