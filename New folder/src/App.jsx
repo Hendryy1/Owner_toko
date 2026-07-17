@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus
+  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -134,6 +134,7 @@ export default function OwnerDashboard() {
         {page === "overview" && <OverviewPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "riwayat" && <RiwayatOrderPage token={token} />}
+        {page === "rekap_nota" && <RekapNotaPage token={token} />}
         {page === "clients" && <ClientsPage token={token} />}
         {page === "keuangan" && <KeuanganPage token={token} />}
         {page === "piutang" && <PiutangPage token={token} />}
@@ -200,6 +201,7 @@ function Sidebar({ page, setPage, profile, onLogout }) {
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
+    { key: "rekap_nota", label: "Rekap Nota", icon: Receipt, roles: ["owner", "admin_keuangan"] },
     { key: "clients", label: "Approve Toko Baru", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "keuangan", label: "Laporan Keuangan", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "piutang", label: "Piutang", icon: AlertCircle, roles: ["owner", "admin_keuangan"] },
@@ -1778,6 +1780,164 @@ function InboundPage({ token }) {
           </tbody>
         </table>
         {history.length === 0 && <EmptyState text="Belum ada riwayat stock masuk." />}
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// REKAP NOTA (Lunas / Tempo / Cashback)
+// ============================================================
+function RekapNotaPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState([]);
+  const [error, setError] = useState("");
+  const now = new Date();
+  const [filterYear, setFilterYear] = useState(now.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(0); // 0 = semua bulan
+  const [filterStatus, setFilterStatus] = useState("semua"); // semua | lunas | belum_lunas
+  const [processingId, setProcessingId] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(
+        token,
+        "orders?select=id,no_nota,created_at,jatuh_tempo,status_bayar,clients(nama,kode,jenis_pembayaran),order_items(subtotal_setelah_diskon),cashback_ledger(id,nilai_cashback,status)&status=neq.ditolak&order=created_at.desc&limit=500"
+      );
+      setOrders(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  const BULAN = ["Semua Bulan", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const yearsAvailable = Array.from(new Set(orders.map((o) => new Date(o.created_at).getFullYear()))).sort((a, b) => b - a);
+  if (yearsAvailable.length === 0) yearsAvailable.push(now.getFullYear());
+  if (!yearsAvailable.includes(Number(filterYear))) yearsAvailable.unshift(Number(filterYear));
+
+  function orderTotal(o) {
+    return (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+  }
+
+  const filtered = orders.filter((o) => {
+    const d = new Date(o.created_at);
+    if (d.getFullYear() !== Number(filterYear)) return false;
+    if (filterMonth !== 0 && d.getMonth() + 1 !== Number(filterMonth)) return false;
+    if (filterStatus !== "semua" && o.status_bayar !== filterStatus) return false;
+    return true;
+  });
+
+  const totalLunas = filtered.filter((o) => o.status_bayar === "lunas").reduce((s, o) => s + orderTotal(o), 0);
+  const totalBelumLunas = filtered.filter((o) => o.status_bayar !== "lunas").reduce((s, o) => s + orderTotal(o), 0);
+  const totalCashbackBelumDibayar = filtered.reduce((s, o) => {
+    const cb = o.cashback_ledger?.[0];
+    return s + (cb && cb.status === "belum_dibayar" ? Number(cb.nilai_cashback) : 0);
+  }, 0);
+
+  async function tandaiLunas(orderId) {
+    setProcessingId(orderId);
+    try {
+      await supabaseFetch(token, `orders?id=eq.${orderId}`, { method: "PATCH", body: JSON.stringify({ status_bayar: "lunas" }) });
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status_bayar: "lunas" } : o)));
+    } catch (e) { alert("Gagal update: " + e.message); }
+    setProcessingId(null);
+  }
+
+  async function tandaiCashbackDibayar(orderId, cashbackId) {
+    setProcessingId(orderId);
+    try {
+      await supabaseFetch(token, `cashback_ledger?id=eq.${cashbackId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "sudah_dibayar", tanggal_dibayar: new Date().toISOString().slice(0, 10) }),
+      });
+      setOrders((prev) => prev.map((o) => (
+        o.id === orderId ? { ...o, cashback_ledger: o.cashback_ledger.map((c) => (c.id === cashbackId ? { ...c, status: "sudah_dibayar" } : c)) } : o
+      )));
+    } catch (e) { alert("Gagal update: " + e.message); }
+    setProcessingId(null);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  return (
+    <div>
+      <PageHeader title="Rekap Nota" subtitle="Status Lunas, jatuh tempo, dan cashback tiap nota" />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 20 }}>
+        <StatCard label="Total Lunas (sesuai filter)" value={rupiah(totalLunas)} color="#28685D" bg="#D8E9E6" small />
+        <StatCard label="Total Belum Lunas" value={rupiah(totalBelumLunas)} color="#C0392B" bg="#FBEAEA" small />
+        <StatCard label="Cashback Belum Dibayar" value={rupiah(totalCashbackBelumDibayar)} color="#B8860B" bg="#FBF0D9" small />
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
+        <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {yearsAvailable.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {BULAN.map((b, i) => <option key={i} value={i}>{b}</option>)}
+        </select>
+        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          <option value="semua">Semua Status Bayar</option>
+          <option value="lunas">Lunas</option>
+          <option value="belum_lunas">Belum Lunas</option>
+        </select>
+      </div>
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["No Nota", "Toko", "Jenis Bayar", "Jatuh Tempo", "Status Bayar", "Total", "Cashback", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((o) => {
+              const isLunas = o.status_bayar === "lunas";
+              const cb = o.cashback_ledger?.[0];
+              return (
+                <tr key={o.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{o.no_nota}</td>
+                  <td style={{ padding: "12px 14px" }}>{o.clients?.nama}</td>
+                  <td style={{ padding: "12px 14px" }}>{o.clients?.jenis_pembayaran}</td>
+                  <td style={{ padding: "12px 14px" }}>{o.jatuh_tempo ? new Date(o.jatuh_tempo).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <span style={{ background: isLunas ? "#D8E9E6" : "#FBEAEA", color: isLunas ? "#28685D" : "#C0392B", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                      {isLunas ? "Lunas" : "Belum Lunas"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(orderTotal(o))}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    {cb ? (
+                      <span style={{ background: cb.status === "sudah_dibayar" ? "#D8E9E6" : "#FBF0D9", color: cb.status === "sudah_dibayar" ? "#28685D" : "#8A6A1A", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                        {rupiah(cb.nilai_cashback)} {cb.status === "sudah_dibayar" ? "(Dibayar)" : "(Belum)"}
+                      </span>
+                    ) : "-"}
+                  </td>
+                  <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {!isLunas && (
+                        <button disabled={processingId === o.id} onClick={() => tandaiLunas(o.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700 }}>
+                          Tandai Lunas
+                        </button>
+                      )}
+                      {cb && cb.status === "belum_dibayar" && (
+                        <button disabled={processingId === o.id} onClick={() => tandaiCashbackDibayar(o.id, cb.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 700 }}>
+                          Cashback Dibayar
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {filtered.length === 0 && <EmptyState text="Tidak ada nota pada periode/filter ini." />}
       </Card>
     </div>
   );
