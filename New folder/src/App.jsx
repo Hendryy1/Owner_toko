@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw
+  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer
 } from "lucide-react";
+
+const COMPANY_NAME = "PT Nama Perusahaan Anda";
 
 // ============================================================
 // KONEKSI SUPABASE
@@ -324,12 +326,14 @@ function OrdersPage({ token }) {
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
   const [processingId, setProcessingId] = useState(null);
+  const [approvedIds, setApprovedIds] = useState({});
+  const [printingOrder, setPrintingOrder] = useState(null);
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode)&status=eq.menunggu_persetujuan&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp),order_items(*,products(nama,satuan))&status=eq.menunggu_persetujuan&order=created_at.asc");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -343,11 +347,20 @@ function OrdersPage({ token }) {
         method: "PATCH",
         body: JSON.stringify({ status, disetujui_pada: new Date().toISOString() }),
       });
-      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      if (status === "ditolak") {
+        setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      } else {
+        // Jangan langsung hilang - tandai sudah disetujui, tampilkan tombol Cetak Nota dulu
+        setApprovedIds((prev) => ({ ...prev, [orderId]: true }));
+      }
     } catch (e) {
       alert("Gagal update: " + e.message);
     }
     setProcessingId(null);
+  }
+
+  function selesai(orderId) {
+    setOrders((prev) => prev.filter((o) => o.id !== orderId));
   }
 
   if (loading) return <LoadingState />;
@@ -371,25 +384,133 @@ function OrdersPage({ token }) {
                 </p>
               </div>
               <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  disabled={processingId === o.id}
-                  onClick={() => updateStatus(o.id, "ditolak")}
-                  style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #F0CFC7", background: "#fff", color: "#C0392B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
-                >
-                  <X size={14} /> Tolak
-                </button>
-                <button
-                  disabled={processingId === o.id}
-                  onClick={() => updateStatus(o.id, "menunggu_pengiriman")}
-                  style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
-                >
-                  <Check size={14} /> Setujui
-                </button>
+                {approvedIds[o.id] ? (
+                  <>
+                    <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
+                      <Check size={14} /> Disetujui
+                    </span>
+                    <button
+                      onClick={() => setPrintingOrder(o)}
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      <Printer size={14} /> Cetak Nota
+                    </button>
+                    <button
+                      onClick={() => selesai(o.id)}
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12.5, fontWeight: 700 }}
+                    >
+                      Selesai
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      disabled={processingId === o.id}
+                      onClick={() => updateStatus(o.id, "ditolak")}
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #F0CFC7", background: "#fff", color: "#C0392B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      <X size={14} /> Tolak
+                    </button>
+                    <button
+                      disabled={processingId === o.id}
+                      onClick={() => updateStatus(o.id, "menunggu_pengiriman")}
+                      style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
+                    >
+                      <Check size={14} /> Setujui
+                    </button>
+                  </>
+                )}
               </div>
             </div>
           </Card>
         ))
       )}
+
+      {printingOrder && <NotaPrintModal order={printingOrder} onClose={() => setPrintingOrder(null)} />}
+    </div>
+  );
+}
+
+// ============================================================
+// MODAL CETAK NOTA
+// ============================================================
+function NotaPrintModal({ order, onClose }) {
+  const items = order.order_items || [];
+  const total = items.reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+
+  return (
+    <div className="nota-print-overlay" style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          .nota-print-area, .nota-print-area * { visibility: visible; }
+          .nota-print-area { position: fixed; top: 0; left: 0; width: 100%; }
+          .nota-print-overlay { position: static !important; background: none !important; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+      <div style={{ background: "#fff", borderRadius: 14, width: 480, maxHeight: "90vh", overflowY: "auto", padding: 0 }}>
+        <div className="nota-print-area" style={{ padding: 32 }}>
+          <div style={{ textAlign: "center", marginBottom: 20, paddingBottom: 16, borderBottom: "2px solid #24272B" }}>
+            <p className="disp" style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{COMPANY_NAME}</p>
+            <p style={{ fontSize: 11, color: "#6B6F75", margin: "2px 0 0" }}>NOTA PENJUALAN</p>
+          </div>
+
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20, fontSize: 12.5 }}>
+            <div>
+              <p style={{ margin: "0 0 3px", fontWeight: 700 }}>{order.clients?.nama}</p>
+              <p style={{ margin: "0 0 3px", color: "#6B6F75" }}>{order.tujuan_alamat || order.clients?.alamat}</p>
+              <p style={{ margin: 0, color: "#6B6F75" }}>{order.tujuan_telp || order.clients?.telp}</p>
+              {order.is_dropship && (
+                <p style={{ margin: "4px 0 0", color: "#B8860B", fontWeight: 700 }}>DROPSHIP - a/n {order.nama_pengirim_dropship}</p>
+              )}
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <p style={{ margin: "0 0 3px" }}><strong>No Nota:</strong> {order.no_nota}</p>
+              <p style={{ margin: 0 }}>{new Date(order.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
+            </div>
+          </div>
+
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 16 }}>
+            <thead>
+              <tr style={{ borderBottom: "1.5px solid #24272B" }}>
+                <th style={{ textAlign: "left", padding: "6px 4px" }}>Barang</th>
+                <th style={{ textAlign: "center", padding: "6px 4px" }}>Qty</th>
+                <th style={{ textAlign: "right", padding: "6px 4px" }}>Harga</th>
+                <th style={{ textAlign: "right", padding: "6px 4px" }}>Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it) => (
+                <tr key={it.id} style={{ borderBottom: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "6px 4px" }}>{it.products?.nama}</td>
+                  <td style={{ padding: "6px 4px", textAlign: "center" }}>{it.qty} {it.products?.satuan}</td>
+                  <td style={{ padding: "6px 4px", textAlign: "right" }}>{rupiah(it.harga_dropship || it.harga_satuan)}</td>
+                  <td style={{ padding: "6px 4px", textAlign: "right" }}>{rupiah((it.harga_dropship || it.harga_satuan) * it.qty)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+            <div style={{ width: 200, display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "1.5px solid #24272B" }}>
+              <span style={{ fontWeight: 700, fontSize: 13.5 }}>TOTAL</span>
+              <span className="disp" style={{ fontWeight: 700, fontSize: 17 }}>{rupiah(total)}</span>
+            </div>
+          </div>
+
+          <p style={{ textAlign: "center", fontSize: 10.5, color: "#9CA0A6", margin: 0 }}>Terima kasih atas pesanan Anda</p>
+        </div>
+
+        <div className="no-print" style={{ display: "flex", gap: 10, padding: "16px 32px 24px" }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
+            Tutup
+          </button>
+          <button onClick={() => window.print()} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+            <Printer size={15} /> Print
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
