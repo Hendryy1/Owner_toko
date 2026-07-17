@@ -597,8 +597,13 @@ function NotaPrintModal({ order, type, settings, onClose }) {
   };
   const items = order.order_items || [];
   const subtotalSebelum = items.reduce((sum, it) => sum + Number(it.harga_satuan || 0) * it.qty, 0);
-  const totalBayar = items.reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
-  const totalDiskon = subtotalSebelum - totalBayar;
+  const totalSebelumDiskonNota = items.reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+  const diskonTambahanNilai = Number(order.diskon_tambahan_nilai || 0);
+  const diskonTambahanRupiah = order.diskon_tambahan_jenis === "persen"
+    ? totalSebelumDiskonNota * (diskonTambahanNilai / 100)
+    : diskonTambahanNilai;
+  const totalBayar = Math.max(0, totalSebelumDiskonNota - diskonTambahanRupiah);
+  const totalDiskon = subtotalSebelum - totalSebelumDiskonNota;
   const isSuratJalan = type === "surat_jalan";
   const isLunas = order.status_bayar === "lunas";
 
@@ -739,6 +744,15 @@ function NotaPrintModal({ order, type, settings, onClose }) {
                   <td style={{ padding: "3px 10px 3px 0", textAlign: "right" }}>Total Diskon (Promo Koli)</td>
                   <td style={{ padding: "3px 0", textAlign: "right" }}>{Math.round(totalDiskon).toLocaleString("id-ID")}</td>
                 </tr>
+                {diskonTambahanRupiah > 0 && (
+                  <tr>
+                    <td style={{ padding: "3px 10px 3px 0", textAlign: "right", color: "#B8860B" }}>
+                      Diskon Tambahan{order.diskon_tambahan_keterangan ? ` (${order.diskon_tambahan_keterangan})` : ""}
+                      {order.diskon_tambahan_jenis === "persen" ? ` ${diskonTambahanNilai}%` : ""}
+                    </td>
+                    <td style={{ padding: "3px 0", textAlign: "right", color: "#B8860B" }}>{Math.round(diskonTambahanRupiah).toLocaleString("id-ID")}</td>
+                  </tr>
+                )}
                 <tr style={{ borderTop: "2px solid #24272B" }}>
                   <td style={{ padding: "6px 10px 0 0", textAlign: "right", fontWeight: 700, fontSize: 14 }}>TOTAL BAYAR</td>
                   <td style={{ padding: "6px 0 0", textAlign: "right", fontWeight: 700, fontSize: 15 }}>{Math.round(totalBayar).toLocaleString("id-ID")}</td>
@@ -1895,7 +1909,7 @@ function RekapNotaPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
+        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -1923,7 +1937,10 @@ function RekapNotaPage({ token }) {
   if (!yearsAvailable.includes(Number(filterYear))) yearsAvailable.unshift(Number(filterYear));
 
   function orderTotal(o) {
-    return (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+    const sebelum = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+    const nilai = Number(o.diskon_tambahan_nilai || 0);
+    const potongan = o.diskon_tambahan_jenis === "persen" ? sebelum * (nilai / 100) : nilai;
+    return Math.max(0, sebelum - potongan);
   }
 
   // Status perjalanan pesanan - satu label yang mewakili semua tahap
@@ -2450,13 +2467,26 @@ function CashbackPage({ token }) {
     jenisCashback: "persen", nilaiCashback: "",
   });
 
+  // Diskon tambahan per barang (edit isi_per_koli & diskon_koli_pct langsung)
+  const [editingProductId, setEditingProductId] = useState(null);
+  const [editProductForm, setEditProductForm] = useState({ isiPerKoli: "", diskonKoliPct: "" });
+  const [savingProduct, setSavingProduct] = useState(false);
+
+  // Diskon tambahan per nota tertentu
+  const [notaSearch, setNotaSearch] = useState("");
+  const [foundOrder, setFoundOrder] = useState(null);
+  const [notaSearchError, setNotaSearchError] = useState("");
+  const [notaDiskonForm, setNotaDiskonForm] = useState({ jenis: "persen", nilai: "", keterangan: "" });
+  const [savingNotaDiskon, setSavingNotaDiskon] = useState(false);
+  const [notaDiskonMsg, setNotaDiskonMsg] = useState("");
+
   async function load() {
     setLoading(true);
     setError("");
     try {
       const [ruleRows, productRows] = await Promise.all([
         supabaseFetch(token, "cashback_rules?select=*,products(kode,nama,satuan)&order=created_at.desc"),
-        supabaseFetch(token, "products?select=id,kode,nama,satuan&aktif=eq.true&order=kode.asc"),
+        supabaseFetch(token, "products?select=id,kode,nama,satuan,isi_per_koli,diskon_koli_pct&aktif=eq.true&order=kode.asc"),
       ]);
       setRules(ruleRows);
       setProducts(productRows);
@@ -2467,6 +2497,71 @@ function CashbackPage({ token }) {
 
   function resetForm() {
     setForm({ jenisRule: "nominal_bulanan", minimalOmzetBulan: "", productId: "", minimalQty: "", jenisCashback: "persen", nilaiCashback: "" });
+  }
+
+  function startEditProduct(p) {
+    setEditingProductId(p.id);
+    setEditProductForm({ isiPerKoli: p.isi_per_koli || "", diskonKoliPct: p.diskon_koli_pct ? (Number(p.diskon_koli_pct) * 100) : "" });
+  }
+
+  async function saveProductDiskon(productId) {
+    setSavingProduct(true);
+    try {
+      await supabaseFetch(token, `products?id=eq.${productId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          isi_per_koli: Number(editProductForm.isiPerKoli) || 0,
+          diskon_koli_pct: (Number(editProductForm.diskonKoliPct) || 0) / 100,
+        }),
+      });
+      setProducts((prev) => prev.map((p) => (
+        p.id === productId ? { ...p, isi_per_koli: Number(editProductForm.isiPerKoli) || 0, diskon_koli_pct: (Number(editProductForm.diskonKoliPct) || 0) / 100 } : p
+      )));
+      setEditingProductId(null);
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSavingProduct(false);
+  }
+
+  async function cariNota() {
+    setNotaSearchError("");
+    setFoundOrder(null);
+    setNotaDiskonMsg("");
+    if (!notaSearch.trim()) return;
+    try {
+      const rows = await supabaseFetch(token, `orders?select=id,no_nota,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,clients(nama)&no_nota=eq.${notaSearch.trim().toUpperCase()}`);
+      if (rows.length === 0) {
+        setNotaSearchError("Nota tidak ditemukan. Cek lagi nomornya.");
+        return;
+      }
+      setFoundOrder(rows[0]);
+      setNotaDiskonForm({
+        jenis: rows[0].diskon_tambahan_jenis || "persen",
+        nilai: rows[0].diskon_tambahan_nilai || "",
+        keterangan: rows[0].diskon_tambahan_keterangan || "",
+      });
+    } catch (e) {
+      setNotaSearchError(e.message);
+    }
+  }
+
+  async function saveNotaDiskon() {
+    setSavingNotaDiskon(true);
+    try {
+      await supabaseFetch(token, `orders?id=eq.${foundOrder.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          diskon_tambahan_jenis: notaDiskonForm.nilai ? notaDiskonForm.jenis : null,
+          diskon_tambahan_nilai: Number(notaDiskonForm.nilai) || 0,
+          diskon_tambahan_keterangan: notaDiskonForm.keterangan || null,
+        }),
+      });
+      setNotaDiskonMsg("Diskon tambahan untuk nota ini berhasil disimpan.");
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSavingNotaDiskon(false);
   }
 
   async function submitRule() {
@@ -2627,6 +2722,123 @@ function CashbackPage({ token }) {
           </tbody>
         </table>
         {rules.length === 0 && <EmptyState text="Belum ada aturan cashback." />}
+      </Card>
+
+      {/* ============ DISKON TAMBAHAN PER BARANG ============ */}
+      <h2 className="disp" style={{ fontSize: 20, fontWeight: 700, color: "#24272B", margin: "36px 0 4px" }}>Diskon Tambahan per Barang</h2>
+      <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 14px" }}>
+        Diskon standar 20% sudah termasuk di harga jual barang. Atur di sini kalau beli minimal sekian pcs/set/koli,
+        dapat diskon tambahan (dipotong dari harga asli, jadi total gabungan diskonnya) - misal standar 20% + tambahan 5% = total 25%.
+      </p>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Kode", "Nama Barang", "Minimal Qty", "Diskon Tambahan", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((p) => {
+              const isEditing = editingProductId === p.id;
+              return (
+                <tr key={p.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{p.kode}</td>
+                  <td style={{ padding: "12px 14px" }}>{p.nama}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    {isEditing ? (
+                      <input type="number" value={editProductForm.isiPerKoli} onChange={(e) => setEditProductForm({ ...editProductForm, isiPerKoli: e.target.value })} style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }} />
+                    ) : (
+                      p.isi_per_koli > 0 ? `${p.isi_per_koli} ${p.satuan}` : "-"
+                    )}
+                  </td>
+                  <td style={{ padding: "12px 14px" }}>
+                    {isEditing ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <input type="number" value={editProductForm.diskonKoliPct} onChange={(e) => setEditProductForm({ ...editProductForm, diskonKoliPct: e.target.value })} style={{ width: 70, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }} />
+                        <span style={{ fontSize: 12 }}>%</span>
+                      </div>
+                    ) : (
+                      p.diskon_koli_pct > 0 ? `+${(Number(p.diskon_koli_pct) * 100).toFixed(0)}%` : "-"
+                    )}
+                  </td>
+                  <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                    {isEditing ? (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => saveProductDiskon(p.id)} disabled={savingProduct} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700 }}>Simpan</button>
+                        <button onClick={() => setEditingProductId(null)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11 }}>Batal</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => startEditProduct(p)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                        <FileEdit size={11} /> Edit
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {products.length === 0 && <EmptyState text="Belum ada barang." />}
+      </Card>
+
+      {/* ============ DISKON TAMBAHAN PER NOTA TERTENTU ============ */}
+      <h2 className="disp" style={{ fontSize: 20, fontWeight: 700, color: "#24272B", margin: "36px 0 4px" }}>Diskon Tambahan per Nota Tertentu</h2>
+      <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 14px" }}>
+        Cari nomor nota, lalu beri diskon tambahan khusus untuk nota itu saja (misal kompensasi atau promo one-time).
+      </p>
+      <Card style={{ maxWidth: 560 }}>
+        <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+          <input
+            value={notaSearch} onChange={(e) => setNotaSearch(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && cariNota()}
+            placeholder="Masukkan No Nota, misal NOTA-0011"
+            style={{ flex: 1, padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5 }}
+          />
+          <button onClick={cariNota} style={{ padding: "10px 18px", borderRadius: 9, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13 }}>
+            Cari
+          </button>
+        </div>
+
+        {notaSearchError && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBEAEA", color: "#C0392B", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 14 }}>
+            <AlertCircle size={14} /> {notaSearchError}
+          </div>
+        )}
+
+        {foundOrder && (
+          <>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 14px" }}>
+              {foundOrder.no_nota} - {foundOrder.clients?.nama}
+            </p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div>
+                <label style={labelStyle}>Jenis Diskon</label>
+                <select value={notaDiskonForm.jenis} onChange={(e) => setNotaDiskonForm({ ...notaDiskonForm, jenis: e.target.value })} style={fieldStyle}>
+                  <option value="persen">Persen (%)</option>
+                  <option value="rupiah">Rupiah (Rp)</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Nilai Diskon</label>
+                <input type="number" value={notaDiskonForm.nilai} onChange={(e) => setNotaDiskonForm({ ...notaDiskonForm, nilai: e.target.value })} style={fieldStyle} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>Keterangan (opsional)</label>
+              <input value={notaDiskonForm.keterangan} onChange={(e) => setNotaDiskonForm({ ...notaDiskonForm, keterangan: e.target.value })} placeholder="misal kompensasi keterlambatan" style={fieldStyle} />
+            </div>
+            {notaDiskonMsg && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", color: "#28685D", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 14, fontWeight: 600 }}>
+                <Check size={14} /> {notaDiskonMsg}
+              </div>
+            )}
+            <button onClick={saveNotaDiskon} disabled={savingNotaDiskon} style={{ padding: "11px 22px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+              {savingNotaDiskon ? "Menyimpan..." : "Simpan Diskon Nota Ini"}
+            </button>
+          </>
+        )}
       </Card>
     </div>
   );
