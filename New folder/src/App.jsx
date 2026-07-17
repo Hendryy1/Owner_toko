@@ -3226,7 +3226,9 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
     cashbackPerKoli: product.cashback_per_koli || "", deskripsi: product.deskripsi || "", aktif: product.aktif ?? true,
   });
   const [gambarUrl, setGambarUrl] = useState(product.gambar_url || "");
+  const [fotoUtamaList, setFotoUtamaList] = useState([]); // [{id, url}] - foto tambahan untuk slider utama
   const [galeri, setGaleri] = useState([]); // [{id, url}] - foto tambahan untuk deskripsi
+  const [uploadingUtama, setUploadingUtama] = useState(false);
   const [uploadingGaleri, setUploadingGaleri] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -3234,16 +3236,19 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
 
   useEffect(() => {
     if (!product.id) return;
-    supabaseFetch(token, `product_images?select=id,url&product_id=eq.${product.id}&order=urutan.asc`)
-      .then(setGaleri)
-      .catch(() => setGaleri([]));
+    supabaseFetch(token, `product_images?select=id,url,tipe&product_id=eq.${product.id}&order=urutan.asc`)
+      .then((rows) => {
+        setFotoUtamaList(rows.filter((r) => r.tipe === "utama"));
+        setGaleri(rows.filter((r) => r.tipe !== "utama"));
+      })
+      .catch(() => { setFotoUtamaList([]); setGaleri([]); });
   }, [product.id]);
 
-  async function uploadGaleriFoto(file) {
-    setUploadingGaleri(true);
+  async function uploadFotoTipe(file, tipe, setUploadingFn, listState, setListFn) {
+    setUploadingFn(true);
     try {
       const ext = file.name.split(".").pop();
-      const filePath = `${form.kode || "produk"}-galeri-${Date.now()}.${ext}`;
+      const filePath = `${form.kode || "produk"}-${tipe}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
         headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
@@ -3252,29 +3257,28 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
       if (!res.ok) throw new Error(await res.text());
       const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
       if (isNew) {
-        // Produk belum tersimpan - simpan dulu ke state, di-insert setelah produk jadi (submit())
-        setGaleri((prev) => [...prev, { id: `temp-${Date.now()}`, url, isTemp: true }]);
+        setListFn((prev) => [...prev, { id: `temp-${Date.now()}`, url, tipe, isTemp: true }]);
       } else {
         const [inserted] = await supabaseFetch(token, "product_images", {
           method: "POST",
-          body: JSON.stringify({ product_id: product.id, url, urutan: galeri.length }),
+          body: JSON.stringify({ product_id: product.id, url, tipe, urutan: listState.length }),
         });
-        setGaleri((prev) => [...prev, inserted]);
+        setListFn((prev) => [...prev, inserted]);
       }
     } catch (e) {
-      alert("Gagal upload foto galeri: " + e.message);
+      alert("Gagal upload foto: " + e.message);
     }
-    setUploadingGaleri(false);
+    setUploadingFn(false);
   }
 
-  async function hapusGaleriFoto(img) {
+  async function hapusFoto(img, setListFn) {
     if (img.isTemp) {
-      setGaleri((prev) => prev.filter((g) => g.id !== img.id));
+      setListFn((prev) => prev.filter((g) => g.id !== img.id));
       return;
     }
     try {
       await supabaseFetch(token, `product_images?id=eq.${img.id}`, { method: "DELETE" });
-      setGaleri((prev) => prev.filter((g) => g.id !== img.id));
+      setListFn((prev) => prev.filter((g) => g.id !== img.id));
     } catch (e) {
       alert("Gagal hapus foto: " + e.message);
     }
@@ -3319,11 +3323,11 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
         const [inserted] = await supabaseFetch(token, "products", { method: "POST", body: JSON.stringify(body) });
         saved = inserted;
         // Simpan galeri yang sempat ditumpuk sementara (sebelum produk ini punya id asli)
-        const tempImages = galeri.filter((g) => g.isTemp);
+        const tempImages = [...fotoUtamaList, ...galeri].filter((g) => g.isTemp);
         if (tempImages.length > 0) {
           await supabaseFetch(token, "product_images", {
             method: "POST",
-            body: JSON.stringify(tempImages.map((g, i) => ({ product_id: saved.id, url: g.url, urutan: i }))),
+            body: JSON.stringify(tempImages.map((g, i) => ({ product_id: saved.id, url: g.url, tipe: g.tipe, urutan: i }))),
           });
         }
       } else {
@@ -3350,7 +3354,7 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
 
         {/* GAMBAR */}
         <div style={{ marginBottom: 16 }}>
-          <label style={labelStyle}>Gambar Produk</label>
+          <label style={labelStyle}>Gambar Produk (utama, dipakai di katalog & keranjang)</label>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ width: 70, height: 70, borderRadius: 10, background: gambarUrl ? `url(${gambarUrl}) center/cover` : "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
               {!gambarUrl && <Package size={22} color="#D8D6D0" />}
@@ -3358,6 +3362,27 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
             <label style={{ padding: "8px 14px", borderRadius: 8, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
               {uploading ? "Mengupload..." : "Pilih Gambar"}
               <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploading} onChange={(e) => { if (e.target.files[0]) uploadGambar(e.target.files[0]); }} />
+            </label>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Foto Utama Tambahan (buat slider di halaman produk, boleh lebih dari 1)</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {fotoUtamaList.map((img) => (
+              <div key={img.id} style={{ position: "relative", width: 60, height: 60 }}>
+                <div style={{ width: 60, height: 60, borderRadius: 8, background: `url(${img.url}) center/cover` }} />
+                <button
+                  onClick={() => hapusFoto(img, setFotoUtamaList)}
+                  style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C0392B", border: "2px solid #fff", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+            <label style={{ width: 60, height: 60, borderRadius: 8, border: "1.5px dashed #E8A426", background: "#FFFBF0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              {uploadingUtama ? <Loader2 size={16} color="#8A6A1A" /> : <PackagePlus size={18} color="#8A6A1A" />}
+              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingUtama} onChange={(e) => { if (e.target.files[0]) uploadFotoTipe(e.target.files[0], "utama", setUploadingUtama, fotoUtamaList, setFotoUtamaList); }} />
             </label>
           </div>
         </div>
@@ -3390,7 +3415,7 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
               <div key={img.id} style={{ position: "relative", width: 60, height: 60 }}>
                 <div style={{ width: 60, height: 60, borderRadius: 8, background: `url(${img.url}) center/cover` }} />
                 <button
-                  onClick={() => hapusGaleriFoto(img)}
+                  onClick={() => hapusFoto(img, setGaleri)}
                   style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C0392B", border: "2px solid #fff", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
                 >
                   <X size={11} />
@@ -3399,7 +3424,7 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
             ))}
             <label style={{ width: 60, height: 60, borderRadius: 8, border: "1.5px dashed #E8A426", background: "#FFFBF0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
               {uploadingGaleri ? <Loader2 size={16} color="#8A6A1A" /> : <PackagePlus size={18} color="#8A6A1A" />}
-              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingGaleri} onChange={(e) => { if (e.target.files[0]) uploadGaleriFoto(e.target.files[0]); }} />
+              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingGaleri} onChange={(e) => { if (e.target.files[0]) uploadFotoTipe(e.target.files[0], "deskripsi", setUploadingGaleri, galeri, setGaleri); }} />
             </label>
           </div>
         </div>
