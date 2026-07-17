@@ -138,6 +138,7 @@ export default function OwnerDashboard() {
         {page === "keuangan" && <KeuanganPage token={token} />}
         {page === "piutang" && <PiutangPage token={token} />}
         {page === "barang" && <BarangTerlarisPage token={token} />}
+        {page === "rekap_toko" && <RekapTokoPage token={token} />}
         {page === "sales" && <SalesPage token={token} />}
         {page === "format_nota" && <FormatNotaPage token={token} />}
       </div>
@@ -201,6 +202,7 @@ function Sidebar({ page, setPage, profile, onLogout }) {
     { key: "keuangan", label: "Laporan Keuangan", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "piutang", label: "Piutang", icon: AlertCircle, roles: ["owner", "admin_keuangan"] },
     { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
+    { key: "rekap_toko", label: "Rekap Toko", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
   ];
@@ -1423,6 +1425,139 @@ function RiwayatOrderPage({ token }) {
           </tbody>
         </table>
         {filtered.length === 0 && <EmptyState text="Tidak ada order pada periode ini." />}
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// REKAP TOKO
+// ============================================================
+function RekapTokoPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [clients, setClients] = useState([]);
+  const [salesList, setSalesList] = useState([]);
+  const [error, setError] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [editForm, setEditForm] = useState({ alamat: "", telp: "", kodeSales: "" });
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [clientRows, salesRows] = await Promise.all([
+        supabaseFetch(token, "clients?select=*,sales(id,kode,nama)&status=eq.aktif&order=nama.asc"),
+        supabaseFetch(token, "sales?select=id,kode,nama&order=kode.asc"),
+      ]);
+      setClients(clientRows);
+      setSalesList(salesRows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  function startEdit(c) {
+    setEditingId(c.id);
+    setEditForm({ alamat: c.alamat || "", telp: c.telp || "", kodeSales: c.sales?.kode || "" });
+  }
+
+  function matchedSales(kode) {
+    return salesList.find((s) => s.kode.toUpperCase() === kode.trim().toUpperCase());
+  }
+
+  async function save(clientId) {
+    const kodeSalesTrim = editForm.kodeSales.trim();
+    const found = kodeSalesTrim ? matchedSales(kodeSalesTrim) : null;
+    if (kodeSalesTrim && !found) {
+      alert(`Kode Sales "${kodeSalesTrim}" tidak ditemukan. Cek lagi kodenya.`);
+      return;
+    }
+    setSaving(true);
+    try {
+      await supabaseFetch(token, `clients?id=eq.${clientId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          alamat: editForm.alamat,
+          telp: editForm.telp,
+          sales_id: found ? found.id : null,
+        }),
+      });
+      setClients((prev) => prev.map((c) => (
+        c.id === clientId
+          ? { ...c, alamat: editForm.alamat, telp: editForm.telp, sales: found ? { id: found.id, kode: found.kode, nama: found.nama } : null }
+          : c
+      )));
+      setEditingId(null);
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  return (
+    <div>
+      <PageHeader title="Rekap Toko" subtitle="Klik ikon edit untuk ubah Alamat, No HP, atau Kode Sales" />
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Nama Toko", "Alamat", "No HP", "Email", "Kode Sales", "Nama Sales", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {clients.map((c) => {
+              const isEditing = editingId === c.id;
+              const previewMatch = isEditing && editForm.kodeSales.trim() ? matchedSales(editForm.kodeSales) : null;
+              return (
+                <tr key={c.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px", fontWeight: 600 }}>{c.nama} <span style={{ color: "#9CA0A6", fontWeight: 400 }}>({c.kode})</span></td>
+                  <td style={{ padding: "12px 14px", minWidth: 180 }}>
+                    {isEditing ? (
+                      <input value={editForm.alamat} onChange={(e) => setEditForm({ ...editForm, alamat: e.target.value })} style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }} />
+                    ) : c.alamat}
+                  </td>
+                  <td style={{ padding: "12px 14px", minWidth: 130 }}>
+                    {isEditing ? (
+                      <input value={editForm.telp} onChange={(e) => setEditForm({ ...editForm, telp: e.target.value })} style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }} />
+                    ) : c.telp}
+                  </td>
+                  <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{c.email || "-"}</td>
+                  <td style={{ padding: "12px 14px", minWidth: 100 }}>
+                    {isEditing ? (
+                      <input value={editForm.kodeSales} onChange={(e) => setEditForm({ ...editForm, kodeSales: e.target.value })} placeholder="misal S001" style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }} />
+                    ) : (c.sales?.kode || "-")}
+                  </td>
+                  <td style={{ padding: "12px 14px" }}>
+                    {isEditing ? (
+                      <span style={{ fontStyle: "italic", color: editForm.kodeSales.trim() && !previewMatch ? "#C0392B" : "#28685D", fontWeight: 600 }}>
+                        {editForm.kodeSales.trim() ? (previewMatch ? previewMatch.nama : "Kode tidak ditemukan") : "-"}
+                      </span>
+                    ) : (c.sales?.nama || "-")}
+                  </td>
+                  <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                    {isEditing ? (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => save(c.id)} disabled={saving} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11.5, fontWeight: 700 }}>Simpan</button>
+                        <button onClick={() => setEditingId(null)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11.5 }}>Batal</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => startEdit(c)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                        <FileEdit size={12} /> Edit
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {clients.length === 0 && <EmptyState text="Belum ada toko aktif." />}
       </Card>
     </div>
   );
