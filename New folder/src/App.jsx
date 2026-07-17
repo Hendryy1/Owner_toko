@@ -344,7 +344,7 @@ function OrdersPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp),order_items(*,products(nama,satuan))&status=eq.menunggu_persetujuan&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(nama,satuan))&status=eq.menunggu_persetujuan&order=created_at.asc");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -480,116 +480,179 @@ function NotaPrintModal({ order, type, settings, onClose }) {
     nama_perusahaan: COMPANY_NAME, alamat_perusahaan: "", telp_perusahaan: "",
     teks_subjudul_nota: "NOTA PENJUALAN", teks_subjudul_surat_jalan: "SURAT JALAN",
     teks_footer_nota: "Terima kasih atas pesanan Anda", catatan_tambahan: "",
+    label_ttd_kiri: "Hormat kami,", label_ttd_kanan: "Penerima,",
   };
   const items = order.order_items || [];
-  const total = items.reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+  const subtotalSebelum = items.reduce((sum, it) => sum + Number(it.harga_satuan || 0) * it.qty, 0);
+  const totalBayar = items.reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+  const totalDiskon = subtotalSebelum - totalBayar;
   const isSuratJalan = type === "surat_jalan";
+  const isLunas = order.status_bayar === "lunas";
 
   return (
-    <div className="nota-print-overlay" style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100 }}>
+    <div className="nota-print-overlay" style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
       <style>{`
         @media print {
+          @page { size: 9.5in 11in; margin: 0.4in; }
           body * { visibility: hidden; }
           .nota-print-area, .nota-print-area * { visibility: visible; }
           .nota-print-area { position: fixed; top: 0; left: 0; width: 100%; }
-          .nota-print-overlay { position: static !important; background: none !important; }
+          .nota-print-overlay { position: static !important; background: none !important; padding: 0 !important; }
           .no-print { display: none !important; }
         }
       `}</style>
-      <div style={{ background: "#fff", borderRadius: 14, width: 480, maxHeight: "90vh", overflowY: "auto", padding: 0 }}>
-        <div className="nota-print-area" style={{ padding: 32 }}>
-          <div style={{ textAlign: "center", marginBottom: 20, paddingBottom: 16, borderBottom: "2px solid #24272B" }}>
-            <p className="disp" style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{s.nama_perusahaan}</p>
-            {s.alamat_perusahaan && <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "2px 0 0" }}>{s.alamat_perusahaan}</p>}
-            {s.telp_perusahaan && <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "1px 0 0" }}>{s.telp_perusahaan}</p>}
-            <p style={{ fontSize: 11, color: "#6B6F75", margin: "6px 0 0", fontWeight: 700 }}>{isSuratJalan ? s.teks_subjudul_surat_jalan : s.teks_subjudul_nota}</p>
+      <div style={{ background: "#fff", borderRadius: 14, width: 620, maxHeight: "90vh", overflowY: "auto", padding: 0 }}>
+        <div className="nota-print-area" style={{ padding: "28px 36px" }}>
+          {/* HEADER */}
+          <div style={{ textAlign: "center", marginBottom: 6 }}>
+            <p className="disp" style={{ fontSize: 22, fontWeight: 700, margin: 0, letterSpacing: "0.02em" }}>{s.nama_perusahaan}</p>
+            <p style={{ fontSize: 10.5, color: "#444", margin: "3px 0 0", fontStyle: "italic" }}>
+              {[s.alamat_perusahaan, s.telp_perusahaan].filter(Boolean).join(" - ")}
+            </p>
+          </div>
+          <div style={{ textAlign: "center", borderBottom: "2px solid #24272B", paddingBottom: 10, marginBottom: 14 }}>
+            <p style={{ fontSize: 15, fontWeight: 700, margin: "10px 0 0", letterSpacing: "0.03em" }}>
+              {isSuratJalan ? s.teks_subjudul_surat_jalan : s.teks_subjudul_nota}
+            </p>
           </div>
 
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20, fontSize: 12.5 }}>
-            <div>
-              <p style={{ margin: "0 0 3px", fontWeight: 700 }}>{order.clients?.nama}</p>
-              <p style={{ margin: "0 0 3px", color: "#6B6F75" }}>{order.tujuan_alamat || order.clients?.alamat}</p>
-              <p style={{ margin: 0, color: "#6B6F75" }}>{order.tujuan_telp || order.clients?.telp}</p>
-              {order.is_dropship && (
-                <p style={{ margin: "4px 0 0", color: "#B8860B", fontWeight: 700 }}>DROPSHIP - a/n {order.nama_pengirim_dropship}</p>
-              )}
-            </div>
-            <div style={{ textAlign: "right" }}>
-              <p style={{ margin: "0 0 3px" }}><strong>{isSuratJalan ? "No Surat Jalan" : "No Nota"}:</strong> {order.no_nota}</p>
-              <p style={{ margin: 0 }}>{new Date(order.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
-            </div>
+          {/* INFO 2 KOLOM */}
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 18, fontSize: 12.5 }}>
+            <table style={{ borderCollapse: "collapse" }}><tbody>
+              <tr>
+                <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>{isSuratJalan ? "No Surat Jalan" : "No Nota"}:</td>
+                <td style={{ padding: "2px 0" }}>
+                  <span style={{ background: "#FFF59D", padding: "2px 10px", fontWeight: 700, fontFamily: "monospace" }}>{order.no_nota}</span>
+                </td>
+              </tr>
+              <tr>
+                <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Tanggal:</td>
+                <td style={{ padding: "2px 0" }}>{new Date(order.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" })}</td>
+              </tr>
+              <tr>
+                <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap", verticalAlign: "top" }}>Nama Client:</td>
+                <td style={{ padding: "2px 0" }}>{order.clients?.nama}{order.is_dropship && <span style={{ color: "#B8860B", fontWeight: 700 }}> (DROPSHIP a/n {order.nama_pengirim_dropship})</span>}</td>
+              </tr>
+              <tr>
+                <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap", verticalAlign: "top" }}>Alamat:</td>
+                <td style={{ padding: "2px 0" }}>{order.tujuan_alamat || order.clients?.alamat}</td>
+              </tr>
+            </tbody></table>
+
+            {!isSuratJalan && (
+              <table style={{ borderCollapse: "collapse", height: "fit-content" }}><tbody>
+                <tr>
+                  <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Jenis Bayar:</td>
+                  <td style={{ padding: "2px 0", color: "#1B8A3D", fontWeight: 600 }}>{order.clients?.jenis_pembayaran || "-"}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Jatuh Tempo:</td>
+                  <td style={{ padding: "2px 0", color: "#1B8A3D", fontWeight: 600 }}>{order.jatuh_tempo ? new Date(order.jatuh_tempo).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" }) : "-"}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Status:</td>
+                  <td style={{ padding: "2px 0", color: isLunas ? "#1B8A3D" : "#C0392B", fontWeight: 700 }}>{isLunas ? "Lunas" : "Belum Lunas"}</td>
+                </tr>
+              </tbody></table>
+            )}
           </div>
 
+          {/* TABEL BARANG */}
           {isSuratJalan ? (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 16 }}>
               <thead>
-                <tr style={{ borderBottom: "1.5px solid #24272B" }}>
-                  <th style={{ textAlign: "left", padding: "6px 4px", width: 36 }}>No</th>
-                  <th style={{ textAlign: "left", padding: "6px 4px" }}>Barang</th>
-                  <th style={{ textAlign: "center", padding: "6px 4px" }}>Qty</th>
+                <tr style={{ background: "#EAF0F5" }}>
+                  <th style={{ textAlign: "center", padding: "8px 6px", border: "1px solid #B9C6D1", width: 36 }}>No</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", border: "1px solid #B9C6D1" }}>Nama Barang</th>
+                  <th style={{ textAlign: "center", padding: "8px 6px", border: "1px solid #B9C6D1" }}>Satuan</th>
+                  <th style={{ textAlign: "center", padding: "8px 6px", border: "1px solid #B9C6D1" }}>Qty</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((it, i) => (
-                  <tr key={it.id} style={{ borderBottom: "1px solid #EDEAE3" }}>
-                    <td style={{ padding: "6px 4px" }}>{i + 1}</td>
-                    <td style={{ padding: "6px 4px" }}>{it.products?.nama}</td>
-                    <td style={{ padding: "6px 4px", textAlign: "center" }}>{it.qty} {it.products?.satuan}</td>
+                  <tr key={it.id}>
+                    <td style={{ padding: "6px", border: "1px solid #EDEAE3", textAlign: "center" }}>{i + 1}</td>
+                    <td style={{ padding: "6px", border: "1px solid #EDEAE3" }}>{it.products?.nama}</td>
+                    <td style={{ padding: "6px", border: "1px solid #EDEAE3", textAlign: "center" }}>{it.products?.satuan}</td>
+                    <td style={{ padding: "6px", border: "1px solid #EDEAE3", textAlign: "center" }}>{it.qty}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           ) : (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 16 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, marginBottom: 4 }}>
               <thead>
-                <tr style={{ borderBottom: "1.5px solid #24272B" }}>
-                  <th style={{ textAlign: "left", padding: "6px 4px" }}>Barang</th>
-                  <th style={{ textAlign: "center", padding: "6px 4px" }}>Qty</th>
-                  <th style={{ textAlign: "right", padding: "6px 4px" }}>Harga</th>
-                  <th style={{ textAlign: "right", padding: "6px 4px" }}>Subtotal</th>
+                <tr style={{ background: "#EAF0F5" }}>
+                  <th style={{ textAlign: "center", padding: "8px 6px", border: "1px solid #B9C6D1", width: 32 }}>No</th>
+                  <th style={{ textAlign: "left", padding: "8px 6px", border: "1px solid #B9C6D1" }}>Nama Barang</th>
+                  <th style={{ textAlign: "center", padding: "8px 6px", border: "1px solid #B9C6D1" }}>Satuan</th>
+                  <th style={{ textAlign: "center", padding: "8px 6px", border: "1px solid #B9C6D1" }}>Qty</th>
+                  <th style={{ textAlign: "right", padding: "8px 6px", border: "1px solid #B9C6D1" }}>Harga Satuan</th>
+                  <th style={{ textAlign: "center", padding: "8px 6px", border: "1px solid #B9C6D1" }}>Diskon</th>
+                  <th style={{ textAlign: "right", padding: "8px 6px", border: "1px solid #B9C6D1" }}>Subtotal</th>
                 </tr>
               </thead>
               <tbody>
-                {items.map((it) => (
-                  <tr key={it.id} style={{ borderBottom: "1px solid #EDEAE3" }}>
-                    <td style={{ padding: "6px 4px" }}>{it.products?.nama}</td>
-                    <td style={{ padding: "6px 4px", textAlign: "center" }}>{it.qty} {it.products?.satuan}</td>
-                    <td style={{ padding: "6px 4px", textAlign: "right" }}>{rupiah(it.harga_dropship || it.harga_satuan)}</td>
-                    <td style={{ padding: "6px 4px", textAlign: "right" }}>{rupiah((it.harga_dropship || it.harga_satuan) * it.qty)}</td>
-                  </tr>
-                ))}
+                {items.map((it, i) => {
+                  const hargaSatuan = Number(it.harga_dropship || it.harga_satuan);
+                  const subSebelum = hargaSatuan * it.qty;
+                  const subSesudah = Number(it.subtotal_setelah_diskon || 0);
+                  const diskonPct = subSebelum > 0 ? Math.round((1 - subSesudah / subSebelum) * 100) : 0;
+                  return (
+                    <tr key={it.id}>
+                      <td style={{ padding: "6px", border: "1px solid #EDEAE3", textAlign: "center" }}>{i + 1}</td>
+                      <td style={{ padding: "6px", border: "1px solid #EDEAE3" }}>{it.products?.nama}</td>
+                      <td style={{ padding: "6px", border: "1px solid #EDEAE3", textAlign: "center" }}>{it.products?.satuan}</td>
+                      <td style={{ padding: "6px", border: "1px solid #EDEAE3", textAlign: "center" }}>{it.qty}</td>
+                      <td style={{ padding: "6px", border: "1px solid #EDEAE3", textAlign: "right" }}>{Math.round(hargaSatuan).toLocaleString("id-ID")}</td>
+                      <td style={{ padding: "6px", border: "1px solid #EDEAE3", textAlign: "center" }}>{diskonPct}%</td>
+                      <td style={{ padding: "6px", border: "1px solid #EDEAE3", textAlign: "right" }}>{Math.round(subSesudah).toLocaleString("id-ID")}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
 
-          {isSuratJalan ? (
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 40, fontSize: 12 }}>
-              <div style={{ textAlign: "center", width: "45%" }}>
-                <p style={{ margin: "0 0 50px" }}>Pengirim,</p>
-                <p style={{ margin: 0, borderTop: "1px solid #24272B", paddingTop: 6 }}>( ......................... )</p>
-              </div>
-              <div style={{ textAlign: "center", width: "45%" }}>
-                <p style={{ margin: "0 0 50px" }}>Penerima,</p>
-                <p style={{ margin: 0, borderTop: "1px solid #24272B", paddingTop: 6 }}>( ......................... )</p>
-              </div>
+          {/* RINGKASAN TOTAL (khusus Nota) */}
+          {!isSuratJalan && (
+            <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 20 }}>
+              <table style={{ borderCollapse: "collapse", fontSize: 12.5, width: 300 }}><tbody>
+                <tr>
+                  <td style={{ padding: "3px 10px 3px 0", textAlign: "right" }}>Subtotal (Sebelum Diskon)</td>
+                  <td style={{ padding: "3px 0", textAlign: "right", width: 110 }}>{Math.round(subtotalSebelum).toLocaleString("id-ID")}</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: "3px 10px 3px 0", textAlign: "right" }}>Total Diskon (Promo Koli)</td>
+                  <td style={{ padding: "3px 0", textAlign: "right" }}>{Math.round(totalDiskon).toLocaleString("id-ID")}</td>
+                </tr>
+                <tr style={{ borderTop: "2px solid #24272B" }}>
+                  <td style={{ padding: "6px 10px 0 0", textAlign: "right", fontWeight: 700, fontSize: 14 }}>TOTAL BAYAR</td>
+                  <td style={{ padding: "6px 0 0", textAlign: "right", fontWeight: 700, fontSize: 15 }}>{Math.round(totalBayar).toLocaleString("id-ID")}</td>
+                </tr>
+              </tbody></table>
             </div>
-          ) : (
-            <>
-              <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
-                <div style={{ width: 200, display: "flex", justifyContent: "space-between", paddingTop: 8, borderTop: "1.5px solid #24272B" }}>
-                  <span style={{ fontWeight: 700, fontSize: 13.5 }}>TOTAL</span>
-                  <span className="disp" style={{ fontWeight: 700, fontSize: 17 }}>{rupiah(total)}</span>
-                </div>
-              </div>
-              {s.catatan_tambahan && (
-                <p style={{ textAlign: "center", fontSize: 10, color: "#9CA0A6", margin: "0 0 8px", fontStyle: "italic" }}>{s.catatan_tambahan}</p>
-              )}
-              <p style={{ textAlign: "center", fontSize: 10.5, color: "#9CA0A6", margin: 0 }}>{s.teks_footer_nota}</p>
-            </>
           )}
+
+          {/* CATATAN / REKENING (khusus Nota) */}
+          {!isSuratJalan && s.catatan_tambahan && (
+            <p style={{ fontSize: 11.5, fontWeight: 700, whiteSpace: "pre-line", lineHeight: 1.6, margin: "0 0 30px" }}>{s.catatan_tambahan}</p>
+          )}
+
+          {/* TANDA TANGAN */}
+          <div style={{ display: "flex", justifyContent: "space-between", marginTop: isSuratJalan ? 40 : 20, fontSize: 12 }}>
+            <div style={{ textAlign: "center", width: "40%" }}>
+              <p style={{ margin: "0 0 55px" }}>{isSuratJalan ? "Pengirim," : s.label_ttd_kiri}</p>
+              <p style={{ margin: 0, borderTop: "1px solid #24272B", paddingTop: 6 }}>( ......................... )</p>
+            </div>
+            <div style={{ textAlign: "center", width: "40%" }}>
+              <p style={{ margin: "0 0 55px" }}>{isSuratJalan ? "Penerima," : s.label_ttd_kanan}</p>
+              <p style={{ margin: 0, borderTop: "1px solid #24272B", paddingTop: 6 }}>( ......................... )</p>
+            </div>
+          </div>
         </div>
 
-        <div className="no-print" style={{ display: "flex", gap: 10, padding: "16px 32px 24px" }}>
+        <div className="no-print" style={{ display: "flex", gap: 10, padding: "16px 36px 24px" }}>
           <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
             Tutup
           </button>
@@ -952,6 +1015,8 @@ function FormatNotaPage({ token }) {
           teks_subjudul_surat_jalan: form.teks_subjudul_surat_jalan,
           teks_footer_nota: form.teks_footer_nota,
           catatan_tambahan: form.catatan_tambahan,
+          label_ttd_kiri: form.label_ttd_kiri,
+          label_ttd_kanan: form.label_ttd_kanan,
           updated_at: new Date().toISOString(),
         }),
       });
@@ -1001,8 +1066,18 @@ function FormatNotaPage({ token }) {
           <input value={form.teks_footer_nota} onChange={set("teks_footer_nota")} style={fieldStyle} />
         </div>
         <div style={{ marginBottom: 20 }}>
-          <label style={labelStyle}>Catatan Tambahan (opsional, misal syarat/ketentuan)</label>
-          <textarea value={form.catatan_tambahan || ""} onChange={set("catatan_tambahan")} rows={3} placeholder="Contoh: Barang yang sudah dibeli tidak dapat ditukar/dikembalikan." style={{ ...fieldStyle, resize: "vertical" }} />
+          <label style={labelStyle}>Catatan / Info Rekening (tampil di atas tanda tangan, boleh beberapa baris)</label>
+          <textarea value={form.catatan_tambahan || ""} onChange={set("catatan_tambahan")} rows={4} placeholder={"NOTE: Semua Pembayaran hanya ke rekening perusahaan\nBANK: BCA\nA/N: PT Nama Perusahaan Anda\nNO REKENING: 000000"} style={{ ...fieldStyle, resize: "vertical" }} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+          <div>
+            <label style={labelStyle}>Label Tanda Tangan Kiri</label>
+            <input value={form.label_ttd_kiri || ""} onChange={set("label_ttd_kiri")} style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Label Tanda Tangan Kanan</label>
+            <input value={form.label_ttd_kanan || ""} onChange={set("label_ttd_kanan")} style={fieldStyle} />
+          </div>
         </div>
 
         {error && (
