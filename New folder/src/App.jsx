@@ -2852,6 +2852,7 @@ function CashbackPage({ token }) {
 function FreeOngkirPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [rates, setRates] = useState([]);
+  const [products, setProducts] = useState([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -2861,16 +2862,47 @@ function FreeOngkirPage({ token }) {
   const [calcKota, setCalcKota] = useState("");
   const [calcBerat, setCalcBerat] = useState("");
 
+  // Info kemasan barang
+  const [editingProductId, setEditingProductId] = useState(null);
+  const [productForm, setProductForm] = useState({ isiPerKoli: "", ukuranKoli: "" });
+  const [savingProduct, setSavingProduct] = useState(false);
+
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "ongkir_rates?select=*&order=kota_tujuan.asc");
-      setRates(rows);
+      const [rateRows, productRows] = await Promise.all([
+        supabaseFetch(token, "ongkir_rates?select=*&order=kota_tujuan.asc"),
+        supabaseFetch(token, "products?select=id,kode,nama,satuan,isi_per_koli,ukuran_koli&aktif=eq.true&order=kode.asc"),
+      ]);
+      setRates(rateRows);
+      setProducts(productRows);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  function startEditProduct(p) {
+    setEditingProductId(p.id);
+    setProductForm({ isiPerKoli: p.isi_per_koli || "", ukuranKoli: p.ukuran_koli || "" });
+  }
+
+  async function saveProductKemasan(productId) {
+    setSavingProduct(true);
+    try {
+      await supabaseFetch(token, `products?id=eq.${productId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isi_per_koli: Number(productForm.isiPerKoli) || 0, ukuran_koli: productForm.ukuranKoli || null }),
+      });
+      setProducts((prev) => prev.map((p) => (
+        p.id === productId ? { ...p, isi_per_koli: Number(productForm.isiPerKoli) || 0, ukuran_koli: productForm.ukuranKoli || null } : p
+      )));
+      setEditingProductId(null);
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSavingProduct(false);
+  }
 
   function resetForm() {
     setForm({ kotaTujuan: "", tarifPerKg: "", estimasiHari: "", keterangan: "" });
@@ -3028,6 +3060,61 @@ function FreeOngkirPage({ token }) {
           </tbody>
         </table>
         {rates.length === 0 && <EmptyState text="Belum ada tarif ongkir. Tambahkan dulu di form atas." />}
+      </Card>
+
+      {/* INFO KEMASAN BARANG */}
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "36px 0 4px" }}>Info Kemasan Barang</h2>
+      <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 12px" }}>
+        Dipakai buat estimasi berat/volume kiriman - berapa pcs jadi 1 koli, dan berapa ukuran/berat 1 koli itu.
+      </p>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Kode Barang", "Nama Barang", "Jumlah 1 Koli", "Ukuran Koli", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {products.map((p) => {
+              const isEditing = editingProductId === p.id;
+              return (
+                <tr key={p.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{p.kode}</td>
+                  <td style={{ padding: "12px 14px" }}>{p.nama}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    {isEditing ? (
+                      <input type="number" value={productForm.isiPerKoli} onChange={(e) => setProductForm({ ...productForm, isiPerKoli: e.target.value })} style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }} />
+                    ) : (
+                      p.isi_per_koli > 0 ? `${p.isi_per_koli} ${p.satuan}` : "-"
+                    )}
+                  </td>
+                  <td style={{ padding: "12px 14px" }}>
+                    {isEditing ? (
+                      <input value={productForm.ukuranKoli} onChange={(e) => setProductForm({ ...productForm, ukuranKoli: e.target.value })} placeholder="misal 40x30x20 cm, 15kg" style={{ width: 200, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }} />
+                    ) : (
+                      p.ukuran_koli || "-"
+                    )}
+                  </td>
+                  <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                    {isEditing ? (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button onClick={() => saveProductKemasan(p.id)} disabled={savingProduct} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700 }}>Simpan</button>
+                        <button onClick={() => setEditingProductId(null)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11 }}>Batal</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => startEditProduct(p)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                        <FileEdit size={11} /> Edit
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {products.length === 0 && <EmptyState text="Belum ada barang." />}
       </Card>
     </div>
   );
