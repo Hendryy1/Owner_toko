@@ -154,15 +154,16 @@ function LoginScreen({ form, setForm, onLogin, error, loading }) {
 // SIDEBAR
 // ============================================================
 function Sidebar({ page, setPage, profile, onLogout }) {
-  const items = [
-    { key: "overview", label: "Ringkasan", icon: LayoutDashboard },
-    { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck },
-    { key: "clients", label: "Approve Toko Baru", icon: Store },
-    { key: "keuangan", label: "Laporan Keuangan", icon: Wallet },
-    { key: "piutang", label: "Piutang", icon: AlertCircle },
-    { key: "barang", label: "Barang Terlaris", icon: Package },
-    { key: "sales", label: "Rekap Sales", icon: Users },
+  const allItems = [
+    { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
+    { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
+    { key: "clients", label: "Approve Toko Baru", icon: Store, roles: ["owner", "admin_keuangan"] },
+    { key: "keuangan", label: "Laporan Keuangan", icon: Wallet, roles: ["owner", "admin_keuangan"] },
+    { key: "piutang", label: "Piutang", icon: AlertCircle, roles: ["owner", "admin_keuangan"] },
+    { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
+    { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
   ];
+  const items = allItems.filter((it) => it.roles.includes(profile?.role));
   return (
     <div style={{ width: 240, background: "#24272B", padding: "24px 16px", display: "flex", flexDirection: "column" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28, padding: "0 8px" }}>
