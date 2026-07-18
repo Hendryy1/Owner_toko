@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock
+  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -132,6 +132,7 @@ export default function OwnerDashboard() {
       <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} />
       <div style={{ flex: 1, padding: "28px 36px", overflowY: "auto" }}>
         {page === "overview" && <OverviewPage token={token} />}
+        {page === "chat_sales" && <ChatSalesPage token={token} profile={profile} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "proses_kirim" && <ProsesPengirimanPage token={token} />}
@@ -205,6 +206,7 @@ function LoginScreen({ form, setForm, onLogin, error, loading }) {
 function Sidebar({ page, setPage, profile, onLogout }) {
   const allItems = [
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
+    { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "admin_transaksi", "sales"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "admin_transaksi"] },
@@ -3492,6 +3494,191 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ============================================================
+// CHAT TOKO (Sales, Owner, Admin Transaksi balas chat dari toko)
+// ============================================================
+function ChatSalesPage({ token, profile }) {
+  const [cases, setCases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedCase, setSelectedCase] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+  const pollRef = useRef(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      let url = "chat_cases?select=*,clients(nama,kode)&order=updated_at.desc";
+      if (profile?.role === "sales" && profile?.sales_id) {
+        url += `&sales_id=eq.${profile.sales_id}`;
+      }
+      const rows = await supabaseFetch(token, url);
+      setCases(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function openCase(c) {
+    setSelectedCase(c);
+    await loadMessages(c.id);
+    if (pollRef.current) clearInterval(pollRef.current);
+    pollRef.current = setInterval(() => loadMessages(c.id), 4000);
+  }
+
+  function closeConversation() {
+    setSelectedCase(null);
+    if (pollRef.current) clearInterval(pollRef.current);
+  }
+
+  async function loadMessages(caseId) {
+    try {
+      const rows = await supabaseFetch(token, `chat_messages?select=*&case_id=eq.${caseId}&order=created_at.asc`);
+      setMessages(rows);
+    } catch (e) { /* diamkan, coba lagi di polling berikutnya */ }
+  }
+
+  useEffect(() => {
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  async function handleSend() {
+    const text = input.trim();
+    if (!text || sending || !selectedCase) return;
+    setSending(true);
+    setInput("");
+    try {
+      const [inserted] = await supabaseFetch(token, "chat_messages", {
+        method: "POST",
+        body: JSON.stringify({ case_id: selectedCase.id, sender_type: "sales", message: text }),
+      });
+      setMessages((prev) => [...prev, inserted]);
+      await supabaseFetch(token, `chat_cases?id=eq.${selectedCase.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ updated_at: new Date().toISOString() }),
+      });
+    } catch (e) {
+      alert("Gagal kirim pesan: " + e.message);
+    }
+    setSending(false);
+  }
+
+  async function tutupKasus() {
+    if (!confirm("Tutup kasus ini? Toko akan mulai kasus baru kalau chat lagi nanti.")) return;
+    try {
+      await supabaseFetch(token, `chat_cases?id=eq.${selectedCase.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "closed" }),
+      });
+      setCases((prev) => prev.map((c) => (c.id === selectedCase.id ? { ...c, status: "closed" } : c)));
+      setSelectedCase((prev) => ({ ...prev, status: "closed" }));
+    } catch (e) {
+      alert("Gagal tutup kasus: " + e.message);
+    }
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  // ---------- TAMPILAN DETAIL PERCAKAPAN ----------
+  if (selectedCase) {
+    return (
+      <div>
+        <button onClick={closeConversation} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+          <ChevronRight size={16} style={{ transform: "rotate(180deg)" }} /> Kembali ke daftar
+        </button>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div>
+            <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: 0 }}>{selectedCase.no_case} - {selectedCase.clients?.nama}</p>
+            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "2px 0 0" }}>Kode Toko: {selectedCase.clients?.kode}</p>
+          </div>
+          {selectedCase.status === "open" ? (
+            <button onClick={tutupKasus} style={{ padding: "8px 14px", borderRadius: 9, border: "1.5px solid #F0CFC7", background: "#fff", color: "#C0392B", fontSize: 12, fontWeight: 700 }}>
+              Tutup Kasus
+            </button>
+          ) : (
+            <span style={{ padding: "6px 12px", borderRadius: 999, background: "#F7F5F1", color: "#9CA0A6", fontSize: 11.5, fontWeight: 700 }}>Ditutup</span>
+          )}
+        </div>
+
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <div style={{ height: 420, overflowY: "auto", padding: 18, background: "#F7F5F1" }}>
+            {messages.length === 0 && (
+              <p style={{ textAlign: "center", fontSize: 12.5, color: "#9CA0A6", padding: "20px 0" }}>Belum ada pesan di kasus ini.</p>
+            )}
+            {messages.map((m) => (
+              <div key={m.id} style={{ display: "flex", justifyContent: m.sender_type === "sales" ? "flex-end" : "flex-start", marginBottom: 12 }}>
+                <div style={{
+                  maxWidth: "65%", padding: "10px 14px", borderRadius: 14,
+                  background: m.sender_type === "sales" ? "#E8A426" : "#fff",
+                  border: m.sender_type === "sales" ? "none" : "1px solid #EDEAE3",
+                  fontSize: 13, lineHeight: 1.5, color: "#24272B",
+                }}>
+                  {m.message}
+                </div>
+              </div>
+            ))}
+          </div>
+          {selectedCase.status === "open" && (
+            <div style={{ padding: 14, display: "flex", gap: 10, borderTop: "1px solid #EDEAE3" }}>
+              <input
+                value={input} onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSend()}
+                placeholder="Tulis balasan..."
+                style={{ flex: 1, padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }}
+              />
+              <button onClick={handleSend} disabled={sending || !input.trim()} style={{ padding: "10px 18px", borderRadius: 9, border: "none", background: (sending || !input.trim()) ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13 }}>
+                Kirim
+              </button>
+            </div>
+          )}
+        </Card>
+      </div>
+    );
+  }
+
+  // ---------- TAMPILAN DAFTAR KASUS ----------
+  return (
+    <div>
+      <PageHeader title="Chat Toko" subtitle={`${cases.filter((c) => c.status === "open").length} kasus masih terbuka`} />
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["No Case", "Toko", "Terakhir Update", "Status", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {cases.map((c) => (
+              <tr key={c.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{c.no_case}</td>
+                <td style={{ padding: "12px 14px" }}>{c.clients?.nama} ({c.clients?.kode})</td>
+                <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{new Date(c.updated_at).toLocaleString("id-ID")}</td>
+                <td style={{ padding: "12px 14px" }}>
+                  <span style={{ background: c.status === "open" ? "#D8E9E6" : "#F7F5F1", color: c.status === "open" ? "#28685D" : "#9CA0A6", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                    {c.status === "open" ? "Terbuka" : "Ditutup"}
+                  </span>
+                </td>
+                <td style={{ padding: "12px 14px" }}>
+                  <button onClick={() => openCase(c)} style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11.5, fontWeight: 600 }}>
+                    Buka
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {cases.length === 0 && <EmptyState text="Belum ada chat dari toko." />}
+      </Card>
     </div>
   );
 }
