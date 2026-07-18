@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu
+  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -151,6 +151,7 @@ export default function OwnerDashboard() {
         )}
         {page === "overview" && <OverviewPage token={token} />}
         {page === "chat_sales" && <ChatSalesPage token={token} profile={profile} />}
+        {page === "profil_sales" && <ProfilSalesPage token={token} profile={profile} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "proses_kirim" && <ProsesPengirimanPage token={token} />}
@@ -225,6 +226,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
   const allItems = [
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "admin_transaksi", "sales"] },
+    { key: "profil_sales", label: "Profil Saya", icon: User, roles: ["sales"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "admin_transaksi"] },
@@ -3739,6 +3741,133 @@ function ChatSalesPage({ token, profile }) {
           </tbody>
         </table>
         {cases.length === 0 && <EmptyState text="Belum ada chat dari toko." />}
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// PROFIL SAYA (khusus akun Sales)
+// ============================================================
+function ProfilSalesPage({ token, profile }) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState(false);
+  const [form, setForm] = useState({ nama: "", alamat: "", email: "", noHp: "", fotoUrl: "" });
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      if (!profile?.sales_id) throw new Error("Akun ini belum terhubung ke data sales manapun.");
+      const rows = await supabaseFetch(token, `sales?select=nama,alamat,email,no_hp,foto_url&id=eq.${profile.sales_id}`);
+      const s = rows[0] || {};
+      setForm({
+        nama: s.nama || "", alamat: s.alamat || "", email: s.email || "",
+        noHp: s.no_hp || "", fotoUrl: s.foto_url || "",
+      });
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+
+  async function uploadFoto(file) {
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `sales-${profile.sales_id}-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+      setForm((prev) => ({ ...prev, fotoUrl: url }));
+    } catch (e) {
+      alert("Gagal upload foto: " + e.message);
+    }
+    setUploading(false);
+  }
+
+  async function simpan() {
+    setSaving(true);
+    setSaved(false);
+    setError("");
+    try {
+      await supabaseFetch(token, `sales?id=eq.${profile.sales_id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          nama: form.nama, alamat: form.alamat || null, email: form.email || null,
+          no_hp: form.noHp || null, foto_url: form.fotoUrl || null,
+        }),
+      });
+      setSaved(true);
+    } catch (e) {
+      setError(e.message);
+    }
+    setSaving(false);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error && !form.nama) return <ErrorBox error={error} onRetry={load} />;
+
+  const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  return (
+    <div>
+      <PageHeader title="Profil Saya" subtitle="Kelola informasi profil Anda sebagai sales" />
+
+      <Card style={{ maxWidth: 480 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
+          <div style={{ width: 84, height: 84, borderRadius: "50%", background: form.fotoUrl ? `url(${form.fotoUrl}) center/cover` : "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            {!form.fotoUrl && <User size={32} color="#D8D6D0" />}
+          </div>
+          <label style={{ padding: "9px 16px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+            {uploading ? "Mengupload..." : "Ganti Foto"}
+            <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploading} onChange={(e) => { if (e.target.files[0]) uploadFoto(e.target.files[0]); }} />
+          </label>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Nama Lengkap</label>
+          <input value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} style={fieldStyle} />
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Alamat</label>
+          <textarea value={form.alamat} onChange={(e) => setForm({ ...form, alamat: e.target.value })} rows={3} style={{ ...fieldStyle, resize: "vertical" }} />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+          <div>
+            <label style={labelStyle}>Email</label>
+            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>No. HP</label>
+            <input value={form.noHp} onChange={(e) => setForm({ ...form, noHp: e.target.value })} style={fieldStyle} />
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBEAEA", color: "#C0392B", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 16 }}>
+            <AlertCircle size={14} /> {error}
+          </div>
+        )}
+        {saved && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", color: "#28685D", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 16, fontWeight: 600 }}>
+            <Check size={14} /> Profil berhasil disimpan.
+          </div>
+        )}
+
+        <button onClick={simpan} disabled={saving || uploading} style={{ padding: "12px 24px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+          {saving ? "Menyimpan..." : "Simpan Perubahan"}
+        </button>
       </Card>
     </div>
   );
