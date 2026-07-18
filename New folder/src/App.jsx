@@ -3903,12 +3903,12 @@ function OmzetSalesPage({ token, profile }) {
       const endDate = endDateObj.toISOString().slice(0, 10);
 
       const [salesRow, clientsRows, ordersRows] = await Promise.all([
-        supabaseFetch(token, `sales?select=target&id=eq.${profile.sales_id}`),
+        supabaseFetch(token, `sales?select=target_omzet_bulanan&id=eq.${profile.sales_id}`),
         supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&order=nama.asc`),
         supabaseFetch(token, `orders?select=client_id,status,order_items(subtotal_setelah_diskon)&sales_id=eq.${profile.sales_id}&status=neq.ditolak&created_at=gte.${startDate}&created_at=lt.${endDate}`),
       ]);
 
-      setTarget(Number(salesRow[0]?.target || 0));
+      setTarget(Number(salesRow[0]?.target_omzet_bulanan || 0));
       setHandledClients(clientsRows);
       setOrders(ordersRows);
     } catch (e) { setError(e.message); }
