@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle
+  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -61,6 +61,7 @@ function clearDashboardSession() {
 export default function OwnerDashboard() {
   const [token, setToken] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [page, setPage] = useState("overview");
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
@@ -129,7 +130,7 @@ export default function OwnerDashboard() {
         .disp { font-family: 'Barlow Condensed', sans-serif; }
         button { font-family: inherit; cursor: pointer; }
       `}</style>
-      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} />
+      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
       <div style={{ flex: 1, padding: "28px 36px", overflowY: "auto" }}>
         {page === "overview" && <OverviewPage token={token} />}
         {page === "chat_sales" && <ChatSalesPage token={token} profile={profile} />}
@@ -203,7 +204,7 @@ function LoginScreen({ form, setForm, onLogin, error, loading }) {
 // ============================================================
 // SIDEBAR
 // ============================================================
-function Sidebar({ page, setPage, profile, onLogout }) {
+function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed }) {
   const allItems = [
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "admin_transaksi", "sales"] },
@@ -227,13 +228,37 @@ function Sidebar({ page, setPage, profile, onLogout }) {
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
   ];
   const items = allItems.filter((it) => it.roles.includes(profile?.role));
+
+  if (collapsed) {
+    return (
+      <div style={{ width: 56, background: "#24272B", padding: "24px 8px", display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
+        <button
+          onClick={() => setCollapsed(false)}
+          title="Tampilkan menu"
+          style={{ width: 36, height: 36, borderRadius: 9, border: "none", background: "#E8A426", display: "flex", alignItems: "center", justifyContent: "center" }}
+        >
+          <ChevronRight size={18} color="#24272B" />
+        </button>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ width: 240, background: "#24272B", padding: "24px 16px", display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28, padding: "0 8px" }}>
-        <div style={{ width: 36, height: 36, background: "#E8A426", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <LayoutDashboard size={18} color="#24272B" />
+    <div style={{ width: 240, background: "#24272B", padding: "24px 16px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, padding: "0 8px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 36, height: 36, background: "#E8A426", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <LayoutDashboard size={18} color="#24272B" />
+          </div>
+          <span className="disp" style={{ color: "#fff", fontSize: 18, fontWeight: 700 }}>Dashboard</span>
         </div>
-        <span className="disp" style={{ color: "#fff", fontSize: 18, fontWeight: 700 }}>Dashboard</span>
+        <button
+          onClick={() => setCollapsed(true)}
+          title="Sembunyikan menu"
+          style={{ width: 28, height: 28, borderRadius: 7, border: "none", background: "#33373C", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+        >
+          <ChevronLeft size={15} color="#9CA0A6" />
+        </button>
       </div>
 
       {items.map((it) => {
