@@ -152,6 +152,7 @@ export default function OwnerDashboard() {
         {page === "overview" && <OverviewPage token={token} />}
         {page === "chat_sales" && <ChatSalesPage token={token} profile={profile} />}
         {page === "profil_sales" && <ProfilSalesPage token={token} profile={profile} />}
+        {page === "omzet_sales" && <OmzetSalesPage token={token} profile={profile} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "proses_kirim" && <ProsesPengirimanPage token={token} />}
@@ -227,6 +228,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "admin_transaksi", "sales"] },
     { key: "profil_sales", label: "Profil Saya", icon: User, roles: ["sales"] },
+    { key: "omzet_sales", label: "Omzet Saya", icon: TrendingUp, roles: ["sales"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "admin_transaksi"] },
@@ -3868,6 +3870,123 @@ function ProfilSalesPage({ token, profile }) {
         <button onClick={simpan} disabled={saving || uploading} style={{ padding: "12px 24px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
           {saving ? "Menyimpan..." : "Simpan Perubahan"}
         </button>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// OMZET SAYA (khusus akun Sales)
+// ============================================================
+function OmzetSalesPage({ token, profile }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [target, setTarget] = useState(0);
+  const [handledClients, setHandledClients] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const now = new Date();
+  const [filterYear, setFilterYear] = useState(now.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
+
+  const BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+
+  useEffect(() => { load(); }, [filterYear, filterMonth]);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      if (!profile?.sales_id) throw new Error("Akun ini belum terhubung ke data sales manapun.");
+
+      const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+      const endDateObj = new Date(filterYear, filterMonth, 1); // hari pertama bulan berikutnya
+      const endDate = endDateObj.toISOString().slice(0, 10);
+
+      const [salesRow, clientsRows, ordersRows] = await Promise.all([
+        supabaseFetch(token, `sales?select=target&id=eq.${profile.sales_id}`),
+        supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&order=nama.asc`),
+        supabaseFetch(token, `orders?select=client_id,status,order_items(subtotal_setelah_diskon)&sales_id=eq.${profile.sales_id}&status=neq.ditolak&created_at=gte.${startDate}&created_at=lt.${endDate}`),
+      ]);
+
+      setTarget(Number(salesRow[0]?.target || 0));
+      setHandledClients(clientsRows);
+      setOrders(ordersRows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+
+  // Hitung omzet per toko (termasuk yang 0, kalau tidak ada order sama sekali)
+  const omzetPerToko = handledClients.map((c) => {
+    const ordersToko = orders.filter((o) => o.client_id === c.id);
+    const omzet = ordersToko.reduce((sum, o) => sum + (o.order_items || []).reduce((s, it) => s + Number(it.subtotal_setelah_diskon || 0), 0), 0);
+    return { ...c, omzet };
+  }).sort((a, b) => b.omzet - a.omzet);
+
+  const totalOmzet = omzetPerToko.reduce((sum, c) => sum + c.omzet, 0);
+  const persentaseTarget = target > 0 ? Math.min(100, (totalOmzet / target) * 100) : 0;
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const yearsAvailable = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
+
+  return (
+    <div>
+      <PageHeader title="Omzet Saya" subtitle="Rekap omzet bulanan dari toko yang Anda handle" />
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+        <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {yearsAvailable.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {BULAN.slice(1).map((b, i) => <option key={i + 1} value={i + 1}>{b}</option>)}
+        </select>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+        <Card>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Target Bulan Ini</p>
+          <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(target)}</p>
+        </Card>
+        <Card>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Omzet Tercapai</p>
+          <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(totalOmzet)}</p>
+        </Card>
+      </div>
+
+      {target > 0 && (
+        <Card style={{ marginBottom: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: "#24272B" }}>Progres Target</span>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: persentaseTarget >= 100 ? "#28685D" : "#24272B" }}>{persentaseTarget.toFixed(0)}%</span>
+          </div>
+          <div style={{ width: "100%", height: 10, background: "#F7F5F1", borderRadius: 999, overflow: "hidden" }}>
+            <div style={{ width: `${persentaseTarget}%`, height: "100%", background: persentaseTarget >= 100 ? "#28685D" : "#E8A426", borderRadius: 999 }} />
+          </div>
+        </Card>
+      )}
+
+      <h2 className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Omzet per Toko yang Anda Handle</h2>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Kode", "Nama Toko", "Omzet Bulan Ini"].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {omzetPerToko.map((c) => (
+              <tr key={c.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{c.kode}</td>
+                <td style={{ padding: "12px 14px" }}>{c.nama}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 700, color: c.omzet === 0 ? "#9CA0A6" : "#24272B" }}>{rupiah(c.omzet)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {omzetPerToko.length === 0 && <EmptyState text="Belum ada toko yang Anda handle." />}
       </Card>
     </div>
   );
