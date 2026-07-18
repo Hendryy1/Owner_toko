@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle
+  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -61,7 +61,16 @@ function clearDashboardSession() {
 export default function OwnerDashboard() {
   const [token, setToken] = useState(null);
   const [profile, setProfile] = useState(null);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+
+  useEffect(() => {
+    function handleResize() {
+      setIsMobile(window.innerWidth < 768);
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const [page, setPage] = useState("overview");
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
@@ -130,8 +139,16 @@ export default function OwnerDashboard() {
         .disp { font-family: 'Barlow Condensed', sans-serif; }
         button { font-family: inherit; cursor: pointer; }
       `}</style>
-      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} />
-      <div style={{ flex: 1, padding: "28px 36px", overflowY: "auto" }}>
+      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} isMobile={isMobile} />
+      <div style={{ flex: 1, padding: isMobile ? "16px 16px 28px" : "28px 36px", overflowY: "auto", overflowX: "hidden", minWidth: 0 }}>
+        {isMobile && (
+          <button
+            onClick={() => setSidebarCollapsed(false)}
+            style={{ display: "flex", alignItems: "center", gap: 8, background: "#24272B", border: "none", borderRadius: 9, padding: "9px 14px", color: "#fff", fontSize: 12.5, fontWeight: 600, marginBottom: 18 }}
+          >
+            <Menu size={16} /> Menu
+          </button>
+        )}
         {page === "overview" && <OverviewPage token={token} />}
         {page === "chat_sales" && <ChatSalesPage token={token} profile={profile} />}
         {page === "orders" && <OrdersPage token={token} />}
@@ -204,7 +221,7 @@ function LoginScreen({ form, setForm, onLogin, error, loading }) {
 // ============================================================
 // SIDEBAR
 // ============================================================
-function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed }) {
+function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, isMobile }) {
   const allItems = [
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "admin_transaksi", "sales"] },
@@ -230,6 +247,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed }) 
   const items = allItems.filter((it) => it.roles.includes(profile?.role));
 
   if (collapsed) {
+    if (isMobile) return null; // di HP, pakai tombol "Menu" terpisah di konten, bukan strip
     return (
       <div style={{ width: 56, background: "#24272B", padding: "24px 8px", display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
         <button
@@ -244,7 +262,20 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed }) 
   }
 
   return (
-    <div style={{ width: 240, background: "#24272B", padding: "24px 16px", display: "flex", flexDirection: "column", flexShrink: 0 }}>
+    <>
+      {isMobile && (
+        <div
+          onClick={() => setCollapsed(true)}
+          style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.5)", zIndex: 90 }}
+        />
+      )}
+      <div
+        style={
+          isMobile
+            ? { position: "fixed", top: 0, left: 0, bottom: 0, width: 240, background: "#24272B", padding: "24px 16px", display: "flex", flexDirection: "column", zIndex: 100, overflowY: "auto" }
+            : { width: 240, background: "#24272B", padding: "24px 16px", display: "flex", flexDirection: "column", flexShrink: 0 }
+        }
+      >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, padding: "0 8px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 36, height: 36, background: "#E8A426", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -266,7 +297,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed }) 
         const active = page === it.key;
         return (
           <button
-            key={it.key} onClick={() => setPage(it.key)}
+            key={it.key} onClick={() => { setPage(it.key); if (isMobile) setCollapsed(true); }}
             style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 10, border: "none", background: active ? "#E8A426" : "none", color: active ? "#24272B" : "#9CA0A6", fontSize: 13.5, fontWeight: 600, marginBottom: 4, textAlign: "left" }}
           >
             <Icon size={17} /> {it.label}
@@ -282,7 +313,8 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed }) 
           <LogOut size={14} /> Keluar
         </button>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
