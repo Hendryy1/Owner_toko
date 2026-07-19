@@ -207,6 +207,7 @@ export default function OwnerDashboard() {
         {page === "transaksi" && <TransaksiPage token={token} />}
         {page === "rekap_nota" && <RekapNotaPage token={token} />}
         {page === "clients" && <ClientsPage token={token} />}
+        {page === "verifikasi_toko" && <VerifikasiTokoPage token={token} />}
         {page === "keuangan" && <KeuanganPage token={token} />}
         {page === "biaya_operasional" && <BiayaOperasionalPage token={token} />}
         {page === "pajak" && <PajakPage token={token} />}
@@ -289,6 +290,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "transaksi", label: "Transaksi", icon: Table2, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "rekap_nota", label: "Rekap Nota", icon: Receipt, roles: ["owner", "admin_keuangan"] },
     { key: "clients", label: "Approve Toko Baru", icon: Store, roles: ["owner", "admin_keuangan"] },
+    { key: "verifikasi_toko", label: "Verifikasi Toko", icon: Eye, roles: ["owner", "admin_transaksi"] },
     { key: "keuangan", label: "Laporan Keuangan", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "biaya_operasional", label: "Biaya Operasional", icon: Receipt, roles: ["owner", "admin_keuangan"] },
     { key: "pajak", label: "Pajak", icon: FileEdit, roles: ["owner", "admin_keuangan"] },
@@ -5643,6 +5645,166 @@ function SaldoVaPage({ token }) {
         })}
       </div>
       {filteredClients.length === 0 && <EmptyState text="Tidak ada toko yang cocok." />}
+    </div>
+  );
+}
+
+// ============================================================
+// VERIFIKASI TOKO (foto toko + KTP wajib sebelum bisa order)
+// ============================================================
+function VerifikasiTokoPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [clients, setClients] = useState([]);
+  const [processingId, setProcessingId] = useState(null);
+  const [rejectingId, setRejectingId] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [filter, setFilter] = useState("menunggu_review"); // menunggu_review | terverifikasi | ditolak | semua
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "clients?select=id,kode,nama,foto_toko_url,foto_ktp_url,status_verifikasi,alasan_verifikasi_ditolak&status_verifikasi=neq.belum_upload&order=nama.asc");
+      setClients(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function approve(client) {
+    setProcessingId(client.id);
+    try {
+      await supabaseFetch(token, `clients?id=eq.${client.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status_verifikasi: "terverifikasi", alasan_verifikasi_ditolak: null }),
+      });
+      setClients((prev) => prev.map((c) => (c.id === client.id ? { ...c, status_verifikasi: "terverifikasi" } : c)));
+    } catch (e) { alert("Gagal approve: " + e.message); }
+    setProcessingId(null);
+  }
+
+  async function tolak(client) {
+    if (!rejectReason.trim()) {
+      alert("Isi dulu alasan penolakannya.");
+      return;
+    }
+    setProcessingId(client.id);
+    try {
+      await supabaseFetch(token, `clients?id=eq.${client.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status_verifikasi: "ditolak", alasan_verifikasi_ditolak: rejectReason.trim() }),
+      });
+      setClients((prev) => prev.map((c) => (c.id === client.id ? { ...c, status_verifikasi: "ditolak", alasan_verifikasi_ditolak: rejectReason.trim() } : c)));
+      setRejectingId(null);
+      setRejectReason("");
+    } catch (e) { alert("Gagal tolak: " + e.message); }
+    setProcessingId(null);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const filtered = clients.filter((c) => filter === "semua" || c.status_verifikasi === filter);
+  const badgeStyle = {
+    menunggu_review: { bg: "#FBF0D9", color: "#8A6A1A", label: "Menunggu Review" },
+    terverifikasi: { bg: "#D8E9E6", color: "#28685D", label: "Terverifikasi" },
+    ditolak: { bg: "#FBEAEA", color: "#C0392B", label: "Ditolak" },
+  };
+
+  return (
+    <div>
+      <PageHeader title="Verifikasi Toko" subtitle="Cek foto toko & KTP sebelum toko diizinkan order" />
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {[
+          { key: "menunggu_review", label: "Menunggu Review" },
+          { key: "terverifikasi", label: "Terverifikasi" },
+          { key: "ditolak", label: "Ditolak" },
+          { key: "semua", label: "Semua" },
+        ].map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            style={{ padding: "8px 16px", borderRadius: 9, border: filter === f.key ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: filter === f.key ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 }}>
+        {filtered.map((c) => {
+          const badge = badgeStyle[c.status_verifikasi] || { bg: "#F7F5F1", color: "#9CA0A6", label: c.status_verifikasi };
+          return (
+            <Card key={c.id}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div>
+                  <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700 }}>{c.kode}</p>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.nama}</p>
+                </div>
+                <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color }}>{badge.label}</span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
+                <div>
+                  <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>FOTO TOKO</p>
+                  {c.foto_toko_url ? (
+                    <img src={c.foto_toko_url} alt="Foto Toko" style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8 }} />
+                  ) : (
+                    <div style={{ width: "100%", height: 120, borderRadius: 8, background: "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#9CA0A6" }}>Belum ada</div>
+                  )}
+                </div>
+                <div>
+                  <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>FOTO KTP</p>
+                  {c.foto_ktp_url ? (
+                    <img src={c.foto_ktp_url} alt="Foto KTP" style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8 }} />
+                  ) : (
+                    <div style={{ width: "100%", height: 120, borderRadius: 8, background: "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#9CA0A6" }}>Belum ada</div>
+                  )}
+                </div>
+              </div>
+
+              {c.status_verifikasi === "ditolak" && c.alasan_verifikasi_ditolak && (
+                <div style={{ background: "#FBEAEA", borderRadius: 9, padding: 10, marginBottom: 12 }}>
+                  <p style={{ fontSize: 11.5, color: "#C0392B", margin: 0 }}><strong>Alasan ditolak:</strong> {c.alasan_verifikasi_ditolak}</p>
+                </div>
+              )}
+
+              {c.status_verifikasi === "menunggu_review" && (
+                rejectingId === c.id ? (
+                  <div>
+                    <textarea
+                      value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+                      placeholder="Alasan penolakan..."
+                      rows={2}
+                      style={{ width: "100%", padding: 9, borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5, marginBottom: 8, resize: "vertical" }}
+                    />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => tolak(c)} disabled={processingId === c.id} style={{ flex: 1, padding: 9, borderRadius: 8, border: "none", background: "#C0392B", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+                        Kirim Penolakan
+                      </button>
+                      <button onClick={() => { setRejectingId(null); setRejectReason(""); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12, fontWeight: 600 }}>
+                        Batal
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => approve(c)} disabled={processingId === c.id} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", background: "#28685D", color: "#fff", fontSize: 12.5, fontWeight: 700 }}>
+                      {processingId === c.id ? "..." : "Setujui"}
+                    </button>
+                    <button onClick={() => setRejectingId(c.id)} style={{ flex: 1, padding: 10, borderRadius: 9, border: "1.5px solid #C0392B", background: "#fff", color: "#C0392B", fontSize: 12.5, fontWeight: 700 }}>
+                      Tolak
+                    </button>
+                  </div>
+                )
+              )}
+            </Card>
+          );
+        })}
+      </div>
+      {filtered.length === 0 && <EmptyState text="Tidak ada toko di kategori ini." />}
     </div>
   );
 }
