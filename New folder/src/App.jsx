@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera
+  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -175,6 +175,7 @@ export default function OwnerDashboard() {
         {page === "rekap_toko" && <RekapTokoPage token={token} />}
         {page === "sales" && <SalesPage token={token} />}
         {page === "format_nota" && <FormatNotaPage token={token} />}
+        {page === "banner_promo" && <BannerPromoPage token={token} />}
       </div>
     </div>
   );
@@ -255,6 +256,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "rekap_toko", label: "Rekap Toko", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
+    { key: "banner_promo", label: "Banner Promo", icon: ImageIcon, roles: ["owner"] },
   ];
   const items = allItems.filter((it) => it.roles.includes(profile?.role));
 
@@ -3374,7 +3376,7 @@ function ProductPage({ token }) {
       await supabaseFetch(token, `products?id=eq.${id}`, { method: "DELETE" });
       setProducts((prev) => prev.filter((p) => p.id !== id));
     } catch (e) {
-      alert("Gagal hapus (mungkin produk ini masih dipakai di order lama - coba nonaktifkan saja lewat Edit): " + e.message);
+      alert("Gagal hapus - produk ini masih punya riwayat (order lama dan/atau catatan stock movement/inbound). Silakan nonaktifkan saja lewat tombol Edit, centang hilangkan 'Produk aktif'.\n\nDetail teknis: " + e.message);
     }
     setDeletingId(null);
   }
@@ -5281,6 +5283,136 @@ function RiwayatBungaInvestorPage({ token, investor, onBack }) {
             })}
           </tbody>
         </table>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// BANNER PROMO (khusus Owner) - kelola foto/GIF widget kampanye mengambang
+// ============================================================
+function BannerPromoPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [bannerId, setBannerId] = useState(null);
+  const [form, setForm] = useState({ gambarUrl: "", judul: "", deskripsi: "", aktif: false });
+
+  useEffect(() => { load(); }, []);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "campaign_banner?select=*&limit=1");
+      const b = rows[0];
+      if (b) {
+        setBannerId(b.id);
+        setForm({ gambarUrl: b.gambar_url || "", judul: b.judul || "", deskripsi: b.deskripsi || "", aktif: b.aktif });
+      }
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+
+  async function uploadGambar(file) {
+    setUploading(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `banner-promo-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+      setForm((prev) => ({ ...prev, gambarUrl: url }));
+    } catch (e) {
+      alert("Gagal upload gambar: " + e.message);
+    }
+    setUploading(false);
+  }
+
+  async function simpan() {
+    setSaving(true);
+    setSaved(false);
+    setError("");
+    try {
+      const body = {
+        gambar_url: form.gambarUrl || null, judul: form.judul || null,
+        deskripsi: form.deskripsi || null, aktif: form.aktif, updated_at: new Date().toISOString(),
+      };
+      if (bannerId) {
+        await supabaseFetch(token, `campaign_banner?id=eq.${bannerId}`, { method: "PATCH", body: JSON.stringify(body) });
+      } else {
+        const [inserted] = await supabaseFetch(token, "campaign_banner", { method: "POST", body: JSON.stringify(body) });
+        setBannerId(inserted.id);
+      }
+      setSaved(true);
+    } catch (e) {
+      setError(e.message);
+    }
+    setSaving(false);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error && !bannerId) return <ErrorBox error={error} onRetry={load} />;
+
+  const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  return (
+    <div>
+      <PageHeader title="Banner Promo" subtitle="Kelola foto/GIF widget kampanye mengambang di Web App" />
+
+      <Card style={{ maxWidth: 480 }}>
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Foto/GIF Widget</label>
+          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ width: 84, height: 84, borderRadius: 14, background: form.gambarUrl ? `url(${form.gambarUrl}) center/cover` : "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+              {!form.gambarUrl && <ImageIcon size={28} color="#D8D6D0" />}
+            </div>
+            <label style={{ padding: "9px 16px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+              {uploading ? "Mengupload..." : "Pilih Foto/GIF"}
+              <input type="file" accept="image/*,.gif" style={{ display: "none" }} disabled={uploading} onChange={(e) => { if (e.target.files[0]) uploadGambar(e.target.files[0]); }} />
+            </label>
+          </div>
+          <p style={{ fontSize: 11, color: "#9CA0A6", margin: "8px 0 0" }}>Upload file .gif untuk widget yang bergerak/animasi.</p>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Judul Kampanye</label>
+          <input value={form.judul} onChange={(e) => setForm({ ...form, judul: e.target.value })} placeholder="misal Promo Spesial!" style={fieldStyle} />
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Deskripsi (tampil di halaman detail kampanye)</label>
+          <textarea value={form.deskripsi} onChange={(e) => setForm({ ...form, deskripsi: e.target.value })} rows={4} style={{ ...fieldStyle, resize: "vertical" }} />
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#24272B", cursor: "pointer" }}>
+            <input type="checkbox" checked={form.aktif} onChange={(e) => setForm({ ...form, aktif: e.target.checked })} />
+            Tampilkan widget ini di Web App
+          </label>
+        </div>
+
+        {error && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBEAEA", color: "#C0392B", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 16 }}>
+            <AlertCircle size={14} /> {error}
+          </div>
+        )}
+        {saved && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", color: "#28685D", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 16, fontWeight: 600 }}>
+            <Check size={14} /> Banner berhasil disimpan.
+          </div>
+        )}
+
+        <button onClick={simpan} disabled={saving || uploading} style={{ padding: "12px 24px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+          {saving ? "Menyimpan..." : "Simpan Perubahan"}
+        </button>
       </Card>
     </div>
   );
