@@ -366,7 +366,7 @@ function OverviewPage({ token }) {
       const nextYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
       const endBulan = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
-      const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni, rekapOmzetSales] = await Promise.all([
+      const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni, rekapOmzetSales, semuaTokoKota] = await Promise.all([
         supabaseFetch(token, "orders?select=id&status=eq.menunggu_persetujuan"),
         supabaseFetch(token, "clients?select=id&status=eq.pending"),
         supabaseFetch(token, "v_laporan_keuangan_bulanan?select=*&order=bulan.desc&limit=1"),
@@ -375,9 +375,20 @@ function OverviewPage({ token }) {
         supabaseFetch(token, "clients?select=id,sales_id&sales_id=not.is.null"),
         supabaseFetch(token, `kunjungan_sales?select=id,sales_id&created_at=gte.${startBulan}&created_at=lt.${endBulan}`),
         supabaseFetch(token, `v_rekap_sales_bulanan?select=sales_id,omzet_bulan&bulan=eq.${startBulan}`),
+        supabaseFetch(token, "clients?select=id,kota&status=eq.aktif"),
       ]);
       const totalPiutang = piutang.reduce((a, b) => a + Number(b.total_piutang || 0), 0);
       const melebihiLimit = piutang.filter((p) => p.melebihi_limit).length;
+
+      // Kelompokkan toko per kota/daerah
+      const kotaMap = {};
+      semuaTokoKota.forEach((c) => {
+        const namaKota = c.kota && c.kota.trim() ? c.kota.trim() : "Tidak Diketahui";
+        kotaMap[namaKota] = (kotaMap[namaKota] || 0) + 1;
+      });
+      const ringkasanKota = Object.entries(kotaMap)
+        .map(([kota, jumlah]) => ({ kota, jumlah }))
+        .sort((a, b) => b.jumlah - a.jumlah);
 
       const ringkasanKunjungan = allSales.map((s) => {
         const jumlahToko = allClients.filter((c) => c.sales_id === s.id).length;
@@ -392,6 +403,7 @@ function OverviewPage({ token }) {
         bulanIni: keuanganBulanIni[0] || null,
         totalPiutang, melebihiLimit,
         ringkasanKunjungan,
+        ringkasanKota,
       });
     } catch (e) {
       setError(e.message);
@@ -462,6 +474,20 @@ function OverviewPage({ token }) {
               </tbody>
             </table>
           </Card>
+        </>
+      )}
+
+      {data.ringkasanKota && data.ringkasanKota.length > 0 && (
+        <>
+          <h2 className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "24px 0 12px" }}>Sebaran Toko per Kota/Daerah</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+            {data.ringkasanKota.map((k) => (
+              <Card key={k.kota} style={{ padding: 16 }}>
+                <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>{k.kota}</p>
+                <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#24272B", margin: 0 }}>{k.jumlah} <span style={{ fontSize: 12, fontWeight: 500, color: "#9CA0A6" }}>toko</span></p>
+              </Card>
+            ))}
+          </div>
         </>
       )}
     </div>
