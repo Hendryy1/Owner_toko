@@ -4051,7 +4051,17 @@ function KunjunganSalesPage({ token, profile }) {
     return kunjunganBulanIni.filter((k) => k.client_id === clientId);
   }
 
+  // Cek apakah toko ini sudah dikunjungi (difoto) HARI INI juga
+  function sudahKunjunganHariIni(clientId) {
+    const todayStr = new Date().toDateString();
+    return kunjunganBulanIni.some((k) => k.client_id === clientId && new Date(k.created_at).toDateString() === todayStr);
+  }
+
   function mulaiCheckin(client) {
+    if (sudahKunjunganHariIni(client.id)) {
+      alert(`Anda sudah membuat laporan kunjungan untuk ${client.nama} hari ini. Silakan coba lagi besok.`);
+      return;
+    }
     setSelectedClient(client);
     setMode("checkin");
     setLocationError("");
@@ -4292,8 +4302,16 @@ function KunjunganSalesPage({ token, profile }) {
               </div>
 
               <div style={{ display: "flex", gap: 8 }}>
-                <button onClick={() => mulaiCheckin(c)} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-                  <Camera size={13} /> Kunjungi
+                <button
+                  onClick={() => mulaiCheckin(c)}
+                  style={{
+                    flex: 1, padding: "9px", borderRadius: 9, border: "none",
+                    background: sudahKunjunganHariIni(c.id) ? "#F7F5F1" : "#E8A426",
+                    color: sudahKunjunganHariIni(c.id) ? "#9CA0A6" : "#24272B",
+                    fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                  }}
+                >
+                  <Camera size={13} /> {sudahKunjunganHariIni(c.id) ? "Sudah Hari Ini" : "Kunjungi"}
                 </button>
                 <button onClick={() => { setSelectedClient(c); setMode("riwayat"); }} style={{ flex: 1, padding: "9px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12, fontWeight: 600 }}>
                   Riwayat
