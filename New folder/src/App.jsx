@@ -360,19 +360,36 @@ function OverviewPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const [pendingOrders, pendingClients, keuanganBulanIni, piutang] = await Promise.all([
+      const now = new Date();
+      const startBulan = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      const nextMonth = now.getMonth() === 11 ? 1 : now.getMonth() + 2;
+      const nextYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+      const endBulan = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
+      const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni] = await Promise.all([
         supabaseFetch(token, "orders?select=id&status=eq.menunggu_persetujuan"),
         supabaseFetch(token, "clients?select=id&status=eq.pending"),
         supabaseFetch(token, "v_laporan_keuangan_bulanan?select=*&order=bulan.desc&limit=1"),
         supabaseFetch(token, "v_piutang_client?select=total_piutang,melebihi_limit"),
+        supabaseFetch(token, "sales?select=id,kode,nama&order=nama.asc"),
+        supabaseFetch(token, "clients?select=id,sales_id&sales_id=not.is.null"),
+        supabaseFetch(token, `kunjungan_sales?select=id,sales_id&created_at=gte.${startBulan}&created_at=lt.${endBulan}`),
       ]);
       const totalPiutang = piutang.reduce((a, b) => a + Number(b.total_piutang || 0), 0);
       const melebihiLimit = piutang.filter((p) => p.melebihi_limit).length;
+
+      const ringkasanKunjungan = allSales.map((s) => {
+        const jumlahToko = allClients.filter((c) => c.sales_id === s.id).length;
+        const totalKunjungan = kunjunganBulanIni.filter((k) => k.sales_id === s.id).length;
+        return { ...s, jumlahToko, targetKunjungan: jumlahToko * TARGET_KUNJUNGAN_PER_BULAN, totalKunjungan };
+      });
+
       setData({
         pendingOrders: pendingOrders.length,
         pendingClients: pendingClients.length,
         bulanIni: keuanganBulanIni[0] || null,
         totalPiutang, melebihiLimit,
+        ringkasanKunjungan,
       });
     } catch (e) {
       setError(e.message);
@@ -407,6 +424,42 @@ function OverviewPage({ token }) {
             <MiniStat label="PPh Final UMKM" value={rupiah(data.bulanIni.pph_final_umkm)} />
           </div>
         </Card>
+      )}
+
+      {data.ringkasanKunjungan && data.ringkasanKunjungan.length > 0 && (
+        <>
+          <h2 className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "24px 0 12px" }}>Ringkasan Kunjungan Sales Bulan Ini</h2>
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ background: "#F7F5F1" }}>
+                  {["Sales", "Jumlah Toko", "Target Kunjungan", "Total Kunjungan", "Pencapaian"].map((h) => (
+                    <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.ringkasanKunjungan.map((s) => {
+                  const persen = s.targetKunjungan > 0 ? (s.totalKunjungan / s.targetKunjungan) * 100 : 0;
+                  const tercapai = persen >= 100;
+                  return (
+                    <tr key={s.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                      <td style={{ padding: "12px 14px", fontWeight: 700 }}>{s.nama}</td>
+                      <td style={{ padding: "12px 14px" }}>{s.jumlahToko}</td>
+                      <td style={{ padding: "12px 14px" }}>{s.targetKunjungan}</td>
+                      <td style={{ padding: "12px 14px", fontWeight: 700 }}>{s.totalKunjungan}</td>
+                      <td style={{ padding: "12px 14px" }}>
+                        <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: tercapai ? "#D8E9E6" : "#FBF0D9", color: tercapai ? "#28685D" : "#B8860B" }}>
+                          {persen.toFixed(0)}%
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Card>
+        </>
       )}
     </div>
   );
