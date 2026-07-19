@@ -5036,7 +5036,7 @@ function BungaInvestorPage({ token }) {
               </div>
               <div>
                 <label style={labelStyle}>Bunga per Bulan (%)</label>
-                <input type="number" value={form.bungaPersen} onChange={(e) => setForm({ ...form, bungaPersen: e.target.value })} placeholder="misal 2" style={fieldStyle} />
+                <input type="number" step="0.0001" value={form.bungaPersen} onChange={(e) => setForm({ ...form, bungaPersen: e.target.value })} placeholder="misal 0.8333" style={fieldStyle} />
               </div>
             </div>
             <div style={{ marginBottom: 14 }}>
