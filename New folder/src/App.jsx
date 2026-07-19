@@ -372,7 +372,7 @@ function OverviewPage({ token }) {
         supabaseFetch(token, "v_laporan_keuangan_bulanan?select=*&order=bulan.desc&limit=1"),
         supabaseFetch(token, "v_piutang_client?select=total_piutang,melebihi_limit"),
         supabaseFetch(token, "sales?select=id,kode,nama&order=nama.asc"),
-        supabaseFetch(token, "clients?select=id,sales_id&sales_id=not.is.null"),
+        supabaseFetch(token, "clients?select=id,sales_id,kota&sales_id=not.is.null"),
         supabaseFetch(token, `kunjungan_sales?select=id,sales_id&created_at=gte.${startBulan}&created_at=lt.${endBulan}`),
         supabaseFetch(token, `v_rekap_sales_bulanan?select=sales_id,omzet_bulan&bulan=eq.${startBulan}`),
         supabaseFetch(token, "clients?select=id,kota&status=eq.aktif"),
@@ -391,10 +391,12 @@ function OverviewPage({ token }) {
         .sort((a, b) => b.jumlah - a.jumlah);
 
       const ringkasanKunjungan = allSales.map((s) => {
-        const jumlahToko = allClients.filter((c) => c.sales_id === s.id).length;
+        const tokoSales = allClients.filter((c) => c.sales_id === s.id);
+        const jumlahToko = tokoSales.length;
         const totalKunjungan = kunjunganBulanIni.filter((k) => k.sales_id === s.id).length;
         const omzetRow = rekapOmzetSales.find((r) => r.sales_id === s.id);
-        return { ...s, jumlahToko, targetKunjungan: jumlahToko * TARGET_KUNJUNGAN_PER_BULAN, totalKunjungan, totalOmzet: Number(omzetRow?.omzet_bulan || 0) };
+        const daftarKota = Array.from(new Set(tokoSales.map((c) => (c.kota && c.kota.trim()) || "Tidak Diketahui")));
+        return { ...s, jumlahToko, targetKunjungan: jumlahToko * TARGET_KUNJUNGAN_PER_BULAN, totalKunjungan, totalOmzet: Number(omzetRow?.omzet_bulan || 0), daftarKota };
       });
 
       setData({
@@ -447,7 +449,7 @@ function OverviewPage({ token }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: "#F7F5F1" }}>
-                  {["Sales", "Total Omzet", "Jumlah Toko", "Target Kunjungan", "Total Kunjungan", "Pencapaian"].map((h) => (
+                  {["Sales", "Kota", "Total Omzet", "Jumlah Toko", "Target Kunjungan", "Total Kunjungan", "Pencapaian"].map((h) => (
                     <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
                   ))}
                 </tr>
@@ -459,6 +461,7 @@ function OverviewPage({ token }) {
                   return (
                     <tr key={s.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                       <td style={{ padding: "12px 14px", fontWeight: 700 }}>{s.nama}</td>
+                      <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{s.daftarKota && s.daftarKota.length > 0 ? s.daftarKota.join(", ") : "-"}</td>
                       <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(s.totalOmzet)}</td>
                       <td style={{ padding: "12px 14px" }}>{s.jumlahToko}</td>
                       <td style={{ padding: "12px 14px" }}>{s.targetKunjungan}</td>
