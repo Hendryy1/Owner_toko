@@ -5085,56 +5085,38 @@ function BungaInvestorPage({ token }) {
       {investors.length === 0 && <EmptyState text="Belum ada investor. Klik 'Tambah Investor' untuk mulai." />}
 
       {investors.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 28 }}>
-          <div>
-            <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#28685D", margin: "0 0 12px" }}>
-              Sudah Dibayar - {BULAN[filterMonth]} {filterYear}
-            </h2>
-            <Card style={{ padding: 0, overflow: "hidden" }}>
-              {investors
-                .filter((inv) => !inv.tanggal_mulai || inv.tanggal_mulai <= bulanTerpilih || inv.tanggal_mulai.slice(0, 7) === bulanTerpilih.slice(0, 7))
-                .filter((inv) => statusInvestorBulan(inv.id, bulanTerpilih)?.sudah_dibayar)
-                .map((inv, idx, arr) => {
-                  const bunga = hitungBungaBulan(inv, bulanTerpilih);
-                  const status = statusInvestorBulan(inv.id, bulanTerpilih);
-                  return (
-                    <div key={inv.id} style={{ padding: "12px 16px", borderTop: idx > 0 ? "1px solid #EDEAE3" : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div>
-                        <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>{inv.nama}</p>
-                        <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>Dibayar {new Date(status.tanggal_bayar).toLocaleDateString("id-ID")}</p>
-                      </div>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "#28685D" }}>{rupiah(bunga)}</span>
-                    </div>
-                  );
-                })}
-              {investors.filter((inv) => (!inv.tanggal_mulai || inv.tanggal_mulai <= bulanTerpilih || inv.tanggal_mulai.slice(0, 7) === bulanTerpilih.slice(0, 7)) && statusInvestorBulan(inv.id, bulanTerpilih)?.sudah_dibayar).length === 0 && (
-                <EmptyState text="Belum ada yang dibayar bulan ini." />
-              )}
-            </Card>
-          </div>
-
-          <div>
-            <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#C0392B", margin: "0 0 12px" }}>
-              Belum Dibayar - {BULAN[filterMonth]} {filterYear}
-            </h2>
-            <Card style={{ padding: 0, overflow: "hidden" }}>
-              {investors
-                .filter((inv) => !inv.tanggal_mulai || inv.tanggal_mulai <= bulanTerpilih || inv.tanggal_mulai.slice(0, 7) === bulanTerpilih.slice(0, 7))
-                .filter((inv) => !statusInvestorBulan(inv.id, bulanTerpilih)?.sudah_dibayar)
-                .map((inv, idx) => {
-                  const bunga = hitungBungaBulan(inv, bulanTerpilih);
-                  return (
-                    <div key={inv.id} style={{ padding: "12px 16px", borderTop: idx > 0 ? "1px solid #EDEAE3" : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>{inv.nama}</p>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: "#C0392B" }}>{rupiah(bunga)}</span>
-                    </div>
-                  );
-                })}
-              {investors.filter((inv) => (!inv.tanggal_mulai || inv.tanggal_mulai <= bulanTerpilih || inv.tanggal_mulai.slice(0, 7) === bulanTerpilih.slice(0, 7)) && !statusInvestorBulan(inv.id, bulanTerpilih)?.sudah_dibayar).length === 0 && (
-                <EmptyState text="Semua investor sudah dibayar bulan ini." />
-              )}
-            </Card>
-          </div>
+        <div style={{ marginTop: 28 }}>
+          <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#28685D", margin: "0 0 12px" }}>
+            Sudah Dibayar - Tahun {filterYear}
+          </h2>
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            {(() => {
+              const barisLunas = [];
+              for (let bulanKe = 1; bulanKe <= 12; bulanKe++) {
+                const bulanIni = `${filterYear}-${String(bulanKe).padStart(2, "0")}-01`;
+                investors.forEach((inv) => {
+                  const sudahMulai = !inv.tanggal_mulai || inv.tanggal_mulai <= bulanIni || inv.tanggal_mulai.slice(0, 7) === bulanIni.slice(0, 7);
+                  if (!sudahMulai) return;
+                  const status = statusInvestorBulan(inv.id, bulanIni);
+                  if (status?.sudah_dibayar) {
+                    barisLunas.push({ inv, bulan: bulanIni, status, bunga: hitungBungaBulan(inv, bulanIni) });
+                  }
+                });
+              }
+              if (barisLunas.length === 0) {
+                return <EmptyState text="Belum ada yang dibayar tahun ini." />;
+              }
+              return barisLunas.map((r, idx) => (
+                <div key={`${r.inv.id}-${r.bulan}`} style={{ padding: "12px 16px", borderTop: idx > 0 ? "1px solid #EDEAE3" : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>{r.inv.nama} - {new Date(r.bulan).toLocaleDateString("id-ID", { month: "long", year: "numeric" })}</p>
+                    <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>Dibayar {new Date(r.status.tanggal_bayar).toLocaleDateString("id-ID")}</p>
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#28685D" }}>{rupiah(r.bunga)}</span>
+                </div>
+              ));
+            })()}
+          </Card>
         </div>
       )}
 
