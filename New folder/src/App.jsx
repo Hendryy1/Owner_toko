@@ -4427,7 +4427,7 @@ function BiayaOperasionalPage({ token }) {
   const [filterYear, setFilterYear] = useState(now.getFullYear());
   const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
   const [form, setForm] = useState({
-    tanggal: now.toISOString().slice(0, 10), kategori: "", jumlah: "", keterangan: "",
+    tanggal: now.toISOString().slice(0, 10), kategori: "", jumlah: "", keterangan: "", berulang: false,
   });
 
   const BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
@@ -4443,10 +4443,35 @@ function BiayaOperasionalPage({ token }) {
       const nextYear = filterMonth === 12 ? filterYear + 1 : filterYear;
       const endBulan = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
-      const [biayaRows, keuanganRows] = await Promise.all([
+      let [biayaRows, keuanganRows] = await Promise.all([
         supabaseFetch(token, `biaya_operasional?select=*&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=tanggal.desc`),
         supabaseFetch(token, `v_laporan_keuangan_bulanan?select=laba_kotor&bulan=eq.${startBulan}`),
       ]);
+
+      // Kalau bulan ini belum ada data sama sekali, cek bulan SEBELUMNYA -
+      // salin otomatis semua biaya yang ditandai "berulang" ke bulan ini
+      // (sebagai baris baru yang berdiri sendiri, supaya tetap bisa
+      // diedit/dihapus per bulan tanpa memengaruhi bulan lain).
+      if (biayaRows.length === 0) {
+        const prevMonth = filterMonth === 1 ? 12 : filterMonth - 1;
+        const prevYear = filterMonth === 1 ? filterYear - 1 : filterYear;
+        const prevStart = `${prevYear}-${String(prevMonth).padStart(2, "0")}-01`;
+        const prevEnd = startBulan;
+        const biayaBerulangBulanLalu = await supabaseFetch(
+          token,
+          `biaya_operasional?select=*&tanggal=gte.${prevStart}&tanggal=lt.${prevEnd}&berulang=eq.true`
+        );
+        if (biayaBerulangBulanLalu.length > 0) {
+          const salinan = biayaBerulangBulanLalu.map((b) => {
+            const tgl = new Date(b.tanggal);
+            const tanggalBaru = `${filterYear}-${String(filterMonth).padStart(2, "0")}-${String(tgl.getDate()).padStart(2, "0")}`;
+            return { tanggal: tanggalBaru, kategori: b.kategori, jumlah: b.jumlah, keterangan: b.keterangan, berulang: true };
+          });
+          await supabaseFetch(token, "biaya_operasional", { method: "POST", body: JSON.stringify(salinan) });
+          biayaRows = await supabaseFetch(token, `biaya_operasional?select=*&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=tanggal.desc`);
+        }
+      }
+
       setBiayaList(biayaRows);
       setLabaKotorBulanIni(Number(keuanganRows[0]?.laba_kotor || 0));
     } catch (e) { setError(e.message); }
@@ -4454,13 +4479,13 @@ function BiayaOperasionalPage({ token }) {
   }
 
   function resetForm() {
-    setForm({ tanggal: now.toISOString().slice(0, 10), kategori: "", jumlah: "", keterangan: "" });
+    setForm({ tanggal: now.toISOString().slice(0, 10), kategori: "", jumlah: "", keterangan: "", berulang: false });
     setEditingId(null);
   }
 
   function startEdit(b) {
     setEditingId(b.id);
-    setForm({ tanggal: b.tanggal, kategori: b.kategori, jumlah: b.jumlah, keterangan: b.keterangan || "" });
+    setForm({ tanggal: b.tanggal, kategori: b.kategori, jumlah: b.jumlah, keterangan: b.keterangan || "", berulang: b.berulang || false });
   }
 
   async function submitForm() {
@@ -4472,7 +4497,7 @@ function BiayaOperasionalPage({ token }) {
     try {
       const body = {
         tanggal: form.tanggal, kategori: form.kategori.trim(),
-        jumlah: Number(form.jumlah), keterangan: form.keterangan || null,
+        jumlah: Number(form.jumlah), keterangan: form.keterangan || null, berulang: form.berulang,
       };
       if (editingId) {
         await supabaseFetch(token, `biaya_operasional?id=eq.${editingId}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -4555,6 +4580,12 @@ function BiayaOperasionalPage({ token }) {
           <label style={labelStyle}>Keterangan (opsional)</label>
           <input value={form.keterangan} onChange={(e) => setForm({ ...form, keterangan: e.target.value })} style={fieldStyle} />
         </div>
+        <div style={{ marginBottom: 18 }}>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#24272B", cursor: "pointer" }}>
+            <input type="checkbox" checked={form.berulang} onChange={(e) => setForm({ ...form, berulang: e.target.checked })} />
+            Ulangi tiap bulan (otomatis muncul lagi bulan depan, tanpa perlu input ulang)
+          </label>
+        </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button onClick={submitForm} disabled={saving} style={{ padding: "11px 22px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
             {saving ? "Menyimpan..." : editingId ? "Simpan Perubahan" : "Tambah Biaya"}
@@ -4581,7 +4612,12 @@ function BiayaOperasionalPage({ token }) {
             {biayaList.map((b) => (
               <tr key={b.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                 <td style={{ padding: "12px 14px" }}>{new Date(b.tanggal).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
-                <td style={{ padding: "12px 14px", fontWeight: 600 }}>{b.kategori}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 600 }}>
+                  {b.kategori}
+                  {b.berulang && (
+                    <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "#4A6B4A", background: "#D8E9E6", padding: "2px 7px", borderRadius: 999 }}>Berulang</span>
+                  )}
+                </td>
                 <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(b.jumlah)}</td>
                 <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{b.keterangan || "-"}</td>
                 <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
