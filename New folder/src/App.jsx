@@ -4926,7 +4926,9 @@ function BungaInvestorPage({ token }) {
             </tr>
           </thead>
           <tbody>
-            {investors.map((inv) => {
+            {investors
+              .filter((inv) => !inv.tanggal_mulai || inv.tanggal_mulai <= bulanTerpilih || inv.tanggal_mulai.slice(0, 7) === bulanTerpilih.slice(0, 7))
+              .map((inv) => {
               const bungaPerBulan = Number(inv.modal_investasi) * (Number(inv.bunga_persen) / 100);
               const status = statusInvestorBulan(inv.id, bulanTerpilih);
               const lunas = status?.sudah_dibayar;
