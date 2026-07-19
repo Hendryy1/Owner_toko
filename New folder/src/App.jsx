@@ -164,6 +164,7 @@ export default function OwnerDashboard() {
         {page === "keuangan" && <KeuanganPage token={token} />}
         {page === "biaya_operasional" && <BiayaOperasionalPage token={token} />}
         {page === "pajak" && <PajakPage token={token} />}
+        {page === "bunga_investor" && <BungaInvestorPage token={token} />}
         {page === "piutang" && <PiutangPage token={token} />}
         {page === "barang" && <BarangTerlarisPage token={token} />}
         {page === "produk" && <ProductPage token={token} />}
@@ -243,6 +244,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "keuangan", label: "Laporan Keuangan", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "biaya_operasional", label: "Biaya Operasional", icon: Receipt, roles: ["owner", "admin_keuangan"] },
     { key: "pajak", label: "Pajak", icon: FileEdit, roles: ["owner", "admin_keuangan"] },
+    { key: "bunga_investor", label: "Bunga Investor", icon: TrendingUp, roles: ["owner"] },
     { key: "piutang", label: "Piutang", icon: AlertCircle, roles: ["owner", "admin_keuangan"] },
     { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
     { key: "produk", label: "Product", icon: Package, roles: ["owner"] },
@@ -4765,6 +4767,288 @@ function PajakPage({ token }) {
           </tbody>
         </table>
         {rows.length === 0 && <EmptyState text="Belum ada data transaksi." />}
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// BUNGA INVESTOR (khusus Owner) - kelola investor & lacak bunga bulanan
+// ============================================================
+function BungaInvestorPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [investors, setInvestors] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [editingInvestor, setEditingInvestor] = useState(null);
+  const [selectedInvestor, setSelectedInvestor] = useState(null); // buka riwayat bunga investor ini
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ nama: "", modalInvestasi: "", bungaPersen: "", tanggalMulai: "", keterangan: "" });
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "investors?select=*&order=nama.asc");
+      setInvestors(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  function bukaFormBaru() {
+    setEditingInvestor(null);
+    setForm({ nama: "", modalInvestasi: "", bungaPersen: "", tanggalMulai: new Date().toISOString().slice(0, 10), keterangan: "" });
+    setShowForm(true);
+  }
+
+  function bukaFormEdit(inv) {
+    setEditingInvestor(inv);
+    setForm({
+      nama: inv.nama, modalInvestasi: inv.modal_investasi, bungaPersen: inv.bunga_persen,
+      tanggalMulai: inv.tanggal_mulai || "", keterangan: inv.keterangan || "",
+    });
+    setShowForm(true);
+  }
+
+  async function simpanInvestor() {
+    if (!form.nama.trim() || !form.modalInvestasi || !form.bungaPersen) {
+      alert("Isi dulu nama, modal investasi, dan persen bunga.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = {
+        nama: form.nama.trim(), modal_investasi: Number(form.modalInvestasi),
+        bunga_persen: Number(form.bungaPersen), tanggal_mulai: form.tanggalMulai || null,
+        keterangan: form.keterangan || null,
+      };
+      if (editingInvestor) {
+        await supabaseFetch(token, `investors?id=eq.${editingInvestor.id}`, { method: "PATCH", body: JSON.stringify(body) });
+      } else {
+        await supabaseFetch(token, "investors", { method: "POST", body: JSON.stringify(body) });
+      }
+      setShowForm(false);
+      await load();
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function hapusInvestor(id) {
+    if (!confirm("Hapus investor ini? Riwayat pembayaran bunganya juga akan terhapus.")) return;
+    try {
+      await supabaseFetch(token, `investors?id=eq.${id}`, { method: "DELETE" });
+      setInvestors((prev) => prev.filter((i) => i.id !== id));
+    } catch (e) {
+      alert("Gagal hapus: " + e.message);
+    }
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  // ---------- HALAMAN RIWAYAT BUNGA 1 INVESTOR ----------
+  if (selectedInvestor) {
+    return <RiwayatBungaInvestorPage token={token} investor={selectedInvestor} onBack={() => setSelectedInvestor(null)} />;
+  }
+
+  // ---------- HALAMAN DAFTAR INVESTOR ----------
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 22 }}>
+        <PageHeader title="Bunga Investor" subtitle="Kelola investor dan lacak pembayaran bunga bulanan" />
+        <button onClick={bukaFormBaru} style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, flexShrink: 0 }}>
+          <PackagePlus size={16} /> Tambah Investor
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
+        {investors.map((inv) => {
+          const bungaPerBulan = Number(inv.modal_investasi) * (Number(inv.bunga_persen) / 100);
+          return (
+            <Card key={inv.id}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                <p style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: 0 }}>{inv.nama}</p>
+                {!inv.aktif && <span style={{ fontSize: 10, fontWeight: 700, color: "#9CA0A6", background: "#F7F5F1", padding: "2px 8px", borderRadius: 999 }}>Nonaktif</span>}
+              </div>
+              <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 4px" }}>Modal Investasi</p>
+              <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 10px" }}>{rupiah(inv.modal_investasi)}</p>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
+                <div>
+                  <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>Bunga/Bulan</p>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>{inv.bunga_persen}%</p>
+                </div>
+                <div>
+                  <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>Jumlah Bunga</p>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "#28685D", margin: 0 }}>{rupiah(bungaPerBulan)}</p>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setSelectedInvestor(inv)} style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12, fontWeight: 700 }}>
+                  Riwayat Bunga
+                </button>
+                <button onClick={() => bukaFormEdit(inv)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12, fontWeight: 600 }}>
+                  Edit
+                </button>
+                <button onClick={() => hapusInvestor(inv.id)} style={{ padding: "8px 12px", borderRadius: 8, border: "none", background: "none", color: "#C0392B", fontSize: 12, fontWeight: 700 }}>
+                  Hapus
+                </button>
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+      {investors.length === 0 && <EmptyState text="Belum ada investor. Klik 'Tambah Investor' untuk mulai." />}
+
+      {showForm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 14, width: 480, maxHeight: "88vh", overflowY: "auto", padding: 28 }}>
+            <h2 className="disp" style={{ fontSize: 20, fontWeight: 700, color: "#24272B", margin: "0 0 18px" }}>
+              {editingInvestor ? `Edit Investor - ${editingInvestor.nama}` : "Tambah Investor"}
+            </h2>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Nama Investor</label>
+              <input value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} style={fieldStyle} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+              <div>
+                <label style={labelStyle}>Modal Investasi (Rp)</label>
+                <input type="number" value={form.modalInvestasi} onChange={(e) => setForm({ ...form, modalInvestasi: e.target.value })} style={fieldStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Bunga per Bulan (%)</label>
+                <input type="number" value={form.bungaPersen} onChange={(e) => setForm({ ...form, bungaPersen: e.target.value })} placeholder="misal 2" style={fieldStyle} />
+              </div>
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Tanggal Mulai Investasi</label>
+              <input type="date" value={form.tanggalMulai} onChange={(e) => setForm({ ...form, tanggalMulai: e.target.value })} style={fieldStyle} />
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={labelStyle}>Keterangan (opsional)</label>
+              <textarea value={form.keterangan} onChange={(e) => setForm({ ...form, keterangan: e.target.value })} rows={2} style={{ ...fieldStyle, resize: "vertical" }} />
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowForm(false)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
+                Batal
+              </button>
+              <button onClick={simpanInvestor} disabled={saving} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13 }}>
+                {saving ? "Menyimpan..." : "Simpan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// RIWAYAT BUNGA 1 INVESTOR (12 bulan terakhir + status bayar)
+// ============================================================
+function RiwayatBungaInvestorPage({ token, investor, onBack }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [pembayaran, setPembayaran] = useState([]);
+  const [saving, setSaving] = useState(null);
+
+  const bulanList = Array.from({ length: 12 }, (_, i) => {
+    const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - i);
+    return d.toISOString().slice(0, 10).slice(0, 8) + "01";
+  }).reverse();
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, `bunga_investor_pembayaran?select=*&investor_id=eq.${investor.id}`);
+      setPembayaran(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  const bungaPerBulan = Number(investor.modal_investasi) * (Number(investor.bunga_persen) / 100);
+
+  function statusBulan(bulan) {
+    return pembayaran.find((p) => p.bulan === bulan);
+  }
+
+  async function toggleBayar(bulan) {
+    setSaving(bulan);
+    try {
+      const existing = statusBulan(bulan);
+      const sudahDibayarBaru = !(existing?.sudah_dibayar);
+      const body = {
+        investor_id: investor.id, bulan, jumlah_bunga: bungaPerBulan,
+        sudah_dibayar: sudahDibayarBaru,
+        tanggal_bayar: sudahDibayarBaru ? new Date().toISOString().slice(0, 10) : null,
+      };
+      const [updated] = await supabaseFetch(token, "bunga_investor_pembayaran?on_conflict=investor_id,bulan", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=representation",
+        body: JSON.stringify(body),
+      });
+      setPembayaran((prev) => [...prev.filter((p) => p.bulan !== bulan), updated]);
+    } catch (e) {
+      alert("Gagal update status: " + e.message);
+    }
+    setSaving(null);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  return (
+    <div>
+      <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+        <ChevronLeft size={16} /> Kembali
+      </button>
+      <PageHeader title={`Riwayat Bunga - ${investor.nama}`} subtitle={`Modal ${rupiah(investor.modal_investasi)} - Bunga ${investor.bunga_persen}%/bulan (${rupiah(bungaPerBulan)})`} />
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Bulan", "Jumlah Bunga", "Status", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {bulanList.map((bulan) => {
+              const status = statusBulan(bulan);
+              const lunas = status?.sudah_dibayar;
+              return (
+                <tr key={bulan} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px", fontWeight: 600 }}>{new Date(bulan).toLocaleDateString("id-ID", { month: "long", year: "numeric" })}</td>
+                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(bungaPerBulan)}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: lunas ? "#D8E9E6" : "#FBEAEA", color: lunas ? "#28685D" : "#C0392B" }}>
+                      {lunas ? `Lunas (${new Date(status.tanggal_bayar).toLocaleDateString("id-ID")})` : "Belum Bayar"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <button
+                      onClick={() => toggleBayar(bulan)}
+                      disabled={saving === bulan}
+                      style={{ padding: "6px 12px", borderRadius: 7, border: lunas ? "1px solid #E4E1DA" : "none", background: lunas ? "#fff" : "#E8A426", color: lunas ? "#6B6F75" : "#24272B", fontSize: 11, fontWeight: 700 }}
+                    >
+                      {saving === bulan ? "..." : lunas ? "Batalkan" : "Tandai Lunas"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </Card>
     </div>
   );
