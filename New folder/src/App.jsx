@@ -20,7 +20,21 @@ async function supabaseAuth(email, password) {
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error_description || data.msg || "Login gagal");
-  return data; // { access_token, user, ... }
+  return data; // { access_token, refresh_token, user, ... }
+}
+
+// Perpanjang sesi pakai refresh_token - access_token Supabase cuma berlaku
+// ±1 jam, tapi refresh_token bisa dipakai berkali-kali buat dapat
+// access_token baru tanpa perlu login ulang, sampai user klik Keluar sendiri.
+async function supabaseRefreshToken(refreshToken) {
+  const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, "Content-Type": "application/json" },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error_description || data.msg || "Sesi berakhir, silakan login ulang.");
+  return data; // { access_token, refresh_token baru, ... }
 }
 
 async function supabaseFetch(token, path, options = {}) {
@@ -77,30 +91,62 @@ export default function OwnerDashboard() {
   const [loggingIn, setLoggingIn] = useState(false);
   const [restoringSession, setRestoringSession] = useState(true);
 
-  async function loadProfileAndEnter(userId, accessToken) {
+  async function loadProfileAndEnter(userId, accessToken, refreshToken) {
     const profRows = await supabaseFetch(accessToken, `profiles?select=*&id=eq.${userId}`);
     if (!profRows || profRows.length === 0) {
       throw new Error("Akun ini belum terhubung sebagai staff (cek tabel profiles).");
     }
     setToken(accessToken);
     setProfile(profRows[0]);
-    saveDashboardSession({ userId, token: accessToken });
+    saveDashboardSession({ userId, token: accessToken, refreshToken });
   }
 
   useEffect(() => {
     const session = loadDashboardSession();
     if (!session) { setRestoringSession(false); return; }
-    loadProfileAndEnter(session.userId, session.token)
+
+    async function restoreWithRefresh() {
+      // access_token lama mungkin sudah kedaluwarsa (±1 jam) - selalu coba
+      // refresh dulu pakai refresh_token supaya dapat yang segar, biar staff
+      // tetap login terus sampai benar-benar klik Keluar, bukan expired sendiri.
+      if (session.refreshToken) {
+        const refreshed = await supabaseRefreshToken(session.refreshToken);
+        await loadProfileAndEnter(session.userId, refreshed.access_token, refreshed.refresh_token);
+        return;
+      }
+      // Sesi lama (sebelum fitur ini ada) belum punya refresh_token
+      await loadProfileAndEnter(session.userId, session.token);
+    }
+
+    restoreWithRefresh()
       .catch(() => clearDashboardSession())
       .finally(() => setRestoringSession(false));
   }, []);
+
+  // Refresh token berkala di latar belakang (tiap 45 menit) selama tab
+  // dibiarkan terbuka, supaya tidak sempat kedaluwarsa di tengah pemakaian.
+  useEffect(() => {
+    if (!profile) return;
+    const interval = setInterval(async () => {
+      const session = loadDashboardSession();
+      if (!session?.refreshToken) return;
+      try {
+        const refreshed = await supabaseRefreshToken(session.refreshToken);
+        setToken(refreshed.access_token);
+        saveDashboardSession({ ...session, token: refreshed.access_token, refreshToken: refreshed.refresh_token });
+      } catch (e) {
+        console.log("Gagal refresh token di latar belakang:", e.message);
+      }
+    }, 45 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [profile]);
 
   async function handleLogin() {
     setLoginError("");
     setLoggingIn(true);
     try {
       const auth = await supabaseAuth(loginForm.email, loginForm.password);
-      await loadProfileAndEnter(auth.user.id, auth.access_token);
+      await loadProfileAndEnter(auth.user.id, auth.access_token, auth.refresh_token);
     } catch (e) {
       setLoginError(e.message);
     }
