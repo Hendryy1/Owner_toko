@@ -5660,6 +5660,7 @@ function VerifikasiTokoPage({ token }) {
   const [rejectingId, setRejectingId] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
   const [filter, setFilter] = useState("menunggu_review"); // menunggu_review | terverifikasi | ditolak | semua
+  const [lightboxUrl, setLightboxUrl] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -5750,7 +5751,11 @@ function VerifikasiTokoPage({ token }) {
                 <div>
                   <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>FOTO TOKO</p>
                   {c.foto_toko_url ? (
-                    <img src={c.foto_toko_url} alt="Foto Toko" style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8 }} />
+                    <img
+                      src={c.foto_toko_url} alt="Foto Toko"
+                      onClick={() => setLightboxUrl(c.foto_toko_url)}
+                      style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, cursor: "pointer" }}
+                    />
                   ) : (
                     <div style={{ width: "100%", height: 120, borderRadius: 8, background: "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#9CA0A6" }}>Belum ada</div>
                   )}
@@ -5758,7 +5763,11 @@ function VerifikasiTokoPage({ token }) {
                 <div>
                   <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>FOTO KTP</p>
                   {c.foto_ktp_url ? (
-                    <img src={c.foto_ktp_url} alt="Foto KTP" style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8 }} />
+                    <img
+                      src={c.foto_ktp_url} alt="Foto KTP"
+                      onClick={() => setLightboxUrl(c.foto_ktp_url)}
+                      style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, cursor: "pointer" }}
+                    />
                   ) : (
                     <div style={{ width: "100%", height: 120, borderRadius: 8, background: "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#9CA0A6" }}>Belum ada</div>
                   )}
@@ -5805,6 +5814,21 @@ function VerifikasiTokoPage({ token }) {
         })}
       </div>
       {filtered.length === 0 && <EmptyState text="Tidak ada toko di kategori ini." />}
+
+      {lightboxUrl && (
+        <div
+          onClick={() => setLightboxUrl(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }}
+        >
+          <img src={lightboxUrl} alt="Full" style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8, objectFit: "contain" }} />
+          <button
+            onClick={() => setLightboxUrl(null)}
+            style={{ position: "absolute", top: 20, right: 20, width: 40, height: 40, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
