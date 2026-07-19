@@ -5299,6 +5299,8 @@ function BannerPromoPage({ token }) {
   const [saved, setSaved] = useState(false);
   const [bannerId, setBannerId] = useState(null);
   const [form, setForm] = useState({ gambarUrl: "", judul: "", deskripsi: "", aktif: false });
+  const [galeri, setGaleri] = useState([]);
+  const [uploadingGaleri, setUploadingGaleri] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -5306,14 +5308,50 @@ function BannerPromoPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "campaign_banner?select=*&limit=1");
+      const [rows, galeriRows] = await Promise.all([
+        supabaseFetch(token, "campaign_banner?select=*&limit=1"),
+        supabaseFetch(token, "campaign_banner_images?select=*&order=urutan.asc"),
+      ]);
       const b = rows[0];
       if (b) {
         setBannerId(b.id);
         setForm({ gambarUrl: b.gambar_url || "", judul: b.judul || "", deskripsi: b.deskripsi || "", aktif: b.aktif });
       }
+      setGaleri(galeriRows);
     } catch (e) { setError(e.message); }
     setLoading(false);
+  }
+
+  async function uploadFotoGaleri(file) {
+    setUploadingGaleri(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `banner-galeri-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+      const [inserted] = await supabaseFetch(token, "campaign_banner_images", {
+        method: "POST",
+        body: JSON.stringify({ url, urutan: galeri.length }),
+      });
+      setGaleri((prev) => [...prev, inserted]);
+    } catch (e) {
+      alert("Gagal upload foto: " + e.message);
+    }
+    setUploadingGaleri(false);
+  }
+
+  async function hapusFotoGaleri(id) {
+    try {
+      await supabaseFetch(token, `campaign_banner_images?id=eq.${id}`, { method: "DELETE" });
+      setGaleri((prev) => prev.filter((g) => g.id !== id));
+    } catch (e) {
+      alert("Gagal hapus foto: " + e.message);
+    }
   }
 
   async function uploadGambar(file) {
@@ -5390,6 +5428,27 @@ function BannerPromoPage({ token }) {
         <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Deskripsi (tampil di halaman detail kampanye)</label>
           <textarea value={form.deskripsi} onChange={(e) => setForm({ ...form, deskripsi: e.target.value })} rows={4} style={{ ...fieldStyle, resize: "vertical" }} />
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Galeri Foto Deskripsi (tampil full-width, tanpa jarak antar foto)</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {galeri.map((img) => (
+              <div key={img.id} style={{ position: "relative", width: 60, height: 60 }}>
+                <div style={{ width: 60, height: 60, borderRadius: 8, background: `url(${img.url}) center/cover` }} />
+                <button
+                  onClick={() => hapusFotoGaleri(img.id)}
+                  style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C0392B", border: "2px solid #fff", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+            <label style={{ width: 60, height: 60, borderRadius: 8, border: "1.5px dashed #E8A426", background: "#FFFBF0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              {uploadingGaleri ? <Loader2 size={16} color="#8A6A1A" /> : <PackagePlus size={18} color="#8A6A1A" />}
+              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingGaleri} onChange={(e) => { if (e.target.files[0]) uploadFotoGaleri(e.target.files[0]); }} />
+            </label>
+          </div>
         </div>
 
         <div style={{ marginBottom: 20 }}>
