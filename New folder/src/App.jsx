@@ -4091,6 +4091,37 @@ function KunjunganSalesPage({ token, profile }) {
       const ctx = canvas.getContext("2d");
       ctx.drawImage(img, 0, 0);
 
+      // Coba tempel potongan peta asli (real map tile) di pojok kanan atas -
+      // pakai layanan komunitas OSM yang gratis tanpa API key. Kalau gagal
+      // (server sibuk/CORS/dll), lanjut saja tanpa peta - jangan sampai
+      // proses check-in gagal gara-gara ini.
+      const mapSize = Math.round(Math.min(img.width, img.height) * 0.32);
+      try {
+        const mapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${coords.lat},${coords.lng}&zoom=16&size=${mapSize}x${mapSize}&maptype=mapnik`;
+        const mapRes = await fetch(mapUrl, { mode: "cors" });
+        if (!mapRes.ok) throw new Error("gagal ambil peta");
+        const mapBlob = await mapRes.blob();
+        const mapImg = await loadImageFromFile(mapBlob);
+        const mx = img.width - mapSize - 14;
+        const my = 14;
+        // Bingkai putih + bayangan tipis di sekeliling potongan peta
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(mx - 4, my - 4, mapSize + 8, mapSize + 8);
+        ctx.drawImage(mapImg, mx, my, mapSize, mapSize);
+        // Titik penanda merah di TENGAH potongan peta (lokasi persis)
+        ctx.beginPath();
+        ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
+        ctx.fillStyle = "#E4453A";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } catch (mapErr) {
+        console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
+      }
+
       // Watermark di bagian bawah foto (teks + ikon pin peta)
       const barHeight = Math.max(90, img.height * 0.12);
       ctx.fillStyle = "rgba(0,0,0,0.6)";
