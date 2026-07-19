@@ -166,6 +166,7 @@ export default function OwnerDashboard() {
         {page === "pajak" && <PajakPage token={token} />}
         {page === "bunga_investor" && <BungaInvestorPage token={token} />}
         {page === "piutang" && <PiutangPage token={token} />}
+        {page === "saldo_va" && <SaldoVaPage token={token} />}
         {page === "barang" && <BarangTerlarisPage token={token} />}
         {page === "produk" && <ProductPage token={token} />}
         {page === "stock" && <StockItemPage token={token} />}
@@ -247,6 +248,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "pajak", label: "Pajak", icon: FileEdit, roles: ["owner", "admin_keuangan"] },
     { key: "bunga_investor", label: "Bunga Investor", icon: TrendingUp, roles: ["owner"] },
     { key: "piutang", label: "Piutang", icon: AlertCircle, roles: ["owner", "admin_keuangan"] },
+    { key: "saldo_va", label: "Saldo & VA Toko", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
     { key: "produk", label: "Product", icon: Package, roles: ["owner"] },
     { key: "stock", label: "Stock Item", icon: Boxes, roles: ["owner"] },
@@ -5472,6 +5474,115 @@ function BannerPromoPage({ token }) {
         <button onClick={simpan} disabled={saving || uploading} style={{ padding: "12px 24px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
           {saving ? "Menyimpan..." : "Simpan Perubahan"}
         </button>
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// SALDO & VA TOKO (kelola Virtual Account Xendit + lihat saldo semua toko)
+// ============================================================
+function SaldoVaPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [clients, setClients] = useState([]);
+  const [vaList, setVaList] = useState([]);
+  const [saldoList, setSaldoList] = useState([]);
+  const [creatingVaFor, setCreatingVaFor] = useState(null);
+  const [search, setSearch] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [clientRows, vaRows, saldoRows] = await Promise.all([
+        supabaseFetch(token, "clients?select=id,kode,nama&status=eq.aktif&order=nama.asc"),
+        supabaseFetch(token, "virtual_accounts?select=*"),
+        supabaseFetch(token, "v_saldo_toko?select=*"),
+      ]);
+      setClients(clientRows);
+      setVaList(vaRows);
+      setSaldoList(saldoRows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  function vaToko(clientId) {
+    return vaList.find((v) => v.client_id === clientId);
+  }
+  function saldoToko(clientId) {
+    return Number(saldoList.find((s) => s.client_id === clientId)?.saldo || 0);
+  }
+
+  async function buatVa(client) {
+    setCreatingVaFor(client.id);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/xendit-create-va`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ client_id: client.id, bank_code: "BCA" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Gagal buat VA");
+      await load();
+    } catch (e) {
+      alert("Gagal buat VA: " + e.message + "\n\n(Pastikan XENDIT_SECRET_KEY sudah diset sebagai secret Edge Function kalau belum punya, tunggu API Key Xendit-nya dulu ya)");
+    }
+    setCreatingVaFor(null);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const filteredClients = clients.filter((c) => c.nama.toLowerCase().includes(search.toLowerCase()) || c.kode.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div>
+      <PageHeader title="Saldo & VA Toko" subtitle="Kelola Virtual Account Xendit dan pantau saldo tiap toko" />
+
+      <input
+        value={search} onChange={(e) => setSearch(e.target.value)}
+        placeholder="Cari nama/kode toko..."
+        style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, width: 260, marginBottom: 16 }}
+      />
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Kode", "Nama Toko", "No. VA", "Saldo", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filteredClients.map((c) => {
+              const va = vaToko(c.id);
+              const saldo = saldoToko(c.id);
+              return (
+                <tr key={c.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{c.kode}</td>
+                  <td style={{ padding: "12px 14px" }}>{c.nama}</td>
+                  <td style={{ padding: "12px 14px" }}>{va ? `${va.bank_code} - ${va.va_number}` : <span style={{ color: "#9CA0A6" }}>Belum ada</span>}</td>
+                  <td style={{ padding: "12px 14px", fontWeight: 700, color: saldo > 0 ? "#28685D" : "#9CA0A6" }}>{rupiah(saldo)}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    {!va && (
+                      <button
+                        onClick={() => buatVa(c)}
+                        disabled={creatingVaFor === c.id}
+                        style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700 }}
+                      >
+                        {creatingVaFor === c.id ? "Membuat..." : "Buat VA"}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {filteredClients.length === 0 && <EmptyState text="Tidak ada toko yang cocok." />}
       </Card>
     </div>
   );
