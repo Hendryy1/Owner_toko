@@ -4808,6 +4808,26 @@ function BungaInvestorPage({ token }) {
 
   const bulanTerpilih = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
 
+  // Hitung bunga untuk bulan tertentu - kalau bulan itu adalah bulan
+  // PERTAMA investor mulai invest (dan mulainya bukan tanggal 1), bunganya
+  // dihitung PRO-RATA sesuai sisa hari di bulan itu, bukan full 1 bulan.
+  function hitungBungaBulan(investor, bulan) {
+    const bungaFull = Number(investor.modal_investasi) * (Number(investor.bunga_persen) / 100);
+    if (!investor.tanggal_mulai) return bungaFull;
+
+    const mulai = new Date(investor.tanggal_mulai + "T00:00:00");
+    const bulanDate = new Date(bulan + "T00:00:00");
+    const sameMonth = mulai.getFullYear() === bulanDate.getFullYear() && mulai.getMonth() === bulanDate.getMonth();
+    if (!sameMonth) return bungaFull;
+
+    const totalHariBulan = new Date(mulai.getFullYear(), mulai.getMonth() + 1, 0).getDate();
+    const tanggalMulaiHari = mulai.getDate();
+    if (tanggalMulaiHari <= 1) return bungaFull; // mulai tanggal 1, tidak perlu pro-rata
+
+    const sisaHari = totalHariBulan - tanggalMulaiHari + 1;
+    return bungaFull * (sisaHari / totalHariBulan);
+  }
+
   function statusInvestorBulan(investorId, bulan) {
     return pembayaranSemua.find((p) => p.investor_id === investorId && p.bulan === bulan);
   }
@@ -4815,7 +4835,7 @@ function BungaInvestorPage({ token }) {
   async function toggleBayarGabungan(investor, bulan) {
     setSavingBulan(investor.id);
     try {
-      const bungaPerBulan = Number(investor.modal_investasi) * (Number(investor.bunga_persen) / 100);
+      const bungaPerBulan = hitungBungaBulan(investor, bulan);
       const existing = statusInvestorBulan(investor.id, bulan);
       const sudahDibayarBaru = !(existing?.sudah_dibayar);
       const body = {
@@ -4929,7 +4949,7 @@ function BungaInvestorPage({ token }) {
             {investors
               .filter((inv) => !inv.tanggal_mulai || inv.tanggal_mulai <= bulanTerpilih || inv.tanggal_mulai.slice(0, 7) === bulanTerpilih.slice(0, 7))
               .map((inv) => {
-              const bungaPerBulan = Number(inv.modal_investasi) * (Number(inv.bunga_persen) / 100);
+              const bungaPerBulan = hitungBungaBulan(inv, bulanTerpilih);
               const status = statusInvestorBulan(inv.id, bulanTerpilih);
               const lunas = status?.sudah_dibayar;
               return (
@@ -5069,7 +5089,22 @@ function RiwayatBungaInvestorPage({ token, investor, onBack }) {
   }
   useEffect(() => { load(); }, []);
 
-  const bungaPerBulan = Number(investor.modal_investasi) * (Number(investor.bunga_persen) / 100);
+  function hitungBungaBulan(bulan) {
+    const bungaFull = Number(investor.modal_investasi) * (Number(investor.bunga_persen) / 100);
+    if (!investor.tanggal_mulai) return bungaFull;
+
+    const mulai = new Date(investor.tanggal_mulai + "T00:00:00");
+    const bulanDate = new Date(bulan + "T00:00:00");
+    const sameMonth = mulai.getFullYear() === bulanDate.getFullYear() && mulai.getMonth() === bulanDate.getMonth();
+    if (!sameMonth) return bungaFull;
+
+    const totalHariBulan = new Date(mulai.getFullYear(), mulai.getMonth() + 1, 0).getDate();
+    const tanggalMulaiHari = mulai.getDate();
+    if (tanggalMulaiHari <= 1) return bungaFull;
+
+    const sisaHari = totalHariBulan - tanggalMulaiHari + 1;
+    return bungaFull * (sisaHari / totalHariBulan);
+  }
 
   function statusBulan(bulan) {
     return pembayaran.find((p) => p.bulan === bulan);
@@ -5078,6 +5113,7 @@ function RiwayatBungaInvestorPage({ token, investor, onBack }) {
   async function toggleBayar(bulan) {
     setSaving(bulan);
     try {
+      const bungaPerBulan = hitungBungaBulan(bulan);
       const existing = statusBulan(bulan);
       const sudahDibayarBaru = !(existing?.sudah_dibayar);
       const body = {
@@ -5105,7 +5141,7 @@ function RiwayatBungaInvestorPage({ token, investor, onBack }) {
       <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
         <ChevronLeft size={16} /> Kembali
       </button>
-      <PageHeader title={`Riwayat Bunga - ${investor.nama}`} subtitle={`Modal ${rupiah(investor.modal_investasi)} - Bunga ${investor.bunga_persen}%/bulan (${rupiah(bungaPerBulan)})`} />
+      <PageHeader title={`Riwayat Bunga - ${investor.nama}`} subtitle={`Modal ${rupiah(investor.modal_investasi)} - Bunga ${investor.bunga_persen}%/bulan (${rupiah(Number(investor.modal_investasi) * (Number(investor.bunga_persen) / 100))})`} />
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
@@ -5118,6 +5154,7 @@ function RiwayatBungaInvestorPage({ token, investor, onBack }) {
           </thead>
           <tbody>
             {bulanList.map((bulan) => {
+              const bungaPerBulan = hitungBungaBulan(bulan);
               const status = statusBulan(bulan);
               const lunas = status?.sudah_dibayar;
               return (
