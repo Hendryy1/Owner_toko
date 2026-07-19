@@ -149,7 +149,7 @@ export default function OwnerDashboard() {
             <Menu size={16} /> Menu
           </button>
         )}
-        {page === "overview" && <OverviewPage token={token} />}
+        {page === "overview" && <OverviewPage token={token} setPage={setPage} />}
         {page === "chat_sales" && <ChatSalesPage token={token} profile={profile} />}
         {page === "profil_sales" && <ProfilSalesPage token={token} profile={profile} />}
         {page === "omzet_sales" && <OmzetSalesPage token={token} profile={profile} />}
@@ -357,7 +357,7 @@ function Card({ children, style }) {
 // ============================================================
 // RINGKASAN (OVERVIEW)
 // ============================================================
-function OverviewPage({ token }) {
+function OverviewPage({ token, setPage }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -372,7 +372,7 @@ function OverviewPage({ token }) {
       const nextYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
       const endBulan = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
-      const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni, rekapOmzetSales, semuaTokoKota] = await Promise.all([
+      const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni, rekapOmzetSales, semuaTokoKota, keuangan12Bulan, pajakPembayaran, investorsAktif, bungaPembayaran, chatCasesOpen] = await Promise.all([
         supabaseFetch(token, "orders?select=id&status=eq.menunggu_persetujuan"),
         supabaseFetch(token, "clients?select=id&status=eq.pending"),
         supabaseFetch(token, "v_laporan_keuangan_bulanan?select=*&order=bulan.desc&limit=1"),
@@ -382,9 +382,51 @@ function OverviewPage({ token }) {
         supabaseFetch(token, `kunjungan_sales?select=id,sales_id&created_at=gte.${startBulan}&created_at=lt.${endBulan}`),
         supabaseFetch(token, `v_rekap_sales_bulanan?select=sales_id,omzet_bulan&bulan=eq.${startBulan}`),
         supabaseFetch(token, "clients?select=id,kota&status=eq.aktif"),
+        supabaseFetch(token, `v_laporan_keuangan_bulanan?select=bulan,pph_final_umkm&order=bulan.desc&limit=12`),
+        supabaseFetch(token, "pajak_pembayaran?select=bulan,sudah_dibayar"),
+        supabaseFetch(token, "investors?select=id,nama,modal_investasi,bunga_persen,tanggal_mulai&aktif=eq.true"),
+        supabaseFetch(token, "bunga_investor_pembayaran?select=investor_id,bulan,sudah_dibayar"),
+        supabaseFetch(token, "chat_cases?select=id,no_case,client_id,updated_at,clients(nama)&status=eq.open"),
       ]);
       const totalPiutang = piutang.reduce((a, b) => a + Number(b.total_piutang || 0), 0);
       const melebihiLimit = piutang.filter((p) => p.melebihi_limit).length;
+
+      // ---------- Analisa "Yang Perlu Dikerjakan" ----------
+      const todoList = [];
+
+      if (pendingOrders.length > 0) {
+        todoList.push({ label: `${pendingOrders.length} pesanan menunggu persetujuan`, urgent: true, page: "orders" });
+      }
+      if (pendingClients.length > 0) {
+        todoList.push({ label: `${pendingClients.length} toko baru menunggu approval`, urgent: true, page: "clients" });
+      }
+      if (melebihiLimit > 0) {
+        todoList.push({ label: `${melebihiLimit} toko melebihi limit piutang`, urgent: true, page: "piutang" });
+      }
+      // Pajak bulan yang belum dibayar (dari bulan-bulan yang sudah ada transaksinya)
+      keuangan12Bulan.forEach((k) => {
+        const status = pajakPembayaran.find((p) => p.bulan === k.bulan);
+        if (!status?.sudah_dibayar && Number(k.pph_final_umkm) > 0) {
+          todoList.push({
+            label: `Bayar Pajak PPh Final ${new Date(k.bulan).toLocaleDateString("id-ID", { month: "long", year: "numeric" })} (${rupiah(k.pph_final_umkm)})`,
+            urgent: false, page: "pajak",
+          });
+        }
+      });
+      // Bunga investor bulan berjalan yang belum dibayar
+      investorsAktif.forEach((inv) => {
+        const sudahMulai = !inv.tanggal_mulai || inv.tanggal_mulai <= startBulan || inv.tanggal_mulai.slice(0, 7) === startBulan.slice(0, 7);
+        if (!sudahMulai) return;
+        const status = bungaPembayaran.find((p) => p.investor_id === inv.id && p.bulan === startBulan);
+        if (!status?.sudah_dibayar) {
+          const bunga = Number(inv.modal_investasi) * (Number(inv.bunga_persen) / 100);
+          todoList.push({ label: `Bayar bunga investor ${inv.nama} bulan ini (${rupiah(bunga)})`, urgent: false, page: "bunga_investor" });
+        }
+      });
+      // Chat toko yang masih terbuka (belum ditutup, kemungkinan perlu tindak lanjut)
+      if (chatCasesOpen.length > 0) {
+        todoList.push({ label: `${chatCasesOpen.length} chat toko masih terbuka (belum ditutup)`, urgent: false, page: "chat_sales" });
+      }
 
       // Kelompokkan toko per kota/daerah
       const kotaMap = {};
@@ -412,6 +454,7 @@ function OverviewPage({ token }) {
         totalPiutang, melebihiLimit,
         ringkasanKunjungan,
         ringkasanKota,
+        todoList,
       });
     } catch (e) {
       setError(e.message);
@@ -499,6 +542,28 @@ function OverviewPage({ token }) {
           </div>
         </>
       )}
+
+      <h2 className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "24px 0 12px" }}>Yang Perlu Dikerjakan</h2>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        {data.todoList && data.todoList.length > 0 ? (
+          data.todoList.map((t, i) => (
+            <button
+              key={i}
+              onClick={() => setPage?.(t.page)}
+              style={{
+                width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 12,
+                padding: "14px 18px", background: "none", border: "none", borderTop: i > 0 ? "1px solid #EDEAE3" : "none",
+              }}
+            >
+              <span style={{ width: 8, height: 8, borderRadius: "50%", background: t.urgent ? "#C0392B" : "#E8A426", flexShrink: 0 }} />
+              <span style={{ fontSize: 13, color: "#24272B", flex: 1 }}>{t.label}</span>
+              <ChevronRight size={16} color="#9CA0A6" />
+            </button>
+          ))
+        ) : (
+          <EmptyState text="Tidak ada pekerjaan tertunda - semua sudah beres!" />
+        )}
+      </Card>
     </div>
   );
 }
