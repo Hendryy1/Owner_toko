@@ -424,7 +424,7 @@ function OverviewPage({ token, setPage }) {
       const nextYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
       const endBulan = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
-      const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni, rekapOmzetSales, semuaTokoKota, keuangan12Bulan, pajakPembayaran, investorsAktif, bungaPembayaran, chatCasesOpen] = await Promise.all([
+      const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni, rekapOmzetSales, semuaTokoKota, keuangan12Bulan, pajakPembayaran, investorsAktif, bungaPembayaran, chatCasesOpen, semuaOrderTanggal] = await Promise.all([
         supabaseFetch(token, "orders?select=id&status=eq.menunggu_persetujuan"),
         supabaseFetch(token, "clients?select=id&status=eq.pending"),
         supabaseFetch(token, "v_laporan_keuangan_bulanan?select=*&order=bulan.desc&limit=1"),
@@ -439,6 +439,7 @@ function OverviewPage({ token, setPage }) {
         supabaseFetch(token, "investors?select=id,nama,modal_investasi,bunga_persen,tanggal_mulai&aktif=eq.true"),
         supabaseFetch(token, "bunga_investor_pembayaran?select=investor_id,bulan,sudah_dibayar"),
         supabaseFetch(token, "chat_cases?select=id,no_case,client_id,updated_at,clients(nama)&status=eq.open"),
+        supabaseFetch(token, "orders?select=client_id,tanggal&status=neq.ditolak&order=tanggal.desc"),
       ]);
       const totalPiutang = piutang.reduce((a, b) => a + Number(b.total_piutang || 0), 0);
       const melebihiLimit = piutang.filter((p) => p.melebihi_limit).length;
@@ -454,6 +455,20 @@ function OverviewPage({ token, setPage }) {
       }
       if (melebihiLimit > 0) {
         todoList.push({ label: `${melebihiLimit} toko melebihi limit piutang`, urgent: true, page: "piutang" });
+      }
+      // Toko yang sudah lama tidak order (>30 hari sejak order terakhir)
+      const tanggalTerakhirPerToko = {};
+      semuaOrderTanggal.forEach((o) => {
+        if (!tanggalTerakhirPerToko[o.client_id]) tanggalTerakhirPerToko[o.client_id] = o.tanggal;
+      });
+      const jumlahTokoTidakAktif = semuaTokoKota.filter((c) => {
+        const tgl = tanggalTerakhirPerToko[c.id];
+        if (!tgl) return false; // toko yang belum PERNAH order tidak dihitung "tidak aktif" di sini
+        const hari = Math.floor((Date.now() - new Date(tgl).getTime()) / (1000 * 60 * 60 * 24));
+        return hari > 30;
+      }).length;
+      if (jumlahTokoTidakAktif > 0) {
+        todoList.push({ label: `${jumlahTokoTidakAktif} toko sudah >30 hari tidak order`, urgent: false, page: "rekap_toko" });
       }
       // Pajak bulan yang belum dibayar (dari bulan-bulan yang sudah ada transaksinya)
       keuangan12Bulan.forEach((k) => {
@@ -1835,29 +1850,48 @@ function RekapTokoPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState([]);
   const [salesList, setSalesList] = useState([]);
+  const [orderTerakhir, setOrderTerakhir] = useState({}); // { client_id: tanggal }
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ alamat: "", telp: "", kodeSales: "" });
+  const [editForm, setEditForm] = useState({ alamat: "", telp: "", kodeSales: "", catatan: "" });
   const [saving, setSaving] = useState(false);
+  const [hanyaTidakAktif, setHanyaTidakAktif] = useState(false);
+
+  const BATAS_HARI_TIDAK_AKTIF = 30;
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const [clientRows, salesRows] = await Promise.all([
+      const [clientRows, salesRows, orderRows] = await Promise.all([
         supabaseFetch(token, "clients?select=*,sales!clients_sales_id_fkey(id,kode,nama)&status=eq.aktif&order=nama.asc"),
         supabaseFetch(token, "sales?select=id,kode,nama&order=kode.asc"),
+        supabaseFetch(token, "orders?select=client_id,tanggal&status=neq.ditolak&order=tanggal.desc"),
       ]);
       setClients(clientRows);
       setSalesList(salesRows);
+      // Ambil tanggal order PALING BARU per toko (data sudah urut desc, jadi
+      // yang pertama ketemu per client_id itu yang paling baru)
+      const terakhir = {};
+      orderRows.forEach((o) => {
+        if (!terakhir[o.client_id]) terakhir[o.client_id] = o.tanggal;
+      });
+      setOrderTerakhir(terakhir);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
 
+  function hariSejakOrder(clientId) {
+    const tgl = orderTerakhir[clientId];
+    if (!tgl) return null; // belum pernah order sama sekali
+    const diffMs = Date.now() - new Date(tgl).getTime();
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  }
+
   function startEdit(c) {
     setEditingId(c.id);
-    setEditForm({ alamat: c.alamat || "", telp: c.telp || "", kodeSales: c.sales?.kode || "" });
+    setEditForm({ alamat: c.alamat || "", telp: c.telp || "", kodeSales: c.sales?.kode || "", catatan: c.catatan_internal || "" });
   }
 
   function matchedSales(kode) {
@@ -1879,11 +1913,12 @@ function RekapTokoPage({ token }) {
           alamat: editForm.alamat,
           telp: editForm.telp,
           sales_id: found ? found.id : null,
+          catatan_internal: editForm.catatan || null,
         }),
       });
       setClients((prev) => prev.map((c) => (
         c.id === clientId
-          ? { ...c, alamat: editForm.alamat, telp: editForm.telp, sales: found ? { id: found.id, kode: found.kode, nama: found.nama } : null }
+          ? { ...c, alamat: editForm.alamat, telp: editForm.telp, catatan_internal: editForm.catatan, sales: found ? { id: found.id, kode: found.kode, nama: found.nama } : null }
           : c
       )));
       setEditingId(null);
@@ -1898,22 +1933,36 @@ function RekapTokoPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Rekap Toko" subtitle="Klik ikon edit untuk ubah Alamat, No HP, atau Kode Sales" />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+        <PageHeader title="Rekap Toko" subtitle="Klik ikon edit untuk ubah Alamat, No HP, Kode Sales, atau Catatan" />
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 600, color: "#24272B", cursor: "pointer", flexShrink: 0, marginTop: 4 }}>
+          <input type="checkbox" checked={hanyaTidakAktif} onChange={(e) => setHanyaTidakAktif(e.target.checked)} />
+          Tampilkan yang tidak aktif saja ({">"}{BATAS_HARI_TIDAK_AKTIF} hari)
+        </label>
+      </div>
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
-              {["Nama Toko", "Alamat", "No HP", "Email", "Kode Sales", "Nama Sales", ""].map((h) => (
+              {["Nama Toko", "Alamat", "No HP", "Email", "Kode Sales", "Nama Sales", "Terakhir Order", "Catatan", ""].map((h) => (
                 <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {clients.map((c) => {
+            {clients
+              .filter((c) => {
+                if (!hanyaTidakAktif) return true;
+                const hari = hariSejakOrder(c.id);
+                return hari === null || hari > BATAS_HARI_TIDAK_AKTIF;
+              })
+              .map((c) => {
               const isEditing = editingId === c.id;
               const previewMatch = isEditing && editForm.kodeSales.trim() ? matchedSales(editForm.kodeSales) : null;
+              const hari = hariSejakOrder(c.id);
+              const tidakAktif = hari === null || hari > BATAS_HARI_TIDAK_AKTIF;
               return (
-                <tr key={c.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <tr key={c.id} style={{ borderTop: "1px solid #EDEAE3", background: tidakAktif ? "#FFFBF0" : "transparent" }}>
                   <td style={{ padding: "12px 14px", fontWeight: 600 }}>{c.nama} <span style={{ color: "#9CA0A6", fontWeight: 400 }}>({c.kode})</span></td>
                   <td style={{ padding: "12px 14px", minWidth: 180 }}>
                     {isEditing ? (
@@ -1937,6 +1986,26 @@ function RekapTokoPage({ token }) {
                         {editForm.kodeSales.trim() ? (previewMatch ? previewMatch.nama : "Kode tidak ditemukan") : "-"}
                       </span>
                     ) : (c.sales?.nama || "-")}
+                  </td>
+                  <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                    {hari === null ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#F7F5F1", color: "#9CA0A6" }}>Belum pernah order</span>
+                    ) : tidakAktif ? (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B" }}>{hari} hari lalu</span>
+                    ) : (
+                      <span style={{ color: "#6B6F75" }}>{hari} hari lalu</span>
+                    )}
+                  </td>
+                  <td style={{ padding: "12px 14px", minWidth: 160, maxWidth: 220 }}>
+                    {isEditing ? (
+                      <textarea
+                        value={editForm.catatan} onChange={(e) => setEditForm({ ...editForm, catatan: e.target.value })}
+                        rows={2} placeholder="Catatan bebas..."
+                        style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12, resize: "vertical" }}
+                      />
+                    ) : (
+                      <span style={{ color: c.catatan_internal ? "#24272B" : "#B5B2AA", fontSize: 12 }}>{c.catatan_internal || "-"}</span>
+                    )}
                   </td>
                   <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                     {isEditing ? (
