@@ -4779,22 +4779,61 @@ function BungaInvestorPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [investors, setInvestors] = useState([]);
+  const [pembayaranSemua, setPembayaranSemua] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingInvestor, setEditingInvestor] = useState(null);
   const [selectedInvestor, setSelectedInvestor] = useState(null); // buka riwayat bunga investor ini
   const [saving, setSaving] = useState(false);
+  const [savingBulan, setSavingBulan] = useState(null);
   const [form, setForm] = useState({ nama: "", modalInvestasi: "", bungaPersen: "", tanggalMulai: "", keterangan: "" });
+  const now = new Date();
+  const [filterYear, setFilterYear] = useState(now.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
+  const BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "investors?select=*&order=nama.asc");
+      const [rows, pembayaranRows] = await Promise.all([
+        supabaseFetch(token, "investors?select=*&order=nama.asc"),
+        supabaseFetch(token, "bunga_investor_pembayaran?select=*"),
+      ]);
       setInvestors(rows);
+      setPembayaranSemua(pembayaranRows);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  const bulanTerpilih = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+
+  function statusInvestorBulan(investorId, bulan) {
+    return pembayaranSemua.find((p) => p.investor_id === investorId && p.bulan === bulan);
+  }
+
+  async function toggleBayarGabungan(investor, bulan) {
+    setSavingBulan(investor.id);
+    try {
+      const bungaPerBulan = Number(investor.modal_investasi) * (Number(investor.bunga_persen) / 100);
+      const existing = statusInvestorBulan(investor.id, bulan);
+      const sudahDibayarBaru = !(existing?.sudah_dibayar);
+      const body = {
+        investor_id: investor.id, bulan, jumlah_bunga: bungaPerBulan,
+        sudah_dibayar: sudahDibayarBaru,
+        tanggal_bayar: sudahDibayarBaru ? new Date().toISOString().slice(0, 10) : null,
+      };
+      const [updated] = await supabaseFetch(token, "bunga_investor_pembayaran?on_conflict=investor_id,bulan", {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=representation",
+        body: JSON.stringify(body),
+      });
+      setPembayaranSemua((prev) => [...prev.filter((p) => !(p.investor_id === investor.id && p.bulan === bulan)), updated]);
+    } catch (e) {
+      alert("Gagal update status: " + e.message);
+    }
+    setSavingBulan(null);
+  }
 
   function bukaFormBaru() {
     setEditingInvestor(null);
@@ -4867,6 +4906,59 @@ function BungaInvestorPage({ token }) {
         </button>
       </div>
 
+      <div style={{ display: "flex", gap: 10, marginBottom: 14 }}>
+        <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {Array.from({ length: 5 }, (_, i) => now.getFullYear() - i).map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {BULAN.slice(1).map((b, i) => <option key={i + 1} value={i + 1}>{b}</option>)}
+        </select>
+      </div>
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Daftar Bunga {BULAN[filterMonth]} {filterYear}</h2>
+      <Card style={{ padding: 0, overflow: "hidden", marginBottom: 28 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Investor", "Modal", "Bunga %", "Jumlah Bunga", "Status", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {investors.map((inv) => {
+              const bungaPerBulan = Number(inv.modal_investasi) * (Number(inv.bunga_persen) / 100);
+              const status = statusInvestorBulan(inv.id, bulanTerpilih);
+              const lunas = status?.sudah_dibayar;
+              return (
+                <tr key={inv.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{inv.nama}</td>
+                  <td style={{ padding: "12px 14px" }}>{rupiah(inv.modal_investasi)}</td>
+                  <td style={{ padding: "12px 14px" }}>{inv.bunga_persen}%</td>
+                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(bungaPerBulan)}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: lunas ? "#D8E9E6" : "#FBEAEA", color: lunas ? "#28685D" : "#C0392B" }}>
+                      {lunas ? `Lunas (${new Date(status.tanggal_bayar).toLocaleDateString("id-ID")})` : "Belum Bayar"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <button
+                      onClick={() => toggleBayarGabungan(inv, bulanTerpilih)}
+                      disabled={savingBulan === inv.id}
+                      style={{ padding: "6px 12px", borderRadius: 7, border: lunas ? "1px solid #E4E1DA" : "none", background: lunas ? "#fff" : "#E8A426", color: lunas ? "#6B6F75" : "#24272B", fontSize: 11, fontWeight: 700 }}
+                    >
+                      {savingBulan === inv.id ? "..." : lunas ? "Batalkan" : "Tandai Lunas"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {investors.length === 0 && <EmptyState text="Belum ada investor." />}
+      </Card>
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Kelola Investor</h2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
         {investors.map((inv) => {
           const bungaPerBulan = Number(inv.modal_investasi) * (Number(inv.bunga_persen) / 100);
