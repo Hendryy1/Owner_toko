@@ -3899,8 +3899,12 @@ function OmzetSalesPage({ token, profile }) {
       if (!profile?.sales_id) throw new Error("Akun ini belum terhubung ke data sales manapun.");
 
       const startDate = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
-      const endDateObj = new Date(filterYear, filterMonth, 1); // hari pertama bulan berikutnya
-      const endDate = endDateObj.toISOString().slice(0, 10);
+      // Hitung tanggal 1 bulan berikutnya TANPA lewat Date.toISOString() (itu
+      // yang kemarin jadi bug - toISOString mengonversi ke UTC, jadi bisa
+      // geser mundur/maju satu hari tergantung zona waktu browser).
+      const nextMonth = filterMonth === 12 ? 1 : filterMonth + 1;
+      const nextYear = filterMonth === 12 ? filterYear + 1 : filterYear;
+      const endDate = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
       const [salesRow, clientsRows, ordersRows] = await Promise.all([
         supabaseFetch(token, `sales?select=target_omzet_bulanan&id=eq.${profile.sales_id}`),
@@ -3922,7 +3926,7 @@ function OmzetSalesPage({ token, profile }) {
     return { ...c, omzet };
   }).sort((a, b) => b.omzet - a.omzet);
 
-  const totalOmzet = omzetPerToko.reduce((sum, c) => sum + c.omzet, 0);
+  const totalOmzet = orders.reduce((sum, o) => sum + (o.order_items || []).reduce((s, it) => s + Number(it.subtotal_setelah_diskon || 0), 0), 0);
   const persentaseTarget = target > 0 ? Math.min(100, (totalOmzet / target) * 100) : 0;
 
   if (loading) return <LoadingState />;
