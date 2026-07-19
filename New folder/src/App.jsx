@@ -2342,8 +2342,14 @@ function KonfirmasiPembayaranPage({ token }) {
   async function confirmPayment(orderId) {
     setProcessingId(orderId);
     try {
-      await supabaseFetch(token, `orders?id=eq.${orderId}`, { method: "PATCH", body: JSON.stringify({ status_bayar: "lunas" }) });
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status_bayar: "lunas" } : o)));
+      // Konfirmasi pembayaran HARUS sekaligus memajukan tahap order ke
+      // "menunggu_pengiriman" - dulu cuma update status_bayar saja, jadi
+      // order-nya "macet" di tahap menunggu_pembayaran walau sudah dibayar.
+      await supabaseFetch(token, `orders?id=eq.${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status_bayar: "lunas", status: "menunggu_pengiriman" }),
+      });
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status_bayar: "lunas", status: "menunggu_pengiriman" } : o)));
     } catch (e) { alert("Gagal update: " + e.message); }
     setProcessingId(null);
   }
