@@ -3905,7 +3905,7 @@ function OmzetSalesPage({ token, profile }) {
       const [salesRow, clientsRows, ordersRows] = await Promise.all([
         supabaseFetch(token, `sales?select=target_omzet_bulanan&id=eq.${profile.sales_id}`),
         supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&order=nama.asc`),
-        supabaseFetch(token, `orders?select=client_id,status,order_items(subtotal_setelah_diskon)&sales_id=eq.${profile.sales_id}&status=neq.ditolak&created_at=gte.${startDate}&created_at=lt.${endDate}`),
+        supabaseFetch(token, `orders?select=client_id,status,order_items(subtotal_setelah_diskon)&sales_id=eq.${profile.sales_id}&status=neq.ditolak&tanggal=gte.${startDate}&tanggal=lt.${endDate}`),
       ]);
 
       setTarget(Number(salesRow[0]?.target_omzet_bulanan || 0));
