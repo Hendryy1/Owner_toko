@@ -5019,6 +5019,60 @@ function BungaInvestorPage({ token }) {
       </div>
       {investors.length === 0 && <EmptyState text="Belum ada investor. Klik 'Tambah Investor' untuk mulai." />}
 
+      {investors.length > 0 && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 28 }}>
+          <div>
+            <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#28685D", margin: "0 0 12px" }}>
+              Sudah Dibayar - {BULAN[filterMonth]} {filterYear}
+            </h2>
+            <Card style={{ padding: 0, overflow: "hidden" }}>
+              {investors
+                .filter((inv) => !inv.tanggal_mulai || inv.tanggal_mulai <= bulanTerpilih || inv.tanggal_mulai.slice(0, 7) === bulanTerpilih.slice(0, 7))
+                .filter((inv) => statusInvestorBulan(inv.id, bulanTerpilih)?.sudah_dibayar)
+                .map((inv, idx, arr) => {
+                  const bunga = hitungBungaBulan(inv, bulanTerpilih);
+                  const status = statusInvestorBulan(inv.id, bulanTerpilih);
+                  return (
+                    <div key={inv.id} style={{ padding: "12px 16px", borderTop: idx > 0 ? "1px solid #EDEAE3" : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>{inv.nama}</p>
+                        <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>Dibayar {new Date(status.tanggal_bayar).toLocaleDateString("id-ID")}</p>
+                      </div>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#28685D" }}>{rupiah(bunga)}</span>
+                    </div>
+                  );
+                })}
+              {investors.filter((inv) => (!inv.tanggal_mulai || inv.tanggal_mulai <= bulanTerpilih || inv.tanggal_mulai.slice(0, 7) === bulanTerpilih.slice(0, 7)) && statusInvestorBulan(inv.id, bulanTerpilih)?.sudah_dibayar).length === 0 && (
+                <EmptyState text="Belum ada yang dibayar bulan ini." />
+              )}
+            </Card>
+          </div>
+
+          <div>
+            <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#C0392B", margin: "0 0 12px" }}>
+              Belum Dibayar - {BULAN[filterMonth]} {filterYear}
+            </h2>
+            <Card style={{ padding: 0, overflow: "hidden" }}>
+              {investors
+                .filter((inv) => !inv.tanggal_mulai || inv.tanggal_mulai <= bulanTerpilih || inv.tanggal_mulai.slice(0, 7) === bulanTerpilih.slice(0, 7))
+                .filter((inv) => !statusInvestorBulan(inv.id, bulanTerpilih)?.sudah_dibayar)
+                .map((inv, idx) => {
+                  const bunga = hitungBungaBulan(inv, bulanTerpilih);
+                  return (
+                    <div key={inv.id} style={{ padding: "12px 16px", borderTop: idx > 0 ? "1px solid #EDEAE3" : "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>{inv.nama}</p>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: "#C0392B" }}>{rupiah(bunga)}</span>
+                    </div>
+                  );
+                })}
+              {investors.filter((inv) => (!inv.tanggal_mulai || inv.tanggal_mulai <= bulanTerpilih || inv.tanggal_mulai.slice(0, 7) === bulanTerpilih.slice(0, 7)) && !statusInvestorBulan(inv.id, bulanTerpilih)?.sudah_dibayar).length === 0 && (
+                <EmptyState text="Semua investor sudah dibayar bulan ini." />
+              )}
+            </Card>
+          </div>
+        </div>
+      )}
+
       {showForm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 14, width: 480, maxHeight: "88vh", overflowY: "auto", padding: 28 }}>
