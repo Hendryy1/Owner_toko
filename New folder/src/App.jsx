@@ -5482,13 +5482,15 @@ function BannerPromoPage({ token }) {
 // ============================================================
 // SALDO & VA TOKO (kelola Virtual Account Xendit + lihat saldo semua toko)
 // ============================================================
+const DAFTAR_BANK_VA = ["BCA", "MANDIRI", "BRI"];
+
 function SaldoVaPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [clients, setClients] = useState([]);
   const [vaList, setVaList] = useState([]);
   const [saldoList, setSaldoList] = useState([]);
-  const [creatingVaFor, setCreatingVaFor] = useState(null);
+  const [creatingVaFor, setCreatingVaFor] = useState(null); // `${clientId}-${bank}`
   const [search, setSearch] = useState("");
 
   async function load() {
@@ -5508,26 +5510,26 @@ function SaldoVaPage({ token }) {
   }
   useEffect(() => { load(); }, []);
 
-  function vaToko(clientId) {
-    return vaList.find((v) => v.client_id === clientId);
+  function vaTokoBank(clientId, bank) {
+    return vaList.find((v) => v.client_id === clientId && v.bank_code === bank);
   }
   function saldoToko(clientId) {
     return Number(saldoList.find((s) => s.client_id === clientId)?.saldo || 0);
   }
 
-  async function buatVa(client) {
-    setCreatingVaFor(client.id);
+  async function buatVa(client, bank) {
+    setCreatingVaFor(`${client.id}-${bank}`);
     try {
       const res = await fetch(`${SUPABASE_URL}/functions/v1/xendit-create-va`, {
         method: "POST",
         headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ client_id: client.id, bank_code: "BCA" }),
+        body: JSON.stringify({ client_id: client.id, bank_code: bank }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Gagal buat VA");
       await load();
     } catch (e) {
-      alert("Gagal buat VA: " + e.message + "\n\n(Pastikan XENDIT_SECRET_KEY sudah diset sebagai secret Edge Function kalau belum punya, tunggu API Key Xendit-nya dulu ya)");
+      alert(`Gagal buat VA ${bank}: ` + e.message + "\n\n(Pastikan XENDIT_SECRET_KEY sudah diset sebagai secret Edge Function kalau belum punya, tunggu API Key Xendit-nya dulu ya)");
     }
     setCreatingVaFor(null);
   }
@@ -5539,7 +5541,7 @@ function SaldoVaPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Saldo & VA Toko" subtitle="Kelola Virtual Account Xendit dan pantau saldo tiap toko" />
+      <PageHeader title="Saldo & VA Toko" subtitle="Kelola Virtual Account Xendit (BCA, Mandiri, BRI) dan pantau saldo tiap toko" />
 
       <input
         value={search} onChange={(e) => setSearch(e.target.value)}
@@ -5547,43 +5549,48 @@ function SaldoVaPage({ token }) {
         style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, width: 260, marginBottom: 16 }}
       />
 
-      <Card style={{ padding: 0, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-          <thead>
-            <tr style={{ background: "#F7F5F1" }}>
-              {["Kode", "Nama Toko", "No. VA", "Saldo", ""].map((h) => (
-                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filteredClients.map((c) => {
-              const va = vaToko(c.id);
-              const saldo = saldoToko(c.id);
-              return (
-                <tr key={c.id} style={{ borderTop: "1px solid #EDEAE3" }}>
-                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{c.kode}</td>
-                  <td style={{ padding: "12px 14px" }}>{c.nama}</td>
-                  <td style={{ padding: "12px 14px" }}>{va ? `${va.bank_code} - ${va.va_number}` : <span style={{ color: "#9CA0A6" }}>Belum ada</span>}</td>
-                  <td style={{ padding: "12px 14px", fontWeight: 700, color: saldo > 0 ? "#28685D" : "#9CA0A6" }}>{rupiah(saldo)}</td>
-                  <td style={{ padding: "12px 14px" }}>
-                    {!va && (
-                      <button
-                        onClick={() => buatVa(c)}
-                        disabled={creatingVaFor === c.id}
-                        style={{ padding: "6px 12px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700 }}
-                      >
-                        {creatingVaFor === c.id ? "Membuat..." : "Buat VA"}
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {filteredClients.length === 0 && <EmptyState text="Tidak ada toko yang cocok." />}
-      </Card>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {filteredClients.map((c) => {
+          const saldo = saldoToko(c.id);
+          return (
+            <Card key={c.id}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div>
+                  <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700 }}>{c.kode}</p>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.nama}</p>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px" }}>Saldo</p>
+                  <p style={{ fontSize: 16, fontWeight: 700, color: saldo > 0 ? "#28685D" : "#9CA0A6", margin: 0 }}>{rupiah(saldo)}</p>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+                {DAFTAR_BANK_VA.map((bank) => {
+                  const va = vaTokoBank(c.id, bank);
+                  const isCreating = creatingVaFor === `${c.id}-${bank}`;
+                  return (
+                    <div key={bank} style={{ border: "1px solid #EDEAE3", borderRadius: 9, padding: 10 }}>
+                      <p style={{ fontSize: 10.5, fontWeight: 700, color: "#6B6F75", margin: "0 0 6px", textTransform: "uppercase" }}>{bank}</p>
+                      {va ? (
+                        <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>{va.va_number}</p>
+                      ) : (
+                        <button
+                          onClick={() => buatVa(c, bank)}
+                          disabled={isCreating}
+                          style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700 }}
+                        >
+                          {isCreating ? "Membuat..." : "Buat VA"}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          );
+        })}
+      </div>
+      {filteredClients.length === 0 && <EmptyState text="Tidak ada toko yang cocok." />}
     </div>
   );
 }
