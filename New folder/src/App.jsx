@@ -163,6 +163,7 @@ export default function OwnerDashboard() {
         {page === "clients" && <ClientsPage token={token} />}
         {page === "keuangan" && <KeuanganPage token={token} />}
         {page === "biaya_operasional" && <BiayaOperasionalPage token={token} />}
+        {page === "pajak" && <PajakPage token={token} />}
         {page === "piutang" && <PiutangPage token={token} />}
         {page === "barang" && <BarangTerlarisPage token={token} />}
         {page === "produk" && <ProductPage token={token} />}
@@ -241,6 +242,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "clients", label: "Approve Toko Baru", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "keuangan", label: "Laporan Keuangan", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "biaya_operasional", label: "Biaya Operasional", icon: Receipt, roles: ["owner", "admin_keuangan"] },
+    { key: "pajak", label: "Pajak", icon: FileEdit, roles: ["owner", "admin_keuangan"] },
     { key: "piutang", label: "Piutang", icon: AlertCircle, roles: ["owner", "admin_keuangan"] },
     { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
     { key: "produk", label: "Product", icon: Package, roles: ["owner"] },
@@ -4635,6 +4637,134 @@ function BiayaOperasionalPage({ token }) {
           </tbody>
         </table>
         {biayaList.length === 0 && <EmptyState text="Belum ada biaya operasional bulan ini." />}
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// PAJAK (PPh Final UMKM 0.5% + status pembayaran per bulan)
+// ============================================================
+function PajakPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [rows, setRows] = useState([]);
+  const [pembayaran, setPembayaran] = useState([]);
+  const [saving, setSaving] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [keuanganRows, pembayaranRows] = await Promise.all([
+        supabaseFetch(token, "v_laporan_keuangan_bulanan?select=bulan,omzet_bersih,pph_final_umkm&order=bulan.desc&limit=12"),
+        supabaseFetch(token, "pajak_pembayaran?select=*"),
+      ]);
+      setRows(keuanganRows);
+      setPembayaran(pembayaranRows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  function statusBulan(bulan) {
+    return pembayaran.find((p) => p.bulan === bulan);
+  }
+
+  async function toggleBayar(bulan) {
+    setSaving(bulan);
+    try {
+      const existing = statusBulan(bulan);
+      const sudahDibayarBaru = !(existing?.sudah_dibayar);
+      const body = {
+        bulan, sudah_dibayar: sudahDibayarBaru,
+        tanggal_bayar: sudahDibayarBaru ? new Date().toISOString().slice(0, 10) : null,
+      };
+      const [updated] = await supabaseFetch(token, `pajak_pembayaran?on_conflict=bulan`, {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=representation",
+        body: JSON.stringify(body),
+      });
+      setPembayaran((prev) => {
+        const others = prev.filter((p) => p.bulan !== bulan);
+        return [...others, updated];
+      });
+    } catch (e) {
+      alert("Gagal update status: " + e.message);
+    }
+    setSaving(null);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const tahunIni = new Date().getFullYear();
+  const rowsTahunIni = rows.filter((r) => new Date(r.bulan).getFullYear() === tahunIni);
+  const totalPajakTahunIni = rowsTahunIni.reduce((sum, r) => sum + Number(r.pph_final_umkm || 0), 0);
+  const sudahDibayarCount = rowsTahunIni.filter((r) => statusBulan(r.bulan)?.sudah_dibayar).length;
+  const belumDibayarCount = rowsTahunIni.length - sudahDibayarCount;
+
+  return (
+    <div>
+      <PageHeader title="Pajak" subtitle="Perhitungan PPh Final UMKM (0,5% dari omzet bersih) & status pembayaran" />
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
+        <Card>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Total Pajak Tahun {tahunIni}</p>
+          <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(totalPajakTahunIni)}</p>
+        </Card>
+        <Card>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Bulan Sudah Dibayar</p>
+          <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: "#28685D", margin: 0 }}>{sudahDibayarCount}</p>
+        </Card>
+        <Card>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Bulan Belum Dibayar</p>
+          <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: belumDibayarCount > 0 ? "#C0392B" : "#24272B", margin: 0 }}>{belumDibayarCount}</p>
+        </Card>
+      </div>
+
+      <p style={{ fontSize: 12, color: "#9CA0A6", marginBottom: 14 }}>
+        Perhitungan mengikuti ketentuan <strong>PPh Final UMKM 0,5%</strong> dari omzet bersih bulanan (PP 55/2022) - berlaku untuk UMKM dengan omzet di bawah Rp4,8 miliar/tahun. Ini bukan nasihat pajak resmi; konsultasikan dengan konsultan pajak/kantor pajak untuk kepastian kewajiban perpajakan Anda.
+      </p>
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Bulan", "Omzet Bersih", "PPh Final (0,5%)", "Status", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const status = statusBulan(r.bulan);
+              const lunas = status?.sudah_dibayar;
+              return (
+                <tr key={r.bulan} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px", fontWeight: 600 }}>{new Date(r.bulan).toLocaleDateString("id-ID", { month: "long", year: "numeric" })}</td>
+                  <td style={{ padding: "12px 14px" }}>{rupiah(r.omzet_bersih)}</td>
+                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(r.pph_final_umkm)}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: lunas ? "#D8E9E6" : "#FBEAEA", color: lunas ? "#28685D" : "#C0392B" }}>
+                      {lunas ? `Lunas (${new Date(status.tanggal_bayar).toLocaleDateString("id-ID")})` : "Belum Bayar"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <button
+                      onClick={() => toggleBayar(r.bulan)}
+                      disabled={saving === r.bulan}
+                      style={{ padding: "6px 12px", borderRadius: 7, border: lunas ? "1px solid #E4E1DA" : "none", background: lunas ? "#fff" : "#E8A426", color: lunas ? "#6B6F75" : "#24272B", fontSize: 11, fontWeight: 700 }}
+                    >
+                      {saving === r.bulan ? "..." : lunas ? "Batalkan" : "Tandai Lunas"}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {rows.length === 0 && <EmptyState text="Belum ada data transaksi." />}
       </Card>
     </div>
   );
