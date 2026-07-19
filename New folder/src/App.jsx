@@ -162,6 +162,7 @@ export default function OwnerDashboard() {
         {page === "rekap_nota" && <RekapNotaPage token={token} />}
         {page === "clients" && <ClientsPage token={token} />}
         {page === "keuangan" && <KeuanganPage token={token} />}
+        {page === "biaya_operasional" && <BiayaOperasionalPage token={token} />}
         {page === "piutang" && <PiutangPage token={token} />}
         {page === "barang" && <BarangTerlarisPage token={token} />}
         {page === "produk" && <ProductPage token={token} />}
@@ -239,6 +240,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "rekap_nota", label: "Rekap Nota", icon: Receipt, roles: ["owner", "admin_keuangan"] },
     { key: "clients", label: "Approve Toko Baru", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "keuangan", label: "Laporan Keuangan", icon: Wallet, roles: ["owner", "admin_keuangan"] },
+    { key: "biaya_operasional", label: "Biaya Operasional", icon: Receipt, roles: ["owner", "admin_keuangan"] },
     { key: "piutang", label: "Piutang", icon: AlertCircle, roles: ["owner", "admin_keuangan"] },
     { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
     { key: "produk", label: "Product", icon: Package, roles: ["owner"] },
@@ -4407,6 +4409,197 @@ function KunjunganSalesPage({ token, profile }) {
         })}
       </div>
       {handledClients.length === 0 && <EmptyState text="Belum ada toko yang Anda handle." />}
+    </div>
+  );
+}
+
+// ============================================================
+// BIAYA OPERASIONAL (hitung laba kotor & kelola biaya operasional)
+// ============================================================
+function BiayaOperasionalPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [biayaList, setBiayaList] = useState([]);
+  const [labaKotorBulanIni, setLabaKotorBulanIni] = useState(0);
+  const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const now = new Date();
+  const [filterYear, setFilterYear] = useState(now.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
+  const [form, setForm] = useState({
+    tanggal: now.toISOString().slice(0, 10), kategori: "", jumlah: "", keterangan: "",
+  });
+
+  const BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+
+  useEffect(() => { load(); }, [filterYear, filterMonth]);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const startBulan = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+      const nextMonth = filterMonth === 12 ? 1 : filterMonth + 1;
+      const nextYear = filterMonth === 12 ? filterYear + 1 : filterYear;
+      const endBulan = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
+
+      const [biayaRows, keuanganRows] = await Promise.all([
+        supabaseFetch(token, `biaya_operasional?select=*&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=tanggal.desc`),
+        supabaseFetch(token, `v_laporan_keuangan_bulanan?select=laba_kotor&bulan=eq.${startBulan}`),
+      ]);
+      setBiayaList(biayaRows);
+      setLabaKotorBulanIni(Number(keuanganRows[0]?.laba_kotor || 0));
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+
+  function resetForm() {
+    setForm({ tanggal: now.toISOString().slice(0, 10), kategori: "", jumlah: "", keterangan: "" });
+    setEditingId(null);
+  }
+
+  function startEdit(b) {
+    setEditingId(b.id);
+    setForm({ tanggal: b.tanggal, kategori: b.kategori, jumlah: b.jumlah, keterangan: b.keterangan || "" });
+  }
+
+  async function submitForm() {
+    if (!form.tanggal || !form.kategori.trim() || !form.jumlah) {
+      alert("Isi dulu tanggal, kategori, dan jumlahnya.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const body = {
+        tanggal: form.tanggal, kategori: form.kategori.trim(),
+        jumlah: Number(form.jumlah), keterangan: form.keterangan || null,
+      };
+      if (editingId) {
+        await supabaseFetch(token, `biaya_operasional?id=eq.${editingId}`, { method: "PATCH", body: JSON.stringify(body) });
+      } else {
+        await supabaseFetch(token, "biaya_operasional", { method: "POST", body: JSON.stringify(body) });
+      }
+      resetForm();
+      await load();
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function hapusBiaya(id) {
+    if (!confirm("Hapus catatan biaya ini?")) return;
+    try {
+      await supabaseFetch(token, `biaya_operasional?id=eq.${id}`, { method: "DELETE" });
+      setBiayaList((prev) => prev.filter((b) => b.id !== id));
+    } catch (e) {
+      alert("Gagal hapus: " + e.message);
+    }
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const totalBiayaBulanIni = biayaList.reduce((sum, b) => sum + Number(b.jumlah || 0), 0);
+  const labaBersih = labaKotorBulanIni - totalBiayaBulanIni;
+  const yearsAvailable = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
+
+  const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  return (
+    <div>
+      <PageHeader title="Biaya Operasional" subtitle="Hitung laba kotor & kelola biaya operasional bulanan" />
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+        <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {yearsAvailable.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          {BULAN.slice(1).map((b, i) => <option key={i + 1} value={i + 1}>{b}</option>)}
+        </select>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
+        <Card>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Laba Kotor</p>
+          <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(labaKotorBulanIni)}</p>
+        </Card>
+        <Card>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Total Biaya Operasional</p>
+          <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: "#C0392B", margin: 0 }}>{rupiah(totalBiayaBulanIni)}</p>
+        </Card>
+        <Card>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Laba Bersih</p>
+          <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: labaBersih >= 0 ? "#28685D" : "#C0392B", margin: 0 }}>{rupiah(labaBersih)}</p>
+        </Card>
+      </div>
+
+      <Card style={{ maxWidth: 560, marginBottom: 24 }}>
+        <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 14px" }}>{editingId ? "Edit Biaya" : "Tambah Biaya Operasional"}</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+          <div>
+            <label style={labelStyle}>Tanggal</label>
+            <input type="date" value={form.tanggal} onChange={(e) => setForm({ ...form, tanggal: e.target.value })} style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Kategori</label>
+            <input value={form.kategori} onChange={(e) => setForm({ ...form, kategori: e.target.value })} placeholder="misal Sewa Gudang, Gaji, Listrik" style={fieldStyle} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Jumlah (Rp)</label>
+          <input type="number" value={form.jumlah} onChange={(e) => setForm({ ...form, jumlah: e.target.value })} style={fieldStyle} />
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          <label style={labelStyle}>Keterangan (opsional)</label>
+          <input value={form.keterangan} onChange={(e) => setForm({ ...form, keterangan: e.target.value })} style={fieldStyle} />
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={submitForm} disabled={saving} style={{ padding: "11px 22px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+            {saving ? "Menyimpan..." : editingId ? "Simpan Perubahan" : "Tambah Biaya"}
+          </button>
+          {editingId && (
+            <button onClick={resetForm} style={{ padding: "11px 22px", borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+              Batal
+            </button>
+          )}
+        </div>
+      </Card>
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Daftar Biaya {BULAN[filterMonth]} {filterYear}</h2>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Tanggal", "Kategori", "Jumlah", "Keterangan", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {biayaList.map((b) => (
+              <tr key={b.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px" }}>{new Date(b.tanggal).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 600 }}>{b.kategori}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(b.jumlah)}</td>
+                <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{b.keterangan || "-"}</td>
+                <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button onClick={() => startEdit(b)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 600 }}>
+                      Edit
+                    </button>
+                    <button onClick={() => hapusBiaya(b.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "none", color: "#C0392B", fontSize: 11, fontWeight: 700 }}>
+                      Hapus
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {biayaList.length === 0 && <EmptyState text="Belum ada biaya operasional bulan ini." />}
+      </Card>
     </div>
   );
 }
