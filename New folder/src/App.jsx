@@ -4091,18 +4091,41 @@ function KunjunganSalesPage({ token, profile }) {
       const ctx = canvas.getContext("2d");
       ctx.drawImage(img, 0, 0);
 
-      // Watermark di bagian bawah foto
-      const barHeight = Math.max(70, img.height * 0.09);
-      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      // Watermark di bagian bawah foto (teks + ikon pin peta)
+      const barHeight = Math.max(90, img.height * 0.12);
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+
+      // Gambar ikon pin peta (bentuk teardrop) di kiri watermark
+      const pinSize = barHeight * 0.55;
+      const pinCenterX = 14 + pinSize / 2;
+      const pinCenterY = img.height - barHeight / 2;
+      ctx.save();
+      ctx.translate(pinCenterX, pinCenterY - pinSize * 0.15);
+      ctx.beginPath();
+      // Kepala pin (lingkaran)
+      ctx.arc(0, 0, pinSize / 2, Math.PI * 1.15, Math.PI * 1.85);
+      // Ujung pin lancip ke bawah
+      ctx.lineTo(0, pinSize * 0.75);
+      ctx.closePath();
+      ctx.fillStyle = "#E4453A";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, -pinSize * 0.05, pinSize * 0.22, 0, Math.PI * 2);
       ctx.fillStyle = "#fff";
-      const fontSize = Math.max(14, Math.round(img.width / 38));
+      ctx.fill();
+      ctx.restore();
+
+      // Teks di sebelah kanan ikon pin
+      const textX = 14 + pinSize + 14;
+      ctx.fillStyle = "#fff";
+      const fontSize = Math.max(14, Math.round(img.width / 40));
       ctx.font = `bold ${fontSize}px sans-serif`;
       const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-      ctx.fillText(`${selectedClient.nama} (${selectedClient.kode})`, 14, img.height - barHeight + fontSize + 8);
-      ctx.font = `${Math.round(fontSize * 0.8)}px sans-serif`;
-      ctx.fillText(`${waktu}`, 14, img.height - barHeight + fontSize * 2 + 10);
-      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, 14, img.height - barHeight + fontSize * 3 + 12);
+      ctx.fillText(`${selectedClient.nama} (${selectedClient.kode})`, textX, img.height - barHeight + fontSize + 10);
+      ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
+      ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
+      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
 
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
       const filePath = `kunjungan-${profile.sales_id}-${selectedClient.id}-${Date.now()}.jpg`;
