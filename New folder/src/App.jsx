@@ -1853,7 +1853,7 @@ function RekapTokoPage({ token }) {
   const [orderTerakhir, setOrderTerakhir] = useState({}); // { client_id: tanggal }
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ alamat: "", telp: "", kodeSales: "", catatan: "" });
+  const [editForm, setEditForm] = useState({ alamat: "", telp: "", kodeSales: "", catatan: "", namaOwner: "", tanggalLahir: "", jenisUsaha: "", provinsi: "" });
   const [saving, setSaving] = useState(false);
   const [hanyaTidakAktif, setHanyaTidakAktif] = useState(false);
 
@@ -1891,7 +1891,10 @@ function RekapTokoPage({ token }) {
 
   function startEdit(c) {
     setEditingId(c.id);
-    setEditForm({ alamat: c.alamat || "", telp: c.telp || "", kodeSales: c.sales?.kode || "", catatan: c.catatan_internal || "" });
+    setEditForm({
+      alamat: c.alamat || "", telp: c.telp || "", kodeSales: c.sales?.kode || "", catatan: c.catatan_internal || "",
+      namaOwner: c.nama_owner || "", tanggalLahir: c.tanggal_lahir || "", jenisUsaha: c.jenis_usaha || "", provinsi: c.provinsi || "",
+    });
   }
 
   function matchedSales(kode) {
@@ -1914,11 +1917,19 @@ function RekapTokoPage({ token }) {
           telp: editForm.telp,
           sales_id: found ? found.id : null,
           catatan_internal: editForm.catatan || null,
+          nama_owner: editForm.namaOwner || null,
+          tanggal_lahir: editForm.tanggalLahir || null,
+          jenis_usaha: editForm.jenisUsaha || null,
+          provinsi: editForm.provinsi || null,
         }),
       });
       setClients((prev) => prev.map((c) => (
         c.id === clientId
-          ? { ...c, alamat: editForm.alamat, telp: editForm.telp, catatan_internal: editForm.catatan, sales: found ? { id: found.id, kode: found.kode, nama: found.nama } : null }
+          ? {
+              ...c, alamat: editForm.alamat, telp: editForm.telp, catatan_internal: editForm.catatan,
+              nama_owner: editForm.namaOwner, tanggal_lahir: editForm.tanggalLahir, jenis_usaha: editForm.jenisUsaha, provinsi: editForm.provinsi,
+              sales: found ? { id: found.id, kode: found.kode, nama: found.nama } : null,
+            }
           : c
       )));
       setEditingId(null);
@@ -1957,36 +1968,16 @@ function RekapTokoPage({ token }) {
                 return hari === null || hari > BATAS_HARI_TIDAK_AKTIF;
               })
               .map((c) => {
-              const isEditing = editingId === c.id;
-              const previewMatch = isEditing && editForm.kodeSales.trim() ? matchedSales(editForm.kodeSales) : null;
               const hari = hariSejakOrder(c.id);
               const tidakAktif = hari === null || hari > BATAS_HARI_TIDAK_AKTIF;
               return (
                 <tr key={c.id} style={{ borderTop: "1px solid #EDEAE3", background: tidakAktif ? "#FFFBF0" : "transparent" }}>
                   <td style={{ padding: "12px 14px", fontWeight: 600 }}>{c.nama} <span style={{ color: "#9CA0A6", fontWeight: 400 }}>({c.kode})</span></td>
-                  <td style={{ padding: "12px 14px", minWidth: 180 }}>
-                    {isEditing ? (
-                      <input value={editForm.alamat} onChange={(e) => setEditForm({ ...editForm, alamat: e.target.value })} style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }} />
-                    ) : c.alamat}
-                  </td>
-                  <td style={{ padding: "12px 14px", minWidth: 130 }}>
-                    {isEditing ? (
-                      <input value={editForm.telp} onChange={(e) => setEditForm({ ...editForm, telp: e.target.value })} style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }} />
-                    ) : c.telp}
-                  </td>
+                  <td style={{ padding: "12px 14px", minWidth: 180 }}>{c.alamat}</td>
+                  <td style={{ padding: "12px 14px", minWidth: 130 }}>{c.telp}</td>
                   <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{c.email || "-"}</td>
-                  <td style={{ padding: "12px 14px", minWidth: 100 }}>
-                    {isEditing ? (
-                      <input value={editForm.kodeSales} onChange={(e) => setEditForm({ ...editForm, kodeSales: e.target.value })} placeholder="misal S001" style={{ width: 90, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }} />
-                    ) : (c.sales?.kode || "-")}
-                  </td>
-                  <td style={{ padding: "12px 14px" }}>
-                    {isEditing ? (
-                      <span style={{ fontStyle: "italic", color: editForm.kodeSales.trim() && !previewMatch ? "#C0392B" : "#28685D", fontWeight: 600 }}>
-                        {editForm.kodeSales.trim() ? (previewMatch ? previewMatch.nama : "Kode tidak ditemukan") : "-"}
-                      </span>
-                    ) : (c.sales?.nama || "-")}
-                  </td>
+                  <td style={{ padding: "12px 14px" }}>{c.sales?.kode || "-"}</td>
+                  <td style={{ padding: "12px 14px" }}>{c.sales?.nama || "-"}</td>
                   <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                     {hari === null ? (
                       <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#F7F5F1", color: "#9CA0A6" }}>Belum pernah order</span>
@@ -1997,27 +1988,12 @@ function RekapTokoPage({ token }) {
                     )}
                   </td>
                   <td style={{ padding: "12px 14px", minWidth: 160, maxWidth: 220 }}>
-                    {isEditing ? (
-                      <textarea
-                        value={editForm.catatan} onChange={(e) => setEditForm({ ...editForm, catatan: e.target.value })}
-                        rows={2} placeholder="Catatan bebas..."
-                        style={{ width: "100%", padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12, resize: "vertical" }}
-                      />
-                    ) : (
-                      <span style={{ color: c.catatan_internal ? "#24272B" : "#B5B2AA", fontSize: 12 }}>{c.catatan_internal || "-"}</span>
-                    )}
+                    <span style={{ color: c.catatan_internal ? "#24272B" : "#B5B2AA", fontSize: 12 }}>{c.catatan_internal || "-"}</span>
                   </td>
                   <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
-                    {isEditing ? (
-                      <div style={{ display: "flex", gap: 6 }}>
-                        <button onClick={() => save(c.id)} disabled={saving} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11.5, fontWeight: 700 }}>Simpan</button>
-                        <button onClick={() => setEditingId(null)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11.5 }}>Batal</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => startEdit(c)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                        <FileEdit size={12} /> Edit
-                      </button>
-                    )}
+                    <button onClick={() => startEdit(c)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11.5, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                      <FileEdit size={12} /> Edit
+                    </button>
                   </td>
                 </tr>
               );
@@ -2026,6 +2002,76 @@ function RekapTokoPage({ token }) {
         </table>
         {clients.length === 0 && <EmptyState text="Belum ada toko aktif." />}
       </Card>
+
+      {editingId && (() => {
+        const c = clients.find((x) => x.id === editingId);
+        if (!c) return null;
+        const previewMatch = editForm.kodeSales.trim() ? matchedSales(editForm.kodeSales) : null;
+        const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, outline: "none" };
+        const labelStyle = { fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 520, maxHeight: "88vh", overflowY: "auto", padding: 26 }}>
+              <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Edit Toko</h2>
+              <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 20px" }}>{c.nama} ({c.kode})</p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                <div>
+                  <label style={labelStyle}>Nama Owner</label>
+                  <input value={editForm.namaOwner} onChange={(e) => setEditForm({ ...editForm, namaOwner: e.target.value })} style={fieldStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Tanggal Lahir</label>
+                  <input type="date" value={editForm.tanggalLahir} onChange={(e) => setEditForm({ ...editForm, tanggalLahir: e.target.value })} style={fieldStyle} />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Jenis Usaha</label>
+                <input value={editForm.jenisUsaha} onChange={(e) => setEditForm({ ...editForm, jenisUsaha: e.target.value })} placeholder="misal Toko Bangunan" style={fieldStyle} />
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Alamat</label>
+                <input value={editForm.alamat} onChange={(e) => setEditForm({ ...editForm, alamat: e.target.value })} style={fieldStyle} />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+                <div>
+                  <label style={labelStyle}>No. HP</label>
+                  <input value={editForm.telp} onChange={(e) => setEditForm({ ...editForm, telp: e.target.value })} style={fieldStyle} />
+                </div>
+                <div>
+                  <label style={labelStyle}>Provinsi</label>
+                  <input value={editForm.provinsi} onChange={(e) => setEditForm({ ...editForm, provinsi: e.target.value })} style={fieldStyle} />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Kode Sales</label>
+                <input value={editForm.kodeSales} onChange={(e) => setEditForm({ ...editForm, kodeSales: e.target.value })} placeholder="misal S001" style={fieldStyle} />
+                <p style={{ fontSize: 11.5, marginTop: 6, fontStyle: "italic", color: editForm.kodeSales.trim() && !previewMatch ? "#C0392B" : "#28685D", fontWeight: 600 }}>
+                  {editForm.kodeSales.trim() ? (previewMatch ? previewMatch.nama : "Kode tidak ditemukan") : "-"}
+                </p>
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <label style={labelStyle}>Catatan Internal</label>
+                <textarea value={editForm.catatan} onChange={(e) => setEditForm({ ...editForm, catatan: e.target.value })} rows={3} placeholder="Catatan bebas..." style={{ ...fieldStyle, resize: "vertical" }} />
+              </div>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                  Batal
+                </button>
+                <button onClick={() => save(editingId)} disabled={saving} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: saving ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+                  {saving ? "Menyimpan..." : "Simpan"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
