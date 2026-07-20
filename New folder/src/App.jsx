@@ -5730,6 +5730,7 @@ function VerifikasiTokoPage({ token }) {
   const [rejectReason, setRejectReason] = useState("");
   const [filter, setFilter] = useState("menunggu_review"); // menunggu_review | terverifikasi | ditolak | semua
   const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [ktpSignedUrls, setKtpSignedUrls] = useState({}); // { client_id: signedUrl }
 
   async function load() {
     setLoading(true);
@@ -5741,6 +5742,35 @@ function VerifikasiTokoPage({ token }) {
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  // Foto KTP disimpan di bucket privat (foto_ktp_url isinya cuma PATH, bukan
+  // URL langsung) - jadi perlu di-generate signed URL sementara dulu buat
+  // ditampilkan sebagai thumbnail di kartu.
+  useEffect(() => {
+    clients.forEach((c) => {
+      if (c.foto_ktp_url && !ktpSignedUrls[c.id]) {
+        getSignedKtpUrl(c.foto_ktp_url).then((url) => {
+          if (url) setKtpSignedUrls((prev) => ({ ...prev, [c.id]: url }));
+        });
+      }
+    });
+  }, [clients]);
+
+  async function getSignedKtpUrl(filePath) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/get-ktp-signed-url`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ file_path: filePath }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data.signedUrl;
+    } catch (e) {
+      console.log("Gagal ambil signed URL KTP:", e.message);
+      return null;
+    }
+  }
 
   async function approve(client) {
     setProcessingId(client.id);
@@ -5832,11 +5862,15 @@ function VerifikasiTokoPage({ token }) {
                 <div>
                   <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>FOTO KTP</p>
                   {c.foto_ktp_url ? (
-                    <img
-                      src={c.foto_ktp_url} alt="Foto KTP"
-                      onClick={() => setLightboxUrl(c.foto_ktp_url)}
-                      style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, cursor: "pointer" }}
-                    />
+                    ktpSignedUrls[c.id] ? (
+                      <img
+                        src={ktpSignedUrls[c.id]} alt="Foto KTP"
+                        onClick={() => setLightboxUrl(ktpSignedUrls[c.id])}
+                        style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, cursor: "pointer" }}
+                      />
+                    ) : (
+                      <div style={{ width: "100%", height: 120, borderRadius: 8, background: "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#9CA0A6" }}>Memuat...</div>
+                    )
                   ) : (
                     <div style={{ width: "100%", height: 120, borderRadius: 8, background: "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#9CA0A6" }}>Belum ada</div>
                   )}
