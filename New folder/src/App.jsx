@@ -99,6 +99,9 @@ export default function OwnerDashboard() {
     setToken(accessToken);
     setProfile(profRows[0]);
     saveDashboardSession({ userId, token: accessToken, refreshToken });
+    // Kurir cuma bisa akses Proses Pengiriman - langsung arahkan ke situ,
+    // karena halaman default (Ringkasan) tidak bisa diakses kurir.
+    if (profRows[0].role === "kurir") setPage("proses_kirim");
   }
 
   useEffect(() => {
@@ -285,7 +288,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "kunjungan_sales", label: "Laporan Kunjungan", icon: MapPin, roles: ["sales"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan"] },
-    { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "admin_transaksi"] },
+    { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "admin_transaksi", "kurir"] },
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "transaksi", label: "Transaksi", icon: Table2, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "rekap_nota", label: "Rekap Nota", icon: Receipt, roles: ["owner", "admin_keuangan"] },
