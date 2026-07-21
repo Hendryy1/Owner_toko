@@ -697,12 +697,19 @@ function OrdersPage({ token }) {
   async function updateStatus(orderId, status) {
     setProcessingId(orderId);
     try {
+      // Order COD tidak perlu tahap "Menunggu Pembayaran" sama sekali -
+      // uangnya baru diterima kurir saat barang sampai (dikonfirmasi lewat
+      // menu Proses Pengiriman), jadi begitu di-approve langsung lompat ke
+      // "Menunggu Pengiriman".
+      const order = orders.find((o) => o.id === orderId);
+      const statusFinal = (status === "menunggu_pembayaran" && order?.metode_bayar === "cod") ? "menunggu_pengiriman" : status;
+
       await supabaseFetch(token, `orders?id=eq.${orderId}`, {
         method: "PATCH",
-        body: JSON.stringify({ status, disetujui_pada: new Date().toISOString() }),
+        body: JSON.stringify({ status: statusFinal, disetujui_pada: new Date().toISOString() }),
       });
       // Tetap tampil di daftar, cuma statusnya diperbarui (bukan dihapus)
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status } : o)));
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: statusFinal } : o)));
     } catch (e) {
       alert("Gagal update: " + e.message);
     }
@@ -2527,7 +2534,9 @@ function KonfirmasiPembayaranPage({ token }) {
       // Ambil order yang PERNAH masuk tahap ini: masih menunggu_pembayaran ATAU
       // status_bayar sudah lunas (walau sekarang sudah lanjut ke tahap manapun) -
       // supaya ada riwayat permanen, tidak hilang begitu pindah tahap berikutnya.
-      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,bukti_transfer_url,clients(nama,kode,jenis_pembayaran),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
+      // Order COD DIKECUALIKAN total - pembayarannya dikonfirmasi lewat menu
+      // Proses Pengiriman (saat barang sampai), bukan di sini.
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,bukti_transfer_url,clients(nama,kode,jenis_pembayaran),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&metode_bayar=neq.cod&order=created_at.desc&limit=200");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
