@@ -1060,9 +1060,17 @@ function NotaPrintModal({ order, type, settings, onClose }) {
             </div>
           )}
 
-          {/* CATATAN / REKENING (khusus Nota) */}
-          {!isSuratJalan && s.catatan_tambahan && (
-            <p style={{ fontSize: 11.5, fontWeight: 700, whiteSpace: "pre-line", lineHeight: 1.6, margin: "0 0 30px" }}>{s.catatan_tambahan}</p>
+          {/* CATATAN / REKENING - kalau COD pakai catatan khusus COD, kalau
+              bukan (transfer, dsb) pakai catatan/info rekening seperti biasa.
+              Cuma salah satu yang tampil, tidak berbarengan. */}
+          {!isSuratJalan && order.metode_bayar === "cod" ? (
+            s.catatan_cod && (
+              <p style={{ fontSize: 11.5, fontWeight: 700, whiteSpace: "pre-line", lineHeight: 1.6, margin: "0 0 30px" }}>{s.catatan_cod}</p>
+            )
+          ) : (
+            !isSuratJalan && s.catatan_tambahan && (
+              <p style={{ fontSize: 11.5, fontWeight: 700, whiteSpace: "pre-line", lineHeight: 1.6, margin: "0 0 30px" }}>{s.catatan_tambahan}</p>
+            )
           )}
 
           {/* TANDA TANGAN */}
@@ -1629,6 +1637,7 @@ function FormatNotaPage({ token }) {
           teks_subjudul_surat_jalan: form.teks_subjudul_surat_jalan,
           teks_footer_nota: form.teks_footer_nota,
           catatan_tambahan: form.catatan_tambahan,
+          catatan_cod: form.catatan_cod,
           label_ttd_kiri: form.label_ttd_kiri,
           label_ttd_kanan: form.label_ttd_kanan,
           updated_at: new Date().toISOString(),
@@ -1682,6 +1691,14 @@ function FormatNotaPage({ token }) {
         <div style={{ marginBottom: 20 }}>
           <label style={labelStyle}>Catatan / Info Rekening (tampil di atas tanda tangan, boleh beberapa baris)</label>
           <textarea value={form.catatan_tambahan || ""} onChange={set("catatan_tambahan")} rows={4} placeholder={"NOTE: Semua Pembayaran hanya ke rekening perusahaan\nBANK: BCA\nA/N: PT Nama Perusahaan Anda\nNO REKENING: 000000"} style={{ ...fieldStyle, resize: "vertical" }} />
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Catatan Khusus COD (menggantikan Catatan/Info Rekening di atas, khusus untuk order COD)</label>
+          <textarea
+            value={form.catatan_cod || ""} onChange={set("catatan_cod")} rows={3}
+            placeholder={"Mohon siapkan uang pas.\nPembayaran diterima kurir saat barang diterima."}
+            style={{ ...fieldStyle, resize: "vertical" }}
+          />
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
           <div>
