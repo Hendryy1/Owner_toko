@@ -2621,6 +2621,12 @@ function ProsesPengirimanPage({ token }) {
   const [error, setError] = useState("");
   const [processingId, setProcessingId] = useState(null);
   const [uploadingId, setUploadingId] = useState(null);
+  const [uploadingField, setUploadingField] = useState(null); // "barang_sampai" | "nota_ttd" | null
+  const [showKonfirmasiCod, setShowKonfirmasiCod] = useState(null); // order id
+  const [buktiNotaCod, setBuktiNotaCod] = useState(null);
+  const [buktiCashCod, setBuktiCashCod] = useState(null);
+  const [uploadingCod, setUploadingCod] = useState(null); // "nota" | "cash" | null
+  const [confirmingCodId, setConfirmingCodId] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -2633,11 +2639,12 @@ function ProsesPengirimanPage({ token }) {
   }
   useEffect(() => { load(); }, []);
 
-  async function uploadBuktiPengiriman(order, file) {
+  async function uploadFotoOrder(order, file, kolom, fieldKey) {
     setUploadingId(order.id);
+    setUploadingField(fieldKey);
     try {
       const ext = file.name.split(".").pop();
-      const filePath = `${order.id}-${Date.now()}.${ext}`;
+      const filePath = `${kolom}-${order.id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
         method: "POST",
         headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
@@ -2645,12 +2652,61 @@ function ProsesPengirimanPage({ token }) {
       });
       if (!res.ok) throw new Error(await res.text());
       const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bukti-pengiriman/${filePath}`;
-      await supabaseFetch(token, `orders?id=eq.${order.id}`, { method: "PATCH", body: JSON.stringify({ bukti_pengiriman_url: publicUrl }) });
-      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, bukti_pengiriman_url: publicUrl } : o)));
+      await supabaseFetch(token, `orders?id=eq.${order.id}`, { method: "PATCH", body: JSON.stringify({ [kolom]: publicUrl }) });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, [kolom]: publicUrl } : o)));
     } catch (e) {
       alert("Gagal upload: " + e.message);
     }
     setUploadingId(null);
+    setUploadingField(null);
+  }
+
+  async function uploadBuktiPengiriman(order, file) {
+    await uploadFotoOrder(order, file, "bukti_pengiriman_url", "kirim");
+  }
+
+  async function konfirmasiPembayaranCod(order) {
+    if (!buktiNotaCod || !buktiCashCod) {
+      alert("Upload dulu kedua bukti (Nota dan Cash) sebelum konfirmasi.");
+      return;
+    }
+    setConfirmingCodId(order.id);
+    try {
+      await supabaseFetch(token, `orders?id=eq.${order.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          bukti_nota_cod_url: buktiNotaCod, bukti_cash_cod_url: buktiCashCod,
+          status_bayar: "lunas", status: "selesai",
+        }),
+      });
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+      setShowKonfirmasiCod(null);
+      setBuktiNotaCod(null);
+      setBuktiCashCod(null);
+    } catch (e) {
+      alert("Gagal konfirmasi: " + e.message);
+    }
+    setConfirmingCodId(null);
+  }
+
+  async function uploadFotoCod(order, file, jenis) {
+    setUploadingCod(jenis);
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `cod-${jenis}-${order.id}-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bukti-pengiriman/${filePath}`;
+      if (jenis === "nota") setBuktiNotaCod(publicUrl);
+      else setBuktiCashCod(publicUrl);
+    } catch (e) {
+      alert("Gagal upload: " + e.message);
+    }
+    setUploadingCod(null);
   }
 
   async function confirmProsesDikirim(orderId) {
@@ -2691,22 +2747,32 @@ function ProsesPengirimanPage({ token }) {
       ) : (
         orders.map((o) => {
           const isDikirim = o.status === "proses_dikirim";
+          const isCod = o.metode_bayar === "cod";
           const hasProofKirim = !!o.bukti_pengiriman_url;
           const elapsedDays = daysSince(o.tanggal_dikirim);
           const canConfirmArrived = elapsedDays >= 3;
+          const hasBarangSampai = !!o.bukti_barang_sampai_url;
+          const hasNotaTtd = !!o.bukti_nota_ttd_url;
+          const codDocsLengkap = hasBarangSampai && hasNotaTtd;
           return (
             <Card key={o.id} style={{ marginBottom: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
                 <div>
-                  <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+                  <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
+                    {o.no_nota}
+                    {isCod && (
+                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                    )}
+                  </p>
                   <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
                   {isDikirim && (
                     <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>
-                      Dikirim {Math.floor(elapsedDays)} hari lalu {!canConfirmArrived && `- tunggu ${Math.ceil(3 - elapsedDays)} hari lagi untuk konfirmasi sampai`}
+                      Dikirim {Math.floor(elapsedDays)} hari lalu
+                      {!isCod && !canConfirmArrived && ` - tunggu ${Math.ceil(3 - elapsedDays)} hari lagi untuk konfirmasi sampai`}
                     </p>
                   )}
                 </div>
-                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   {!isDikirim ? (
                     <>
                       {hasProofKirim ? (
@@ -2715,7 +2781,7 @@ function ProsesPengirimanPage({ token }) {
                         </a>
                       ) : (
                         <label style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 14px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-                          {uploadingId === o.id ? "Mengupload..." : <><UploadCloud size={14} /> Upload Bukti Pengiriman</>}
+                          {uploadingId === o.id && uploadingField === "kirim" ? "Mengupload..." : <><UploadCloud size={14} /> Upload Bukti Pengiriman</>}
                           <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadBuktiPengiriman(o, e.target.files[0]); }} />
                         </label>
                       )}
@@ -2732,13 +2798,49 @@ function ProsesPengirimanPage({ token }) {
                       <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
                         <Truck size={14} /> Proses Dikirim
                       </span>
-                      <button
-                        disabled={processingId === o.id || !canConfirmArrived}
-                        onClick={() => confirmTelahSampai(o.id)}
-                        style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: canConfirmArrived ? "#E8A426" : "#E4E1DA", color: canConfirmArrived ? "#24272B" : "#9CA0A6", fontSize: 12.5, fontWeight: 700 }}
-                      >
-                        Telah Sampai
-                      </button>
+
+                      {isCod ? (
+                        <>
+                          {!hasBarangSampai && (
+                            <label style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                              {uploadingId === o.id && uploadingField === "barang_sampai" ? "Mengupload..." : <><UploadCloud size={13} /> Upload Bukti Barang Sampai</>}
+                              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadFotoOrder(o, e.target.files[0], "bukti_barang_sampai_url", "barang_sampai"); }} />
+                            </label>
+                          )}
+                          {!hasNotaTtd && (
+                            <label style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                              {uploadingId === o.id && uploadingField === "nota_ttd" ? "Mengupload..." : <><UploadCloud size={13} /> Upload Nota TTD Penerima</>}
+                              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadFotoOrder(o, e.target.files[0], "bukti_nota_ttd_url", "nota_ttd"); }} />
+                            </label>
+                          )}
+                          {hasBarangSampai && (
+                            <a href={o.bukti_barang_sampai_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "#28685D", fontWeight: 700, textDecoration: "underline" }}>
+                              Lihat Bukti Sampai
+                            </a>
+                          )}
+                          {hasNotaTtd && (
+                            <a href={o.bukti_nota_ttd_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "#28685D", fontWeight: 700, textDecoration: "underline" }}>
+                              Lihat Nota TTD
+                            </a>
+                          )}
+                          {codDocsLengkap && (
+                            <button
+                              onClick={() => setShowKonfirmasiCod(o.id)}
+                              style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                            >
+                              Konfirmasi Pembayaran COD
+                            </button>
+                          )}
+                        </>
+                      ) : (
+                        <button
+                          disabled={processingId === o.id || !canConfirmArrived}
+                          onClick={() => confirmTelahSampai(o.id)}
+                          style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: canConfirmArrived ? "#E8A426" : "#E4E1DA", color: canConfirmArrived ? "#24272B" : "#9CA0A6", fontSize: 12.5, fontWeight: 700 }}
+                        >
+                          Telah Sampai
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -2747,6 +2849,52 @@ function ProsesPengirimanPage({ token }) {
           );
         })
       )}
+
+      {/* MODAL KONFIRMASI PEMBAYARAN COD */}
+      {showKonfirmasiCod && (() => {
+        const order = orders.find((o) => o.id === showKonfirmasiCod);
+        if (!order) return null;
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 420, padding: 26 }}>
+              <h2 className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Konfirmasi Pembayaran COD</h2>
+              <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 20px" }}>{order.no_nota} · {order.clients?.nama}</p>
+
+              <div style={{ marginBottom: 16 }}>
+                <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Bukti Nota</p>
+                <label style={{ display: "block", width: "100%", height: 120, borderRadius: 10, border: buktiNotaCod ? "none" : "1.5px dashed #E8A426", background: buktiNotaCod ? `url(${buktiNotaCod}) center/cover` : "#FFFBF0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                  {!buktiNotaCod && (uploadingCod === "nota" ? <span style={{ fontSize: 12, color: "#8A6A1A" }}>Mengupload...</span> : <span style={{ fontSize: 12, color: "#8A6A1A", fontWeight: 700 }}>Tap untuk upload foto nota</span>)}
+                  <input type="file" accept="image/*" style={{ display: "none" }} disabled={!!uploadingCod} onChange={(e) => { if (e.target.files[0]) uploadFotoCod(order, e.target.files[0], "nota"); }} />
+                </label>
+              </div>
+
+              <div style={{ marginBottom: 22 }}>
+                <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Bukti Cash</p>
+                <label style={{ display: "block", width: "100%", height: 120, borderRadius: 10, border: buktiCashCod ? "none" : "1.5px dashed #E8A426", background: buktiCashCod ? `url(${buktiCashCod}) center/cover` : "#FFFBF0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+                  {!buktiCashCod && (uploadingCod === "cash" ? <span style={{ fontSize: 12, color: "#8A6A1A" }}>Mengupload...</span> : <span style={{ fontSize: 12, color: "#8A6A1A", fontWeight: 700 }}>Tap untuk upload foto uang cash</span>)}
+                  <input type="file" accept="image/*" style={{ display: "none" }} disabled={!!uploadingCod} onChange={(e) => { if (e.target.files[0]) uploadFotoCod(order, e.target.files[0], "cash"); }} />
+                </label>
+              </div>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button
+                  onClick={() => { setShowKonfirmasiCod(null); setBuktiNotaCod(null); setBuktiCashCod(null); }}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={() => konfirmasiPembayaranCod(order)}
+                  disabled={confirmingCodId === order.id || !buktiNotaCod || !buktiCashCod}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: (buktiNotaCod && buktiCashCod) ? "#E8A426" : "#E4E1DA", color: (buktiNotaCod && buktiCashCod) ? "#24272B" : "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}
+                >
+                  {confirmingCodId === order.id ? "Menyimpan..." : "Konfirmasi"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
