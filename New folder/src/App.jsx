@@ -2309,7 +2309,7 @@ function RekapNotaPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
+        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -2347,6 +2347,9 @@ function RekapNotaPage({ token }) {
   function statusPerjalanan(o) {
     if (o.status === "ditolak") return { label: "Ditolak", bg: "#FBEAEA", fg: "#C0392B" };
     if (o.status === "menunggu_persetujuan") return { label: "Menunggu Pengecekan Stock", bg: "#F7F5F1", fg: "#6B6F75" };
+    // COD tidak perlu tunggu bukti transfer/VA - begitu masuk tahap ini,
+    // langsung dianggap siap lanjut kirim (uangnya diterima pas barang sampai)
+    if (o.metode_bayar === "cod" && o.status === "menunggu_pembayaran") return { label: "COD - Siap Kirim", bg: "#FBF0D9", fg: "#8A6A1A" };
     if (o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas") return { label: "Menunggu Pembayaran", bg: "#FBEAEA", fg: "#C0392B" };
     if (o.status === "menunggu_pembayaran" && o.status_bayar === "lunas") return { label: "Bisa Cetak Nota", bg: "#FBF0D9", fg: "#8A6A1A" };
     if (o.status === "menunggu_pengiriman") return { label: "Menunggu Pengiriman", bg: "#D8E9E6", fg: "#28685D" };
@@ -2432,7 +2435,7 @@ function RekapNotaPage({ token }) {
                 <tr key={o.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                   <td style={{ padding: "12px 14px", fontWeight: 700 }}>{o.no_nota}</td>
                   <td style={{ padding: "12px 14px" }}>{o.clients?.nama}</td>
-                  <td style={{ padding: "12px 14px" }}>{o.clients?.jenis_pembayaran}</td>
+                  <td style={{ padding: "12px 14px" }}>{o.metode_bayar === "cod" ? "COD" : o.clients?.jenis_pembayaran}</td>
                   <td style={{ padding: "12px 14px" }}>{o.jatuh_tempo ? new Date(o.jatuh_tempo).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
                   <td style={{ padding: "12px 14px" }}>
                     <span style={{ background: st.bg, color: st.fg, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
