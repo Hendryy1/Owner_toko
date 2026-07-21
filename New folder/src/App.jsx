@@ -226,6 +226,7 @@ export default function OwnerDashboard() {
         {page === "rekap_toko" && <RekapTokoPage token={token} />}
         {page === "sales" && <SalesPage token={token} />}
         {page === "format_nota" && <FormatNotaPage token={token} />}
+        {page === "akun_staff" && <AkunStaffPage token={token} />}
         {page === "banner_promo" && <BannerPromoPage token={token} />}
       </div>
     </div>
@@ -309,6 +310,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "rekap_toko", label: "Rekap Toko", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
+    { key: "akun_staff", label: "Kelola Akun Staff", icon: Users, roles: ["owner"] },
     { key: "banner_promo", label: "Banner Promo", icon: ImageIcon, roles: ["owner"] },
   ];
   const items = allItems.filter((it) => it.roles.includes(profile?.role));
@@ -6006,6 +6008,228 @@ function VerifikasiTokoPage({ token }) {
           >
             <X size={20} />
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// KELOLA AKUN STAFF - buat akun baru & reset password
+// (Sales, Admin Transaksi, Admin Keuangan, Kurir)
+// ============================================================
+function AkunStaffPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [staffList, setStaffList] = useState([]);
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ nama: "", email: "", password: "", role: "sales", kodeSales: "" });
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [resetTargetId, setResetTargetId] = useState(null);
+  const [passwordBaru, setPasswordBaru] = useState("");
+  const [resetting, setResetting] = useState(false);
+
+  const ROLE_LABEL = {
+    owner: "Owner", admin_transaksi: "Admin Transaksi", admin_keuangan: "Admin Keuangan",
+    sales: "Sales", kurir: "Kurir",
+  };
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "profiles?select=id,nama,role,sales(kode,nama)&role=neq.owner&order=role.asc");
+      setStaffList(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function panggilFungsi(body) {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/kelola-akun-staff`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Terjadi kesalahan.");
+    return data;
+  }
+
+  async function buatAkun() {
+    setFormError("");
+    if (!form.nama.trim() || !form.email.trim() || !form.password.trim()) {
+      setFormError("Nama, email, dan password wajib diisi.");
+      return;
+    }
+    if (form.password.length < 6) {
+      setFormError("Password minimal 6 karakter.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await panggilFungsi({
+        action: "create", email: form.email.trim(), password: form.password,
+        nama: form.nama.trim(), role: form.role, kodeSales: form.kodeSales.trim() || null,
+      });
+      setShowForm(false);
+      setForm({ nama: "", email: "", password: "", role: "sales", kodeSales: "" });
+      load();
+    } catch (e) {
+      setFormError(e.message);
+    }
+    setSaving(false);
+  }
+
+  async function resetPassword(userId) {
+    if (!passwordBaru.trim() || passwordBaru.length < 6) {
+      alert("Password baru minimal 6 karakter.");
+      return;
+    }
+    setResetting(true);
+    try {
+      await panggilFungsi({ action: "reset_password", user_id: userId, password_baru: passwordBaru });
+      alert("Password berhasil diubah.");
+      setResetTargetId(null);
+      setPasswordBaru("");
+    } catch (e) {
+      alert("Gagal ubah password: " + e.message);
+    }
+    setResetting(false);
+  }
+
+  async function hapusAkun(userId, nama) {
+    if (!confirm(`Yakin hapus akun "${nama}"? Akun ini tidak akan bisa login lagi.`)) return;
+    try {
+      await panggilFungsi({ action: "delete", user_id: userId });
+      setStaffList((prev) => prev.filter((s) => s.id !== userId));
+    } catch (e) {
+      alert("Gagal hapus akun: " + e.message);
+    }
+  }
+
+  const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const labelStyle = { fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+        <PageHeader title="Kelola Akun Staff" subtitle="Buat akun baru & reset password untuk Sales, Admin, dan Kurir" />
+        <button
+          onClick={() => setShowForm(true)}
+          style={{ padding: "10px 18px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13, flexShrink: 0, marginTop: 4 }}
+        >
+          + Tambah Akun
+        </button>
+      </div>
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Nama", "Role", "Kode Sales", ""].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {staffList.map((s) => (
+              <tr key={s.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 600 }}>{s.nama}</td>
+                <td style={{ padding: "12px 14px" }}>{ROLE_LABEL[s.role] || s.role}</td>
+                <td style={{ padding: "12px 14px" }}>{s.sales?.kode || "-"}</td>
+                <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                  <button
+                    onClick={() => { setResetTargetId(s.id); setPasswordBaru(""); }}
+                    style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11.5, fontWeight: 600, marginRight: 6 }}
+                  >
+                    Reset Password
+                  </button>
+                  <button
+                    onClick={() => hapusAkun(s.id, s.nama)}
+                    style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #F0CFC7", background: "#fff", color: "#C0392B", fontSize: 11.5, fontWeight: 600 }}
+                  >
+                    Hapus
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {staffList.length === 0 && <EmptyState text="Belum ada akun staff." />}
+      </Card>
+
+      {/* MODAL TAMBAH AKUN */}
+      {showForm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 420, padding: 26 }}>
+            <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 20px" }}>Tambah Akun Staff</h2>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Nama</label>
+              <input value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} style={fieldStyle} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Email (buat login)</label>
+              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={fieldStyle} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Password Awal</label>
+              <input type="text" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Minimal 6 karakter" style={fieldStyle} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={labelStyle}>Role</label>
+              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} style={fieldStyle}>
+                <option value="sales">Sales</option>
+                <option value="admin_transaksi">Admin Transaksi</option>
+                <option value="admin_keuangan">Admin Keuangan</option>
+                <option value="kurir">Kurir</option>
+              </select>
+            </div>
+            {form.role === "sales" && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Kode Sales (opsional, misal S004)</label>
+                <input value={form.kodeSales} onChange={(e) => setForm({ ...form, kodeSales: e.target.value })} style={fieldStyle} />
+              </div>
+            )}
+
+            {formError && <p style={{ fontSize: 12, color: "#C0392B", margin: "0 0 14px" }}>{formError}</p>}
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowForm(false)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                Batal
+              </button>
+              <button onClick={buatAkun} disabled={saving} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: saving ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+                {saving ? "Membuat..." : "Buat Akun"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RESET PASSWORD */}
+      {resetTargetId && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, padding: 24 }}>
+            <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 14px" }}>Reset Password</h2>
+            <input
+              type="text" value={passwordBaru} onChange={(e) => setPasswordBaru(e.target.value)}
+              placeholder="Password baru (min. 6 karakter)"
+              style={{ ...fieldStyle, marginBottom: 14 }}
+            />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setResetTargetId(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
+                Batal
+              </button>
+              <button onClick={() => resetPassword(resetTargetId)} disabled={resetting} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: resetting ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13 }}>
+                {resetting ? "Menyimpan..." : "Simpan"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
