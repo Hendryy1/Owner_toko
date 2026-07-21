@@ -735,7 +735,12 @@ function OrdersPage({ token }) {
       <Card key={o.id} style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+            <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
+              {o.no_nota}
+              {o.metode_bayar === "cod" && (
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+              )}
+            </p>
             <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
             <p style={{ fontSize: 12, color: "#9CA0A6", margin: "4px 0 0" }}>
               {new Date(o.created_at).toLocaleString("id-ID")} · Channel: {o.channel}
