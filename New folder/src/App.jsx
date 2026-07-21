@@ -958,7 +958,7 @@ function NotaPrintModal({ order, type, settings, onClose }) {
               <table style={{ borderCollapse: "collapse", height: "fit-content" }}><tbody>
                 <tr>
                   <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Jenis Bayar:</td>
-                  <td style={{ padding: "2px 0", color: "#1B8A3D", fontWeight: 600 }}>{order.clients?.jenis_pembayaran || "-"}</td>
+                  <td style={{ padding: "2px 0", color: "#1B8A3D", fontWeight: 600 }}>{order.metode_bayar === "cod" ? "COD" : (order.clients?.jenis_pembayaran || "-")}</td>
                 </tr>
                 <tr>
                   <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Jatuh Tempo:</td>
@@ -966,7 +966,9 @@ function NotaPrintModal({ order, type, settings, onClose }) {
                 </tr>
                 <tr>
                   <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Status:</td>
-                  <td style={{ padding: "2px 0", color: isLunas ? "#1B8A3D" : "#C0392B", fontWeight: 700 }}>{isLunas ? "Lunas" : "Belum Lunas"}</td>
+                  <td style={{ padding: "2px 0", color: order.metode_bayar === "cod" ? "#8A6A1A" : (isLunas ? "#1B8A3D" : "#C0392B"), fontWeight: 700 }}>
+                    {order.metode_bayar === "cod" ? "COD (Bayar di Tempat)" : (isLunas ? "Lunas" : "Belum Lunas")}
+                  </td>
                 </tr>
               </tbody></table>
             )}
