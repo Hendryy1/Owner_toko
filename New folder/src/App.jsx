@@ -6039,7 +6039,7 @@ function AkunStaffPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "profiles?select=id,nama,role,sales(kode,nama)&role=neq.owner&order=role.asc");
+      const rows = await supabaseFetch(token, "profiles?select=id,nama,email,role,sales(kode,nama)&role=neq.owner&order=role.asc");
       setStaffList(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -6131,7 +6131,7 @@ function AkunStaffPage({ token }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
-              {["Nama", "Role", "Kode Sales", ""].map((h) => (
+              {["Nama", "Email", "Role", "Kode Sales", ""].map((h) => (
                 <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
               ))}
             </tr>
@@ -6140,6 +6140,7 @@ function AkunStaffPage({ token }) {
             {staffList.map((s) => (
               <tr key={s.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                 <td style={{ padding: "12px 14px", fontWeight: 600 }}>{s.nama}</td>
+                <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{s.email || "-"}</td>
                 <td style={{ padding: "12px 14px" }}>{ROLE_LABEL[s.role] || s.role}</td>
                 <td style={{ padding: "12px 14px" }}>{s.sales?.kode || "-"}</td>
                 <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
