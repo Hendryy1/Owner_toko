@@ -75,6 +75,7 @@ function clearDashboardSession() {
 export default function OwnerDashboard() {
   const [token, setToken] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [salesTerverifikasi, setSalesTerverifikasi] = useState(true); // default true supaya role lain tidak kena batasan
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
 
@@ -102,6 +103,20 @@ export default function OwnerDashboard() {
     // Kurir cuma bisa akses Proses Pengiriman - langsung arahkan ke situ,
     // karena halaman default (Ringkasan) tidak bisa diakses kurir.
     if (profRows[0].role === "kurir") setPage("proses_kirim");
+
+    // Sales WAJIB terverifikasi (KTP/NPWP/KK) dulu sebelum bisa akses fitur
+    // lain - kalau belum, kunci ke halaman Profil Saya saja.
+    if (profRows[0].role === "sales" && profRows[0].sales_id) {
+      try {
+        const salesRows = await supabaseFetch(accessToken, `sales?select=status_verifikasi&id=eq.${profRows[0].sales_id}`);
+        const terverifikasi = salesRows[0]?.status_verifikasi === "terverifikasi";
+        setSalesTerverifikasi(terverifikasi);
+        if (!terverifikasi) setPage("profil_sales");
+      } catch (e) {
+        setSalesTerverifikasi(false);
+        setPage("profil_sales");
+      }
+    }
   }
 
   useEffect(() => {
@@ -188,7 +203,7 @@ export default function OwnerDashboard() {
         .disp { font-family: 'Barlow Condensed', sans-serif; }
         button { font-family: inherit; cursor: pointer; }
       `}</style>
-      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} isMobile={isMobile} />
+      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} isMobile={isMobile} salesTerverifikasi={salesTerverifikasi} />
       <div style={{ flex: 1, padding: isMobile ? "16px 16px 28px" : "28px 36px", overflowY: "auto", overflowX: "hidden", minWidth: 0 }}>
         {isMobile && (
           <button
@@ -198,6 +213,10 @@ export default function OwnerDashboard() {
             <Menu size={16} /> Menu
           </button>
         )}
+        {profile?.role === "sales" && !salesTerverifikasi ? (
+          <ProfilSalesPage token={token} profile={profile} />
+        ) : (
+          <>
         {page === "overview" && <OverviewPage token={token} setPage={setPage} />}
         {page === "chat_sales" && <ChatSalesPage token={token} profile={profile} />}
         {page === "profil_sales" && <ProfilSalesPage token={token} profile={profile} />}
@@ -232,7 +251,10 @@ export default function OwnerDashboard() {
         {page === "sales" && <SalesPage token={token} />}
         {page === "format_nota" && <FormatNotaPage token={token} />}
         {page === "akun_staff" && <AkunStaffPage token={token} />}
+        {page === "verifikasi_sales" && <VerifikasiSalesPage token={token} />}
         {page === "banner_promo" && <BannerPromoPage token={token} />}
+          </>
+        )}
       </div>
     </div>
   );
@@ -285,7 +307,7 @@ function LoginScreen({ form, setForm, onLogin, error, loading }) {
 // ============================================================
 // SIDEBAR
 // ============================================================
-function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, isMobile }) {
+function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, isMobile, salesTerverifikasi }) {
   const allItems = [
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "admin_transaksi", "sales"] },
@@ -321,9 +343,14 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
     { key: "akun_staff", label: "Kelola Akun Staff", icon: Users, roles: ["owner"] },
+    { key: "verifikasi_sales", label: "Verifikasi Sales", icon: Eye, roles: ["owner"] },
     { key: "banner_promo", label: "Banner Promo", icon: ImageIcon, roles: ["owner"] },
   ];
-  const items = allItems.filter((it) => it.roles.includes(profile?.role));
+  const items = allItems
+    .filter((it) => it.roles.includes(profile?.role))
+    // Sales yang BELUM terverifikasi cuma boleh lihat menu Profil Saya -
+    // semua menu lain disembunyikan sampai Owner approve verifikasinya.
+    .filter((it) => !(profile?.role === "sales" && !salesTerverifikasi) || it.key === "profil_sales");
 
   if (collapsed) {
     if (isMobile) return null; // di HP, pakai tombol "Menu" terpisah di konten, bukan strip
@@ -4767,6 +4794,15 @@ function ProfilSalesPage({ token, profile }) {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [form, setForm] = useState({ nama: "", alamat: "", email: "", noHp: "", fotoUrl: "" });
+  const [dataTerkunci, setDataTerkunci] = useState(false);
+
+  const [statusVerifikasi, setStatusVerifikasi] = useState("belum_upload");
+  const [alasanDitolak, setAlasanDitolak] = useState("");
+  const [fotoKtp, setFotoKtp] = useState(null);
+  const [fotoNpwp, setFotoNpwp] = useState(null);
+  const [fotoKk, setFotoKk] = useState(null);
+  const [uploadingDoc, setUploadingDoc] = useState(null); // "ktp" | "npwp" | "kk" | null
+  const [submittingVerifikasi, setSubmittingVerifikasi] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -4775,12 +4811,18 @@ function ProfilSalesPage({ token, profile }) {
     setError("");
     try {
       if (!profile?.sales_id) throw new Error("Akun ini belum terhubung ke data sales manapun.");
-      const rows = await supabaseFetch(token, `sales?select=nama,alamat,email,no_hp,foto_url&id=eq.${profile.sales_id}`);
+      const rows = await supabaseFetch(token, `sales?select=nama,alamat,email,no_hp,foto_url,data_pribadi_terkunci,status_verifikasi,alasan_verifikasi_ditolak,foto_ktp_url,foto_npwp_url,foto_kk_url&id=eq.${profile.sales_id}`);
       const s = rows[0] || {};
       setForm({
         nama: s.nama || "", alamat: s.alamat || "", email: s.email || "",
         noHp: s.no_hp || "", fotoUrl: s.foto_url || "",
       });
+      setDataTerkunci(!!s.data_pribadi_terkunci);
+      setStatusVerifikasi(s.status_verifikasi || "belum_upload");
+      setAlasanDitolak(s.alasan_verifikasi_ditolak || "");
+      setFotoKtp(s.foto_ktp_url || null);
+      setFotoNpwp(s.foto_npwp_url || null);
+      setFotoKk(s.foto_kk_url || null);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -4814,8 +4856,12 @@ function ProfilSalesPage({ token, profile }) {
         body: JSON.stringify({
           nama: form.nama, alamat: form.alamat || null, email: form.email || null,
           no_hp: form.noHp || null, foto_url: form.fotoUrl || null,
+          // Begitu disimpan PERTAMA KALI, kunci data pribadi (nama/alamat/
+          // email/no HP) - kalau mau ubah lagi ke depannya harus hubungi Owner
+          data_pribadi_terkunci: true,
         }),
       });
+      setDataTerkunci(true);
       setSaved(true);
     } catch (e) {
       setError(e.message);
@@ -4823,17 +4869,67 @@ function ProfilSalesPage({ token, profile }) {
     setSaving(false);
   }
 
+  // ---------- DOKUMEN VERIFIKASI (KTP, NPWP, KK) ----------
+  async function uploadDokumen(file, jenis) {
+    setUploadingDoc(jenis);
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `verifikasi-sales-${jenis}-${profile.sales_id}-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/dokumen-verifikasi/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      if (jenis === "ktp") setFotoKtp(filePath);
+      else if (jenis === "npwp") setFotoNpwp(filePath);
+      else setFotoKk(filePath);
+    } catch (e) {
+      alert("Gagal upload dokumen: " + e.message);
+    }
+    setUploadingDoc(null);
+  }
+
+  async function kirimVerifikasiSales() {
+    if (!fotoKtp || !fotoNpwp || !fotoKk) {
+      alert("Upload ketiga dokumen (KTP, NPWP, Kartu Keluarga) dulu sebelum kirim.");
+      return;
+    }
+    setSubmittingVerifikasi(true);
+    try {
+      await supabaseFetch(token, `sales?id=eq.${profile.sales_id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          foto_ktp_url: fotoKtp, foto_npwp_url: fotoNpwp, foto_kk_url: fotoKk,
+          status_verifikasi: "menunggu_review", alasan_verifikasi_ditolak: null,
+        }),
+      });
+      setStatusVerifikasi("menunggu_review");
+    } catch (e) {
+      alert("Gagal kirim verifikasi: " + e.message);
+    }
+    setSubmittingVerifikasi(false);
+  }
+
   if (loading) return <LoadingState />;
   if (error && !form.nama) return <ErrorBox error={error} onRetry={load} />;
 
   const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const fieldStyleLocked = { ...fieldStyle, background: "#F7F5F1", color: "#9CA0A6", cursor: "not-allowed" };
   const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  const statusBadge = {
+    belum_upload: { text: "Belum Verifikasi", bg: "#FBEAEA", color: "#C0392B" },
+    menunggu_review: { text: "Menunggu Review Owner", bg: "#FBF0D9", color: "#8A6A1A" },
+    terverifikasi: { text: "Terverifikasi", bg: "#D8E9E6", color: "#28685D" },
+    ditolak: { text: "Ditolak", bg: "#FBEAEA", color: "#C0392B" },
+  }[statusVerifikasi];
 
   return (
     <div>
       <PageHeader title="Profil Saya" subtitle="Kelola informasi profil Anda sebagai sales" />
 
-      <Card style={{ maxWidth: 480 }}>
+      <Card style={{ maxWidth: 480, marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 24 }}>
           <div style={{ width: 84, height: 84, borderRadius: "50%", background: form.fotoUrl ? `url(${form.fotoUrl}) center/cover` : "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             {!form.fotoUrl && <User size={32} color="#D8D6D0" />}
@@ -4844,24 +4940,33 @@ function ProfilSalesPage({ token, profile }) {
           </label>
         </div>
 
+        {dataTerkunci && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FFFBF0", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            <AlertCircle size={15} color="#8A6A1A" style={{ flexShrink: 0, marginTop: 1 }} />
+            <p style={{ fontSize: 12, color: "#8A6A1A", margin: 0, lineHeight: 1.5 }}>
+              Nama, Alamat, Email, dan No. HP hanya bisa diubah <strong>sekali</strong>. Sudah pernah diubah - kalau perlu ubah lagi, hubungi Owner.
+            </p>
+          </div>
+        )}
+
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Nama Lengkap</label>
-          <input value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} style={fieldStyle} />
+          <input value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} disabled={dataTerkunci} style={dataTerkunci ? fieldStyleLocked : fieldStyle} />
         </div>
 
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Alamat</label>
-          <textarea value={form.alamat} onChange={(e) => setForm({ ...form, alamat: e.target.value })} rows={3} style={{ ...fieldStyle, resize: "vertical" }} />
+          <textarea value={form.alamat} onChange={(e) => setForm({ ...form, alamat: e.target.value })} disabled={dataTerkunci} rows={3} style={dataTerkunci ? { ...fieldStyleLocked, resize: "vertical" } : { ...fieldStyle, resize: "vertical" }} />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
           <div>
             <label style={labelStyle}>Email</label>
-            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} style={fieldStyle} />
+            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} disabled={dataTerkunci} style={dataTerkunci ? fieldStyleLocked : fieldStyle} />
           </div>
           <div>
             <label style={labelStyle}>No. HP</label>
-            <input value={form.noHp} onChange={(e) => setForm({ ...form, noHp: e.target.value })} style={fieldStyle} />
+            <input value={form.noHp} onChange={(e) => setForm({ ...form, noHp: e.target.value })} disabled={dataTerkunci} style={dataTerkunci ? fieldStyleLocked : fieldStyle} />
           </div>
         </div>
 
@@ -4876,9 +4981,58 @@ function ProfilSalesPage({ token, profile }) {
           </div>
         )}
 
-        <button onClick={simpan} disabled={saving || uploading} style={{ padding: "12px 24px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
-          {saving ? "Menyimpan..." : "Simpan Perubahan"}
-        </button>
+        {!dataTerkunci && (
+          <button onClick={simpan} disabled={saving || uploading} style={{ padding: "12px 24px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+            {saving ? "Menyimpan..." : "Simpan Perubahan"}
+          </button>
+        )}
+      </Card>
+
+      {/* VERIFIKASI DOKUMEN */}
+      <Card style={{ maxWidth: 480 }}>
+        <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Verifikasi Dokumen</h2>
+        <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 14px" }}>Wajib diverifikasi Owner sebelum bisa akses semua fitur.</p>
+
+        <span style={{ display: "inline-block", padding: "5px 12px", borderRadius: 999, fontSize: 11.5, fontWeight: 700, background: statusBadge.bg, color: statusBadge.color, marginBottom: 16 }}>
+          {statusBadge.text}
+        </span>
+
+        {statusVerifikasi === "ditolak" && alasanDitolak && (
+          <div style={{ background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>ALASAN DITOLAK</p>
+            <p style={{ fontSize: 12.5, color: "#C0392B", margin: 0 }}>{alasanDitolak}</p>
+          </div>
+        )}
+
+        {statusVerifikasi === "terverifikasi" ? (
+          <p style={{ fontSize: 12.5, color: "#28685D", fontWeight: 600 }}>Dokumen Anda sudah terverifikasi. Semua fitur sudah bisa diakses.</p>
+        ) : statusVerifikasi === "menunggu_review" ? (
+          <p style={{ fontSize: 12.5, color: "#8A6A1A" }}>Dokumen sudah dikirim, sedang ditinjau Owner. Mohon tunggu.</p>
+        ) : (
+          <>
+            {[
+              { key: "ktp", label: "Foto KTP", val: fotoKtp, setVal: setFotoKtp },
+              { key: "npwp", label: "Foto NPWP", val: fotoNpwp, setVal: setFotoNpwp },
+              { key: "kk", label: "Foto Kartu Keluarga", val: fotoKk, setVal: setFotoKk },
+            ].map((d) => (
+              <div key={d.key} style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>{d.label}</label>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 9, border: d.val ? "1.5px solid #28685D" : "1.5px dashed #E8A426", background: d.val ? "#D8E9E6" : "#FFFBF0", color: d.val ? "#28685D" : "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                  {d.val ? <Check size={15} /> : <UploadCloud size={15} />}
+                  {uploadingDoc === d.key ? "Mengupload..." : d.val ? "Sudah diupload - tap untuk ganti" : "Tap untuk upload"}
+                  <input type="file" accept="image/*" style={{ display: "none" }} disabled={!!uploadingDoc} onChange={(e) => { if (e.target.files[0]) uploadDokumen(e.target.files[0], d.key); }} />
+                </label>
+              </div>
+            ))}
+            <button
+              onClick={kirimVerifikasiSales}
+              disabled={submittingVerifikasi || !fotoKtp || !fotoNpwp || !fotoKk}
+              style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: (fotoKtp && fotoNpwp && fotoKk) ? "#E8A426" : "#E4E1DA", color: (fotoKtp && fotoNpwp && fotoKk) ? "#24272B" : "#9CA0A6", fontWeight: 700, fontSize: 13.5, marginTop: 4 }}
+            >
+              {submittingVerifikasi ? "Mengirim..." : "Kirim untuk Verifikasi"}
+            </button>
+          </>
+        )}
       </Card>
     </div>
   );
@@ -7862,6 +8016,198 @@ function CatatanTokoSalesPage({ token, profile }) {
           </div>
         ))
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// VERIFIKASI SALES (Owner) - review KTP/NPWP/KK sales baru
+// ============================================================
+function VerifikasiSalesPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [salesList, setSalesList] = useState([]);
+  const [processingId, setProcessingId] = useState(null);
+  const [rejectingId, setRejectingId] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [filter, setFilter] = useState("menunggu_review");
+  const [signedUrls, setSignedUrls] = useState({}); // { "salesId-jenis": url }
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "sales?select=id,kode,nama,foto_ktp_url,foto_npwp_url,foto_kk_url,status_verifikasi,alasan_verifikasi_ditolak&status_verifikasi=neq.belum_upload&order=nama.asc");
+      setSalesList(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  // Semua dokumen ini di bucket PRIVAT (dokumen-verifikasi), sama seperti
+  // foto KTP toko - perlu signed URL sementara buat ditampilkan
+  useEffect(() => {
+    salesList.forEach((s) => {
+      [["ktp", s.foto_ktp_url], ["npwp", s.foto_npwp_url], ["kk", s.foto_kk_url]].forEach(([jenis, path]) => {
+        const key = `${s.id}-${jenis}`;
+        if (path && !signedUrls[key]) {
+          getSignedDocUrl(path).then((url) => {
+            if (url) setSignedUrls((prev) => ({ ...prev, [key]: url }));
+          });
+        }
+      });
+    });
+  }, [salesList]);
+
+  async function getSignedDocUrl(filePath) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/get-ktp-signed-url`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ file_path: filePath }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      return data.signedUrl;
+    } catch (e) {
+      console.log("Gagal ambil signed URL dokumen sales:", e.message);
+      return null;
+    }
+  }
+
+  async function approve(s) {
+    setProcessingId(s.id);
+    try {
+      await supabaseFetch(token, `sales?id=eq.${s.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status_verifikasi: "terverifikasi", alasan_verifikasi_ditolak: null }),
+      });
+      setSalesList((prev) => prev.map((x) => (x.id === s.id ? { ...x, status_verifikasi: "terverifikasi" } : x)));
+    } catch (e) { alert("Gagal approve: " + e.message); }
+    setProcessingId(null);
+  }
+
+  async function tolak(s) {
+    if (!rejectReason.trim()) {
+      alert("Isi dulu alasan penolakannya.");
+      return;
+    }
+    setProcessingId(s.id);
+    try {
+      await supabaseFetch(token, `sales?id=eq.${s.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status_verifikasi: "ditolak", alasan_verifikasi_ditolak: rejectReason.trim() }),
+      });
+      setSalesList((prev) => prev.map((x) => (x.id === s.id ? { ...x, status_verifikasi: "ditolak", alasan_verifikasi_ditolak: rejectReason.trim() } : x)));
+      setRejectingId(null);
+      setRejectReason("");
+    } catch (e) { alert("Gagal tolak: " + e.message); }
+    setProcessingId(null);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const filtered = salesList.filter((s) => filter === "semua" || s.status_verifikasi === filter);
+  const badgeStyle = {
+    menunggu_review: { bg: "#FBF0D9", color: "#8A6A1A", label: "Menunggu Review" },
+    terverifikasi: { bg: "#D8E9E6", color: "#28685D", label: "Terverifikasi" },
+    ditolak: { bg: "#FBEAEA", color: "#C0392B", label: "Ditolak" },
+  };
+
+  return (
+    <div>
+      <PageHeader title="Verifikasi Sales" subtitle="Review KTP, NPWP, dan Kartu Keluarga sales baru" />
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {[
+          { key: "menunggu_review", label: "Menunggu Review" },
+          { key: "terverifikasi", label: "Terverifikasi" },
+          { key: "ditolak", label: "Ditolak" },
+          { key: "semua", label: "Semua" },
+        ].map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            style={{ padding: "8px 16px", borderRadius: 9, border: filter === f.key ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: filter === f.key ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 16 }}>
+        {filtered.map((s) => {
+          const badge = badgeStyle[s.status_verifikasi] || { bg: "#F7F5F1", color: "#9CA0A6", label: s.status_verifikasi };
+          const dokumen = [
+            { label: "KTP", url: signedUrls[`${s.id}-ktp`] },
+            { label: "NPWP", url: signedUrls[`${s.id}-npwp`] },
+            { label: "KK", url: signedUrls[`${s.id}-kk`] },
+          ];
+          return (
+            <Card key={s.id}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                <div>
+                  <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700 }}>{s.kode}</p>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>{s.nama}</p>
+                </div>
+                <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color }}>{badge.label}</span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+                {dokumen.map((d) => (
+                  <div key={d.label}>
+                    <p style={{ fontSize: 10, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>{d.label}</p>
+                    {d.url ? (
+                      <img src={d.url} alt={d.label} style={{ width: "100%", height: 90, objectFit: "cover", borderRadius: 8, cursor: "pointer" }} onClick={() => window.open(d.url, "_blank")} />
+                    ) : (
+                      <div style={{ width: "100%", height: 90, borderRadius: 8, background: "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: "#9CA0A6" }}>
+                        {d.url === undefined ? "Memuat..." : "Tidak ada"}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              {s.status_verifikasi === "ditolak" && s.alasan_verifikasi_ditolak && (
+                <div style={{ background: "#FBEAEA", borderRadius: 9, padding: 10, marginBottom: 12 }}>
+                  <p style={{ fontSize: 11.5, color: "#C0392B", margin: 0 }}><strong>Alasan ditolak:</strong> {s.alasan_verifikasi_ditolak}</p>
+                </div>
+              )}
+
+              {s.status_verifikasi === "menunggu_review" && (
+                rejectingId === s.id ? (
+                  <div>
+                    <textarea
+                      value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+                      placeholder="Alasan penolakan..." rows={2}
+                      style={{ width: "100%", padding: 9, borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5, marginBottom: 8, resize: "vertical" }}
+                    />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => tolak(s)} disabled={processingId === s.id} style={{ flex: 1, padding: 9, borderRadius: 8, border: "none", background: "#C0392B", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+                        Kirim Penolakan
+                      </button>
+                      <button onClick={() => { setRejectingId(null); setRejectReason(""); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12, fontWeight: 600 }}>
+                        Batal
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => approve(s)} disabled={processingId === s.id} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", background: "#28685D", color: "#fff", fontSize: 12.5, fontWeight: 700 }}>
+                      {processingId === s.id ? "..." : "Setujui"}
+                    </button>
+                    <button onClick={() => setRejectingId(s.id)} style={{ flex: 1, padding: 10, borderRadius: 9, border: "1.5px solid #C0392B", background: "#fff", color: "#C0392B", fontSize: 12.5, fontWeight: 700 }}>
+                      Tolak
+                    </button>
+                  </div>
+                )
+              )}
+            </Card>
+          );
+        })}
+      </div>
+      {filtered.length === 0 && <EmptyState text="Tidak ada sales di kategori ini." />}
     </div>
   );
 }
