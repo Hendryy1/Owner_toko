@@ -2774,6 +2774,7 @@ function SiapDikirimPage({ token }) {
   const [error, setError] = useState("");
   const [showBarcode, setShowBarcode] = useState(null); // order id
   const [markingPrinted, setMarkingPrinted] = useState(false);
+  const [uploadingId, setUploadingId] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -2785,6 +2786,26 @@ function SiapDikirimPage({ token }) {
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  async function uploadBuktiPengiriman(order, file) {
+    setUploadingId(order.id);
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `bukti_pengiriman_url-${order.id}-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bukti-pengiriman/${filePath}`;
+      await supabaseFetch(token, `orders?id=eq.${order.id}`, { method: "PATCH", body: JSON.stringify({ bukti_pengiriman_url: publicUrl }) });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, bukti_pengiriman_url: publicUrl } : o)));
+    } catch (e) {
+      alert("Gagal upload: " + e.message);
+    }
+    setUploadingId(null);
+  }
 
   async function tandaiSudahDicetak(orderId) {
     setMarkingPrinted(true);
@@ -2815,6 +2836,7 @@ function SiapDikirimPage({ token }) {
         orders.map((o) => {
           const isCod = o.metode_bayar === "cod";
           const sudahDicetak = !!o.barcode_dicetak_at;
+          const hasProofKirim = !!o.bukti_pengiriman_url;
           return (
             <Card key={o.id} style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -2827,18 +2849,31 @@ function SiapDikirimPage({ token }) {
                   </p>
                   <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
                 </div>
-                <button
-                  onClick={() => setShowBarcode(o.id)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "none",
-                    background: sudahDicetak ? "#28685D" : "#E8A426",
-                    color: sudahDicetak ? "#fff" : "#24272B",
-                    fontSize: 12.5, fontWeight: 700,
-                  }}
-                >
-                  {sudahDicetak ? <Check size={15} /> : <Barcode size={15} />}
-                  {sudahDicetak ? "Sudah Dicetak" : "Cetak Barcode"}
-                </button>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => setShowBarcode(o.id)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "none",
+                      background: sudahDicetak ? "#28685D" : "#E8A426",
+                      color: sudahDicetak ? "#fff" : "#24272B",
+                      fontSize: 12.5, fontWeight: 700,
+                    }}
+                  >
+                    {sudahDicetak ? <Check size={15} /> : <Barcode size={15} />}
+                    {sudahDicetak ? "Sudah Dicetak" : "Cetak Barcode"}
+                  </button>
+
+                  {hasProofKirim ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, background: "#FBF0D9", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700 }}>
+                      <ScanLine size={15} /> Menunggu Scan Outbound
+                    </span>
+                  ) : (
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                      {uploadingId === o.id ? "Mengupload..." : <><UploadCloud size={15} /> Upload Bukti Pengiriman</>}
+                      <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadBuktiPengiriman(o, e.target.files[0]); }} />
+                    </label>
+                  )}
+                </div>
               </div>
             </Card>
           );
@@ -6808,11 +6843,14 @@ function OutboundPage({ token }) {
     setConfirming(true);
     try {
       const now = new Date().toISOString();
+      // Konfirmasi scan outbound INI yang jadi pemicu order pindah dari "Siap
+      // Dikirim" ke "Proses Pengiriman" - status diubah jadi proses_dikirim
+      // sekaligus dicatat tanggal_dikirim & outbound_verified_at-nya.
       await supabaseFetch(token, `orders?id=eq.${order.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ outbound_verified_at: now }),
+        body: JSON.stringify({ outbound_verified_at: now, status: "proses_dikirim", tanggal_dikirim: now }),
       });
-      setOrder((prev) => ({ ...prev, outbound_verified_at: now }));
+      setOrder((prev) => ({ ...prev, outbound_verified_at: now, status: "proses_dikirim", tanggal_dikirim: now }));
       loadRiwayat();
     } catch (e) {
       alert("Gagal konfirmasi: " + e.message);
@@ -6906,7 +6944,7 @@ function OutboundPage({ token }) {
             <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", borderRadius: 10, padding: 12 }}>
               <Check size={18} color="#28685D" />
               <p style={{ fontSize: 13, color: "#28685D", fontWeight: 700, margin: 0 }}>
-                Sudah diverifikasi outbound - {new Date(order.outbound_verified_at).toLocaleString("id-ID")}
+                Sudah diverifikasi outbound & dipindahkan ke Proses Pengiriman - {new Date(order.outbound_verified_at).toLocaleString("id-ID")}
               </p>
             </div>
           ) : (
