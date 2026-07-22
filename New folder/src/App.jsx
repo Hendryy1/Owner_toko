@@ -919,6 +919,15 @@ function CekPesananModal({ order, allOrders, onConfirm, onClose, processing }) {
           </div>
         )}
 
+        {order.metode_bayar === "transfer" && order.status_bayar === "lunas" && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#D8E9E6", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            <Check size={16} color="#28685D" style={{ flexShrink: 0, marginTop: 1 }} />
+            <p style={{ fontSize: 12, color: "#28685D", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+              Pesanan ini sudah dibayar (metode Transfer) - kemungkinan otomatis lunas dari saldo toko.
+            </p>
+          </div>
+        )}
+
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, marginBottom: 20 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
