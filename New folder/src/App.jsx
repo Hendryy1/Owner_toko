@@ -2582,7 +2582,7 @@ function KonfirmasiPembayaranPage({ token }) {
       // 2. Transfer/COD - status_bayar sudah lunas (riwayat)
       // 3. COD - sudah dikonfirmasi kurir (status_bayar lunas, tapi status masih
       //    proses_dikirim) - perlu DIREVIEW Owner dulu sebelum benar-benar selesai
-      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -2621,8 +2621,18 @@ function KonfirmasiPembayaranPage({ token }) {
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
   const menunggu = orders.filter((o) => o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas" && o.metode_bayar !== "cod");
-  const perluReviewCod = orders.filter((o) => o.metode_bayar === "cod" && o.status_bayar === "lunas" && o.status !== "selesai");
-  const riwayat = orders.filter((o) => o.status_bayar === "lunas" && !(o.metode_bayar === "cod" && o.status !== "selesai"));
+  // Perlu direview Owner: COD yang sudah dikonfirmasi kurir, ATAU Transfer
+  // tujuan Pekanbaru yang kedua dokumennya (barang sampai + nota TTD) sudah
+  // lengkap - keduanya sama-sama perlu pengecekan akhir sebelum diselesaikan.
+  const perluReviewCod = orders.filter((o) => {
+    const isPekanbaru = !!(o.clients?.kota && o.clients.kota.trim().toLowerCase() === "pekanbaru");
+    const docsLengkap = !!o.bukti_barang_sampai_url && !!o.bukti_nota_ttd_url;
+    if (o.status === "selesai") return false;
+    if (o.metode_bayar === "cod") return o.status_bayar === "lunas";
+    if (o.metode_bayar === "transfer" && isPekanbaru) return docsLengkap && o.status_bayar === "lunas";
+    return false;
+  });
+  const riwayat = orders.filter((o) => o.status_bayar === "lunas" && !perluReviewCod.includes(o));
 
   function renderCard(o) {
     const isLunas = o.status_bayar === "lunas";
@@ -2673,7 +2683,7 @@ function KonfirmasiPembayaranPage({ token }) {
 
       {perluReviewCod.length > 0 && (
         <>
-          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Perlu Review - Pesanan COD</h2>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Perlu Review Pengiriman (COD & Transfer Pekanbaru)</h2>
           {perluReviewCod.map((o) => {
             const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
             return (
@@ -2682,7 +2692,11 @@ function KonfirmasiPembayaranPage({ token }) {
                   <div>
                     <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
                       {o.no_nota}
-                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                      {o.metode_bayar === "cod" ? (
+                        <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                      ) : (
+                        <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#D8E9E6", color: "#28685D", verticalAlign: "middle" }}>Transfer - Pekanbaru</span>
+                      )}
                     </p>
                     <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
                     <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "4px 0 0" }}>{rupiah(total)}</p>
@@ -3147,6 +3161,13 @@ function ProsesPengirimanPage({ token }) {
           const hasNotaTtd = !!o.bukti_nota_ttd_url;
           const codDocsLengkap = hasBarangSampai && hasNotaTtd;
           const isPekanbaru = !!(o.clients?.kota && o.clients.kota.trim().toLowerCase() === "pekanbaru");
+          // Transfer yang tujuannya Pekanbaru WAJIB pakai alur upload bukti
+          // yang sama seperti COD (barang sampai + nota TTD), lalu tetap
+          // direview di menu Konfirmasi Pembayaran sebelum benar-benar
+          // selesai - bedanya, Transfer TIDAK perlu langkah "Konfirmasi
+          // Pembayaran COD" lagi (karena sudah lunas dari awal, sebelum
+          // dikirim), begitu 2 dokumen lengkap langsung "Menunggu Review Owner".
+          const wajibUploadBukti = isCod || (o.metode_bayar === "transfer" && isPekanbaru);
           return (
             <Card key={o.id} style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
@@ -3208,7 +3229,7 @@ function ProsesPengirimanPage({ token }) {
                         <Truck size={14} /> Proses Dikirim
                       </span>
 
-                      {isCod ? (
+                      {wajibUploadBukti ? (
                         <>
                           {!hasBarangSampai && (
                             <label style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
