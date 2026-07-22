@@ -2675,7 +2675,7 @@ function KonfirmasiPembayaranPage({ token }) {
       // 2. Transfer/COD - status_bayar sudah lunas (riwayat)
       // 3. COD - sudah dikonfirmasi kurir (status_bayar lunas, tapi status masih
       //    proses_dikirim) - perlu DIREVIEW Owner dulu sebelum benar-benar selesai
-      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -2718,7 +2718,8 @@ function KonfirmasiPembayaranPage({ token }) {
   // tujuan Pekanbaru yang kedua dokumennya (barang sampai + nota TTD) sudah
   // lengkap - keduanya sama-sama perlu pengecekan akhir sebelum diselesaikan.
   const perluReviewCod = orders.filter((o) => {
-    const isPekanbaru = !!(o.clients?.kota && o.clients.kota.trim().toLowerCase() === "pekanbaru");
+    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+          const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
     const docsLengkap = !!o.bukti_barang_sampai_url && !!o.bukti_nota_ttd_url;
     if (o.status === "selesai") return false;
     if (o.metode_bayar === "cod") return o.status_bayar === "lunas";
@@ -2996,7 +2997,8 @@ function SiapDikirimPage({ token, role }) {
         const jumlahBarang = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
         const teleponPenerima = o.tujuan_telp || o.clients?.telp;
         const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
-        const isPekanbaru = !!(o.clients?.kota && o.clients.kota.trim().toLowerCase() === "pekanbaru");
+        const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+          const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
             <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
@@ -3237,7 +3239,8 @@ function ProsesPengirimanPage({ token }) {
           const hasBarangSampai = !!o.bukti_barang_sampai_url;
           const hasNotaTtd = !!o.bukti_nota_ttd_url;
           const codDocsLengkap = hasBarangSampai && hasNotaTtd;
-          const isPekanbaru = !!(o.clients?.kota && o.clients.kota.trim().toLowerCase() === "pekanbaru");
+          const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+          const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
           // Transfer yang tujuannya Pekanbaru WAJIB pakai alur upload bukti
           // yang sama seperti COD (barang sampai + nota TTD), lalu tetap
           // direview di menu Konfirmasi Pembayaran sebelum benar-benar
