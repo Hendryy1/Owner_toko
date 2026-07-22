@@ -205,7 +205,7 @@ export default function OwnerDashboard() {
         {page === "kunjungan_sales" && <KunjunganSalesPage token={token} profile={profile} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
-        {page === "siap_dikirim" && <SiapDikirimPage token={token} />}
+        {page === "siap_dikirim" && <SiapDikirimPage token={token} role={profile?.role} />}
         {page === "proses_kirim" && <ProsesPengirimanPage token={token} />}
         {page === "outbound" && <OutboundPage token={token} />}
         {page === "riwayat" && <RiwayatOrderPage token={token} />}
@@ -291,7 +291,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "kunjungan_sales", label: "Laporan Kunjungan", icon: MapPin, roles: ["sales"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan"] },
-    { key: "siap_dikirim", label: "Siap Dikirim", icon: PackagePlus, roles: ["owner", "admin_transaksi"] },
+    { key: "siap_dikirim", label: "Siap Dikirim", icon: PackagePlus, roles: ["owner", "admin_transaksi", "kurir"] },
     { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "admin_transaksi", "kurir"] },
     { key: "outbound", label: "Outbound", icon: ScanLine, roles: ["owner", "admin_transaksi"] },
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
@@ -2768,7 +2768,7 @@ function KonfirmasiPembayaranPage({ token }) {
 // ============================================================
 // SIAP DIKIRIM - order menunggu_pengiriman, cetak barcode & mulai kirim
 // ============================================================
-function SiapDikirimPage({ token }) {
+function SiapDikirimPage({ token, role }) {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
@@ -2850,18 +2850,20 @@ function SiapDikirimPage({ token }) {
                   <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <button
-                    onClick={() => setShowBarcode(o.id)}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "none",
-                      background: sudahDicetak ? "#28685D" : "#E8A426",
-                      color: sudahDicetak ? "#fff" : "#24272B",
-                      fontSize: 12.5, fontWeight: 700,
-                    }}
-                  >
-                    {sudahDicetak ? <Check size={15} /> : <Barcode size={15} />}
-                    {sudahDicetak ? "Sudah Dicetak" : "Cetak Barcode"}
-                  </button>
+                  {role !== "kurir" && (
+                    <button
+                      onClick={() => setShowBarcode(o.id)}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "none",
+                        background: sudahDicetak ? "#28685D" : "#E8A426",
+                        color: sudahDicetak ? "#fff" : "#24272B",
+                        fontSize: 12.5, fontWeight: 700,
+                      }}
+                    >
+                      {sudahDicetak ? <Check size={15} /> : <Barcode size={15} />}
+                      {sudahDicetak ? "Sudah Dicetak" : "Cetak Barcode"}
+                    </button>
+                  )}
 
                   {hasProofKirim ? (
                     <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, background: "#FBF0D9", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700 }}>
