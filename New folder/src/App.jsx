@@ -8233,7 +8233,7 @@ function VerifikasiSalesPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "sales?select=id,kode,nama,foto_ktp_url,foto_npwp_url,foto_kk_url,status_verifikasi,alasan_verifikasi_ditolak&status_verifikasi=neq.belum_upload&order=nama.asc");
+      const rows = await supabaseFetch(token, "sales?select=id,kode,nama,alamat,email,no_hp,foto_ktp_url,foto_npwp_url,foto_kk_url,status_verifikasi,alasan_verifikasi_ditolak&status_verifikasi=neq.belum_upload&order=nama.asc");
       setSalesList(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -8348,6 +8348,21 @@ function VerifikasiSalesPage({ token }) {
                   <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>{s.nama}</p>
                 </div>
                 <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color }}>{badge.label}</span>
+              </div>
+
+              <div style={{ background: "#F7F5F1", borderRadius: 9, padding: 10, marginBottom: 14 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, color: "#9CA0A6" }}>Email</span>
+                  <span style={{ fontSize: 11.5, color: "#24272B", fontWeight: 600 }}>{s.email || "-"}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, color: "#9CA0A6" }}>No. HP</span>
+                  <span style={{ fontSize: 11.5, color: "#24272B", fontWeight: 600 }}>{s.no_hp || "-"}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <span style={{ fontSize: 11, color: "#9CA0A6", flexShrink: 0 }}>Alamat</span>
+                  <span style={{ fontSize: 11.5, color: "#24272B", fontWeight: 600, textAlign: "right" }}>{s.alamat || "-"}</span>
+                </div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
