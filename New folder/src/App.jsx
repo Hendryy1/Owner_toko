@@ -2781,7 +2781,7 @@ function ProsesPengirimanPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode),order_items(qty)&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode),order_items(qty,products(kode,nama))&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -3067,13 +3067,32 @@ function ProsesPengirimanPage({ token }) {
         const jumlahBarang = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
-            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, padding: 26 }}>
+            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
               <div id="area-cetak-barcode" style={{ textAlign: "center", padding: "10px 0" }}>
                 <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.clients?.nama}</p>
                 <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
-                <div style={{ display: "flex", justifyContent: "center" }}>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
                   <BarcodeLabel value={o.no_nota} />
                 </div>
+
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, textAlign: "left" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1.5px solid #24272B" }}>
+                      <th style={{ padding: "4px 4px", fontWeight: 700 }}>Kode</th>
+                      <th style={{ padding: "4px 4px", fontWeight: 700 }}>Nama Barang</th>
+                      <th style={{ padding: "4px 4px", fontWeight: 700, textAlign: "right" }}>Pcs</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(o.order_items || []).map((it, i) => (
+                      <tr key={i} style={{ borderBottom: "1px solid #EDEAE3" }}>
+                        <td style={{ padding: "4px 4px", color: "#6B6F75" }}>{it.products?.kode || "-"}</td>
+                        <td style={{ padding: "4px 4px", color: "#24272B" }}>{it.products?.nama || "-"}</td>
+                        <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700, textAlign: "right" }}>{it.qty}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
 
               <style>{`
