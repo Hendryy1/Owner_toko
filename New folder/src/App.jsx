@@ -7471,8 +7471,11 @@ function RekapAbsenPage({ token }) {
   const [tanggalBaru, setTanggalBaru] = useState("");
   const [keteranganBaru, setKeteranganBaru] = useState("");
   const [saving, setSaving] = useState(false);
+  const [viewDate, setViewDate] = useState(new Date()); // bulan/tahun yang lagi ditampilkan di kalender
+  const [togglingTanggal, setTogglingTanggal] = useState(null);
 
-  const now = new Date();
+  const now = viewDate;
+  const isBulanIni = now.getFullYear() === new Date().getFullYear() && now.getMonth() === new Date().getMonth();
   const startBulan = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
   const endBulan = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
   const totalHariBulanIni = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
@@ -7492,7 +7495,33 @@ function RekapAbsenPage({ token }) {
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [viewDate]);
+
+  function gantiBulan(delta) {
+    setViewDate(new Date(now.getFullYear(), now.getMonth() + delta, 1));
+  }
+
+  // Klik tanggal di kalender langsung toggle: kalau belum tanggal merah,
+  // jadikan tanggal merah (minta keterangan singkat); kalau sudah, hapus.
+  async function toggleTanggalMerah(tglStr, sudahLibur, liburId) {
+    setTogglingTanggal(tglStr);
+    try {
+      if (sudahLibur) {
+        await supabaseFetch(token, `hari_libur?id=eq.${liburId}`, { method: "DELETE" });
+        setHariLibur((prev) => prev.filter((h) => h.id !== liburId));
+      } else {
+        const keterangan = prompt("Keterangan tanggal merah ini (opsional):", "") || null;
+        const [inserted] = await supabaseFetch(token, "hari_libur", {
+          method: "POST",
+          body: JSON.stringify({ tanggal: tglStr, keterangan }),
+        });
+        setHariLibur((prev) => [...prev, inserted]);
+      }
+    } catch (e) {
+      alert("Gagal ubah tanggal merah: " + e.message);
+    }
+    setTogglingTanggal(null);
+  }
 
   async function tambahHariLibur() {
     if (!tanggalBaru) {
@@ -7529,12 +7558,16 @@ function RekapAbsenPage({ token }) {
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
   // Hitung berapa hari kerja bulan ini (total hari - hari Minggu - tanggal merah)
+  // - kalau lagi lihat bulan SEKARANG, cuma hitung sampai hari ini; kalau lihat
+  // bulan lain (sudah lewat/akan datang), hitung semua hari kerja di bulan itu.
+  const tanggalAsliSekarang = new Date();
   let hariKerja = 0;
   for (let d = 1; d <= totalHariBulanIni; d++) {
     const tgl = new Date(now.getFullYear(), now.getMonth(), d);
     const tglStr = `${tgl.getFullYear()}-${String(tgl.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
     const isLiburTgl = hariLibur.some((h) => h.tanggal === tglStr);
-    if (tgl.getDay() !== 0 && !isLiburTgl && tgl <= now) hariKerja++;
+    const sudahLewat = isBulanIni ? tgl <= tanggalAsliSekarang : true;
+    if (tgl.getDay() !== 0 && !isLiburTgl && sudahLewat) hariKerja++;
   }
 
   return (
@@ -7548,6 +7581,63 @@ function RekapAbsenPage({ token }) {
           + Tanggal Merah
         </button>
       </div>
+
+      {/* KALENDER - klik tanggal buat toggle tanggal merah */}
+      <Card style={{ marginBottom: 24 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <button onClick={() => gantiBulan(-1)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ChevronLeft size={16} color="#24272B" />
+          </button>
+          <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: 0 }}>
+            {now.toLocaleDateString("id-ID", { month: "long", year: "numeric" })}
+          </p>
+          <button onClick={() => gantiBulan(1)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ChevronRight size={16} color="#24272B" />
+          </button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 6 }}>
+          {["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"].map((h) => (
+            <p key={h} style={{ textAlign: "center", fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", margin: 0 }}>{h}</p>
+          ))}
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+          {(() => {
+            const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).getDay(); // 0=Minggu
+            const sel = [];
+            for (let i = 0; i < firstDay; i++) sel.push(<div key={`kosong-${i}`} />);
+            for (let d = 1; d <= totalHariBulanIni; d++) {
+              const tglObj = new Date(now.getFullYear(), now.getMonth(), d);
+              const tglStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+              const libur = hariLibur.find((h) => h.tanggal === tglStr);
+              const isMingguTgl = tglObj.getDay() === 0;
+              const isHariIni = isBulanIni && d === new Date().getDate();
+              sel.push(
+                <button
+                  key={d}
+                  onClick={() => toggleTanggalMerah(tglStr, !!libur, libur?.id)}
+                  disabled={togglingTanggal === tglStr}
+                  title={libur?.keterangan || (isMingguTgl ? "Minggu" : "")}
+                  style={{
+                    aspectRatio: "1", borderRadius: 8, border: isHariIni ? "1.5px solid #E8A426" : "1px solid #EDEAE3",
+                    background: libur ? "#FBEAEA" : isMingguTgl ? "#F7F5F1" : "#fff",
+                    color: libur ? "#C0392B" : isMingguTgl ? "#9CA0A6" : "#24272B",
+                    fontSize: 12.5, fontWeight: isHariIni ? 700 : 600, cursor: "pointer",
+                    opacity: togglingTanggal === tglStr ? 0.5 : 1,
+                  }}
+                >
+                  {d}
+                </button>
+              );
+            }
+            return sel;
+          })()}
+        </div>
+        <p style={{ fontSize: 11, color: "#9CA0A6", margin: "12px 0 0" }}>
+          Klik tanggal untuk jadikan/batalkan tanggal merah. <span style={{ color: "#C0392B", fontWeight: 700 }}>Merah</span> = tanggal merah, <span style={{ color: "#9CA0A6", fontWeight: 700 }}>abu-abu</span> = hari Minggu.
+        </p>
+      </Card>
 
       <Card style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
