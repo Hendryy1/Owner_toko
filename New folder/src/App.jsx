@@ -203,6 +203,8 @@ export default function OwnerDashboard() {
         {page === "profil_sales" && <ProfilSalesPage token={token} profile={profile} />}
         {page === "omzet_sales" && <OmzetSalesPage token={token} profile={profile} />}
         {page === "kunjungan_sales" && <KunjunganSalesPage token={token} profile={profile} />}
+        {page === "absen_sales" && <AbsenSalesPage token={token} profile={profile} />}
+        {page === "rekap_absen" && <RekapAbsenPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "siap_dikirim" && <SiapDikirimPage token={token} role={profile?.role} />}
@@ -289,6 +291,8 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "profil_sales", label: "Profil Saya", icon: User, roles: ["sales"] },
     { key: "omzet_sales", label: "Omzet Saya", icon: TrendingUp, roles: ["sales"] },
     { key: "kunjungan_sales", label: "Laporan Kunjungan", icon: MapPin, roles: ["sales"] },
+    { key: "absen_sales", label: "Absen", icon: Clock, roles: ["sales"] },
+    { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "siap_dikirim", label: "Siap Dikirim", icon: PackagePlus, roles: ["owner", "admin_transaksi", "kurir"] },
@@ -7130,6 +7134,288 @@ function OutboundPage({ token }) {
             </div>
           </Card>
         ))
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// ABSEN SALES - check-in harian, kecuali Minggu & tanggal merah
+// ============================================================
+function AbsenSalesPage({ token, profile }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [sudahAbsenHariIni, setSudahAbsenHariIni] = useState(false);
+  const [isLibur, setIsLibur] = useState(false);
+  const [keteranganLibur, setKeteranganLibur] = useState("");
+  const [absening, setAbsening] = useState(false);
+  const [riwayat, setRiwayat] = useState([]);
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const isMinggu = now.getDay() === 0;
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [absenHariIni, liburRows, riwayatRows] = await Promise.all([
+        supabaseFetch(token, `absen_sales?select=id&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
+        supabaseFetch(token, `hari_libur?select=keterangan&tanggal=eq.${todayStr}`),
+        supabaseFetch(token, `absen_sales?select=tanggal,waktu_absen&sales_id=eq.${profile.sales_id}&order=tanggal.desc&limit=14`),
+      ]);
+      setSudahAbsenHariIni(absenHariIni.length > 0);
+      setIsLibur(liburRows.length > 0);
+      setKeteranganLibur(liburRows[0]?.keterangan || "");
+      setRiwayat(riwayatRows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function absenSekarang() {
+    setAbsening(true);
+    try {
+      await supabaseFetch(token, "absen_sales", {
+        method: "POST",
+        body: JSON.stringify({ sales_id: profile.sales_id, tanggal: todayStr }),
+      });
+      setSudahAbsenHariIni(true);
+      load();
+    } catch (e) {
+      alert("Gagal absen: " + e.message);
+    }
+    setAbsening(false);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const liburHariIni = isMinggu || isLibur;
+  const namaHari = now.toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+  return (
+    <div>
+      <PageHeader title="Absen" subtitle="Absen harian - kecuali hari Minggu & tanggal merah" />
+
+      <Card style={{ textAlign: "center", padding: 30, marginBottom: 24 }}>
+        <p style={{ fontSize: 13, color: "#9CA0A6", margin: "0 0 6px" }}>{namaHari}</p>
+
+        {liburHariIni ? (
+          <>
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+              <Clock size={26} color="#9CA0A6" />
+            </div>
+            <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>
+              {isMinggu ? "Hari Minggu - Libur" : `Tanggal Merah${keteranganLibur ? ` (${keteranganLibur})` : ""}`}
+            </p>
+            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: 0 }}>Tidak perlu absen hari ini.</p>
+          </>
+        ) : sudahAbsenHariIni ? (
+          <>
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#D8E9E6", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+              <Check size={28} color="#28685D" />
+            </div>
+            <p style={{ fontSize: 15, fontWeight: 700, color: "#28685D", margin: "0 0 4px" }}>Sudah Absen Hari Ini</p>
+            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: 0 }}>Sampai jumpa besok!</p>
+          </>
+        ) : (
+          <>
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#FBF0D9", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+              <Clock size={26} color="#8A6A1A" />
+            </div>
+            <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 16px" }}>Belum Absen Hari Ini</p>
+            <button
+              onClick={absenSekarang}
+              disabled={absening}
+              style={{ padding: "13px 32px", borderRadius: 12, border: "none", background: absening ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14.5 }}
+            >
+              {absening ? "Menyimpan..." : "Absen Sekarang"}
+            </button>
+          </>
+        )}
+      </Card>
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Riwayat 14 Hari Terakhir</h2>
+      {riwayat.length === 0 ? (
+        <EmptyState text="Belum ada riwayat absen." />
+      ) : (
+        riwayat.map((r, i) => (
+          <Card key={i} style={{ marginBottom: 8, padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: 0 }}>
+                {new Date(r.tanggal + "T00:00:00").toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+              </p>
+              <p style={{ fontSize: 12, color: "#9CA0A6", margin: 0 }}>
+                {new Date(r.waktu_absen).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+              </p>
+            </div>
+          </Card>
+        ))
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// REKAP ABSEN SALES - Owner lihat rekap semua sales + kelola tanggal merah
+// ============================================================
+function RekapAbsenPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [salesList, setSalesList] = useState([]);
+  const [absenBulanIni, setAbsenBulanIni] = useState([]);
+  const [hariLibur, setHariLibur] = useState([]);
+  const [showTambahLibur, setShowTambahLibur] = useState(false);
+  const [tanggalBaru, setTanggalBaru] = useState("");
+  const [keteranganBaru, setKeteranganBaru] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const now = new Date();
+  const startBulan = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const endBulan = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
+  const totalHariBulanIni = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [sales, absen, libur] = await Promise.all([
+        supabaseFetch(token, "sales?select=id,kode,nama&order=nama.asc"),
+        supabaseFetch(token, `absen_sales?select=sales_id,tanggal&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}`),
+        supabaseFetch(token, `hari_libur?select=*&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=tanggal.asc`),
+      ]);
+      setSalesList(sales);
+      setAbsenBulanIni(absen);
+      setHariLibur(libur);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function tambahHariLibur() {
+    if (!tanggalBaru) {
+      alert("Pilih tanggal dulu.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await supabaseFetch(token, "hari_libur", {
+        method: "POST",
+        body: JSON.stringify({ tanggal: tanggalBaru, keterangan: keteranganBaru || null }),
+      });
+      setShowTambahLibur(false);
+      setTanggalBaru("");
+      setKeteranganBaru("");
+      load();
+    } catch (e) {
+      alert("Gagal tambah: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function hapusHariLibur(id) {
+    if (!confirm("Hapus tanggal merah ini?")) return;
+    try {
+      await supabaseFetch(token, `hari_libur?id=eq.${id}`, { method: "DELETE" });
+      setHariLibur((prev) => prev.filter((h) => h.id !== id));
+    } catch (e) {
+      alert("Gagal hapus: " + e.message);
+    }
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  // Hitung berapa hari kerja bulan ini (total hari - hari Minggu - tanggal merah)
+  let hariKerja = 0;
+  for (let d = 1; d <= totalHariBulanIni; d++) {
+    const tgl = new Date(now.getFullYear(), now.getMonth(), d);
+    const tglStr = `${tgl.getFullYear()}-${String(tgl.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const isLiburTgl = hariLibur.some((h) => h.tanggal === tglStr);
+    if (tgl.getDay() !== 0 && !isLiburTgl && tgl <= now) hariKerja++;
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+        <PageHeader title="Rekap Absen Sales" subtitle={`Bulan ${now.toLocaleDateString("id-ID", { month: "long", year: "numeric" })} - ${hariKerja} hari kerja berjalan`} />
+        <button
+          onClick={() => setShowTambahLibur(true)}
+          style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13, flexShrink: 0, marginTop: 4 }}
+        >
+          + Tanggal Merah
+        </button>
+      </div>
+
+      <Card style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Kode", "Nama Sales", "Jumlah Absen Bulan Ini", "Dari Hari Kerja"].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {salesList.map((s) => {
+              const jumlahAbsen = absenBulanIni.filter((a) => a.sales_id === s.id).length;
+              const kurang = hariKerja > 0 && jumlahAbsen < hariKerja;
+              return (
+                <tr key={s.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px" }}>{s.kode}</td>
+                  <td style={{ padding: "12px 14px", fontWeight: 600 }}>{s.nama}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: kurang ? "#FBEAEA" : "#D8E9E6", color: kurang ? "#C0392B" : "#28685D" }}>
+                      {jumlahAbsen} kali
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 14px", color: "#6B6F75" }}>dari {hariKerja} hari</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {salesList.length === 0 && <EmptyState text="Belum ada akun sales." />}
+      </Card>
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Tanggal Merah Bulan Ini</h2>
+      {hariLibur.length === 0 ? (
+        <EmptyState text="Belum ada tanggal merah bulan ini." />
+      ) : (
+        hariLibur.map((h) => (
+          <Card key={h.id} style={{ marginBottom: 8, padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>
+                  {new Date(h.tanggal + "T00:00:00").toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long" })}
+                </p>
+                <p style={{ fontSize: 12, color: "#6B6F75", margin: "2px 0 0" }}>{h.keterangan || "-"}</p>
+              </div>
+              <button onClick={() => hapusHariLibur(h.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #F0CFC7", background: "#fff", color: "#C0392B", fontSize: 11.5, fontWeight: 600 }}>
+                Hapus
+              </button>
+            </div>
+          </Card>
+        ))
+      )}
+
+      {showTambahLibur && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, padding: 24 }}>
+            <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 16px" }}>Tambah Tanggal Merah</h2>
+            <input type="date" value={tanggalBaru} onChange={(e) => setTanggalBaru(e.target.value)} style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, marginBottom: 12 }} />
+            <input type="text" value={keteranganBaru} onChange={(e) => setKeteranganBaru(e.target.value)} placeholder="Keterangan (misal: Hari Raya Idul Fitri)" style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, marginBottom: 16 }} />
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowTambahLibur(false)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                Batal
+              </button>
+              <button onClick={tambahHariLibur} disabled={saving} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: saving ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+                {saving ? "Menyimpan..." : "Tambah"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
