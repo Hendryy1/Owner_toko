@@ -255,6 +255,7 @@ export default function OwnerDashboard() {
         {page === "akun_staff" && <AkunStaffPage token={token} />}
         {page === "verifikasi_sales" && <VerifikasiSalesPage token={token} />}
         {page === "laporan_kunjungan_owner" && <LaporanKunjunganOwnerPage token={token} />}
+        {page === "laporan_periodik_sales" && <LaporanPeriodikSalesOwnerPage token={token} />}
         {page === "banner_promo" && <BannerPromoPage token={token} />}
           </>
         )}
@@ -350,6 +351,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "akun_staff", label: "Kelola Akun Staff", icon: Users, roles: ["owner"] },
     { key: "verifikasi_sales", label: "Verifikasi Sales", icon: Eye, roles: ["owner"] },
     { key: "laporan_kunjungan_owner", label: "Laporan Kunjungan Sales", icon: MapPin, roles: ["owner", "admin_transaksi"] },
+    { key: "laporan_periodik_sales", label: "Laporan Mingguan/Bulanan", icon: FileEdit, roles: ["owner", "admin_transaksi"] },
     { key: "banner_promo", label: "Banner Promo", icon: ImageIcon, roles: ["owner"] },
   ];
   const items = allItems
@@ -8756,6 +8758,93 @@ function RequestAreaOwnerPage({ token }) {
             </Card>
           );
         })
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// LAPORAN MINGGUAN/BULANAN SALES (Owner) - lihat semua + siapa belum isi
+// ============================================================
+function LaporanPeriodikSalesOwnerPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [tab, setTab] = useState("mingguan"); // "mingguan" | "bulanan"
+  const [salesList, setSalesList] = useState([]);
+  const [laporanMingguan, setLaporanMingguan] = useState([]);
+  const [laporanBulanan, setLaporanBulanan] = useState([]);
+
+  function getSeninMingguIni() {
+    const d = new Date();
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  const seninMingguIni = getSeninMingguIni();
+  const now = new Date();
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [sales, mingguan, bulanan] = await Promise.all([
+        supabaseFetch(token, "sales?select=id,nama,kode&order=nama.asc"),
+        supabaseFetch(token, `laporan_mingguan_sales?select=*,sales(nama,kode)&minggu_mulai=eq.${seninMingguIni}`),
+        supabaseFetch(token, `laporan_bulanan_sales?select=*,sales(nama,kode)&bulan=eq.${now.getMonth() + 1}&tahun=eq.${now.getFullYear()}`),
+      ]);
+      setSalesList(sales);
+      setLaporanMingguan(mingguan);
+      setLaporanBulanan(bulanan);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const dataAktif = tab === "mingguan" ? laporanMingguan : laporanBulanan;
+  const sudahIsiIds = new Set(dataAktif.map((l) => l.sales_id));
+  const belumIsi = salesList.filter((s) => !sudahIsiIds.has(s.id));
+
+  return (
+    <div>
+      <PageHeader
+        title="Laporan Mingguan/Bulanan Sales"
+        subtitle={tab === "mingguan" ? `Minggu berjalan (mulai ${new Date(seninMingguIni + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "long" })})` : `Bulan ${now.toLocaleDateString("id-ID", { month: "long", year: "numeric" })}`}
+      />
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <button onClick={() => setTab("mingguan")} style={{ padding: "9px 18px", borderRadius: 9, border: tab === "mingguan" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: tab === "mingguan" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}>
+          Mingguan
+        </button>
+        <button onClick={() => setTab("bulanan")} style={{ padding: "9px 18px", borderRadius: 9, border: tab === "bulanan" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: tab === "bulanan" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}>
+          Bulanan
+        </button>
+      </div>
+
+      {belumIsi.length > 0 && (
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 20 }}>
+          <AlertCircle size={16} color="#C0392B" style={{ flexShrink: 0, marginTop: 1 }} />
+          <p style={{ fontSize: 12.5, color: "#C0392B", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+            Belum isi periode ini: {belumIsi.map((s) => s.nama).join(", ")}
+          </p>
+        </div>
+      )}
+
+      {dataAktif.length === 0 ? (
+        <EmptyState text={`Belum ada laporan ${tab} untuk periode ini.`} />
+      ) : (
+        dataAktif.map((l) => (
+          <Card key={l.id} style={{ marginBottom: 12 }}>
+            <p style={{ fontSize: 13.5, fontWeight: 700, color: "#8A6A1A", margin: "0 0 8px" }}>{l.sales?.nama} ({l.sales?.kode})</p>
+            <p style={{ fontSize: 13, color: "#24272B", margin: "0 0 8px", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{l.hambatan}</p>
+            <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>
+              {new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+            </p>
+          </Card>
+        ))
       )}
     </div>
   );
