@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon
+  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
@@ -206,6 +206,7 @@ export default function OwnerDashboard() {
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "proses_kirim" && <ProsesPengirimanPage token={token} />}
+        {page === "outbound" && <OutboundPage token={token} />}
         {page === "riwayat" && <RiwayatOrderPage token={token} />}
         {page === "transaksi" && <TransaksiPage token={token} />}
         {page === "rekap_nota" && <RekapNotaPage token={token} />}
@@ -290,6 +291,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "admin_transaksi", "kurir"] },
+    { key: "outbound", label: "Outbound", icon: ScanLine, roles: ["owner", "admin_transaksi"] },
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "transaksi", label: "Transaksi", icon: Table2, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "rekap_nota", label: "Rekap Nota", icon: Receipt, roles: ["owner", "admin_keuangan"] },
@@ -405,6 +407,47 @@ function EmptyState({ text }) {
 
 function LoadingState() {
   return <div style={{ padding: "40px 0", textAlign: "center", color: "#9CA0A6", fontSize: 13.5 }}>Memuat data...</div>;
+}
+
+// ============================================================
+// BARCODE LABEL - render barcode CODE39 pakai library JsBarcode
+// (dimuat dari CDN, bukan bikin sendiri - supaya dijamin bisa di-scan)
+// ============================================================
+let jsBarcodeLoadPromise = null;
+function loadJsBarcode() {
+  if (window.JsBarcode) return Promise.resolve();
+  if (jsBarcodeLoadPromise) return jsBarcodeLoadPromise;
+  jsBarcodeLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js";
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+  return jsBarcodeLoadPromise;
+}
+
+function BarcodeLabel({ value, width = 2, height = 60 }) {
+  const svgRef = useRef(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadJsBarcode().then(() => { if (!cancelled) setReady(true); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (ready && svgRef.current && value) {
+      try {
+        window.JsBarcode(svgRef.current, value, {
+          format: "CODE39", width, height, displayValue: true, fontSize: 14, margin: 6,
+        });
+      } catch (e) { /* value tidak valid buat CODE39 (karakter tidak didukung) */ }
+    }
+  }, [ready, value, width, height]);
+
+  return <svg ref={svgRef} />;
 }
 
 function Card({ children, style }) {
@@ -2732,12 +2775,13 @@ function ProsesPengirimanPage({ token }) {
   const [buktiCashCod, setBuktiCashCod] = useState(null);
   const [uploadingCod, setUploadingCod] = useState(null); // "nota" | "cash" | null
   const [confirmingCodId, setConfirmingCodId] = useState(null);
+  const [showBarcode, setShowBarcode] = useState(null); // order id
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode)&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode),order_items(qty)&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -2881,6 +2925,12 @@ function ProsesPengirimanPage({ token }) {
                   )}
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => setShowBarcode(o.id)}
+                    style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12, fontWeight: 700 }}
+                  >
+                    <Barcode size={14} /> Cetak Barcode
+                  </button>
                   {!isDikirim ? (
                     <>
                       {hasProofKirim ? (
@@ -3003,6 +3053,43 @@ function ProsesPengirimanPage({ token }) {
                   style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: (buktiNotaCod && buktiCashCod) ? "#E8A426" : "#E4E1DA", color: (buktiNotaCod && buktiCashCod) ? "#24272B" : "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}
                 >
                   {confirmingCodId === order.id ? "Menyimpan..." : "Konfirmasi"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL CETAK BARCODE - barcode no_nota + nama toko + jumlah barang */}
+      {showBarcode && (() => {
+        const o = orders.find((x) => x.id === showBarcode);
+        if (!o) return null;
+        const jumlahBarang = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, padding: 26 }}>
+              <div id="area-cetak-barcode" style={{ textAlign: "center", padding: "10px 0" }}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.clients?.nama}</p>
+                <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
+                <div style={{ display: "flex", justifyContent: "center" }}>
+                  <BarcodeLabel value={o.no_nota} />
+                </div>
+              </div>
+
+              <style>{`
+                @media print {
+                  body * { visibility: hidden; }
+                  #area-cetak-barcode, #area-cetak-barcode * { visibility: visible; }
+                  #area-cetak-barcode { position: fixed; top: 30px; left: 0; right: 0; }
+                }
+              `}</style>
+
+              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                <button onClick={() => setShowBarcode(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                  Tutup
+                </button>
+                <button onClick={() => window.print()} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                  <Printer size={15} /> Cetak
                 </button>
               </div>
             </div>
@@ -6494,6 +6581,178 @@ function AkunStaffPage({ token }) {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// OUTBOUND - scan barcode nomor pesanan untuk verifikasi
+// (kompatibel dengan alat scanner barcode fisik USB/Bluetooth,
+// yang bekerja seperti keyboard - "mengetik" hasil scan + Enter.
+// Juga bisa diketik manual kalau tidak ada alat scanner.)
+// ============================================================
+function OutboundPage({ token }) {
+  const [inputScan, setInputScan] = useState("");
+  const [order, setOrder] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [riwayat, setRiwayat] = useState([]);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    loadRiwayat();
+  }, []);
+
+  async function loadRiwayat() {
+    try {
+      const rows = await supabaseFetch(token, "orders?select=no_nota,outbound_verified_at,clients(nama)&outbound_verified_at=not.is.null&order=outbound_verified_at.desc&limit=10");
+      setRiwayat(rows);
+    } catch (e) { /* diamkan, tidak kritis */ }
+  }
+
+  async function cariPesanan(kode) {
+    if (!kode.trim()) return;
+    setSearching(true);
+    setError("");
+    setOrder(null);
+    try {
+      const rows = await supabaseFetch(token, `orders?select=*,clients(nama,kode,alamat),order_items(qty,products(nama,satuan))&no_nota=eq.${kode.trim()}`);
+      if (!rows || rows.length === 0) {
+        setError(`Pesanan dengan nomor "${kode.trim()}" tidak ditemukan.`);
+      } else {
+        setOrder(rows[0]);
+      }
+    } catch (e) {
+      setError("Gagal cari pesanan: " + e.message);
+    }
+    setSearching(false);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === "Enter") {
+      cariPesanan(inputScan);
+    }
+  }
+
+  async function konfirmasiOutbound() {
+    setConfirming(true);
+    try {
+      const now = new Date().toISOString();
+      await supabaseFetch(token, `orders?id=eq.${order.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ outbound_verified_at: now }),
+      });
+      setOrder((prev) => ({ ...prev, outbound_verified_at: now }));
+      loadRiwayat();
+    } catch (e) {
+      alert("Gagal konfirmasi: " + e.message);
+    }
+    setConfirming(false);
+  }
+
+  function resetScan() {
+    setInputScan("");
+    setOrder(null);
+    setError("");
+    inputRef.current?.focus();
+  }
+
+  const jumlahBarang = order ? (order.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) : 0;
+
+  return (
+    <div>
+      <PageHeader title="Outbound" subtitle="Scan atau ketik nomor pesanan untuk verifikasi barang keluar" />
+
+      <Card style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#F7F5F1", borderRadius: 10, padding: "10px 14px" }}>
+          <ScanLine size={20} color="#8A6A1A" />
+          <input
+            ref={inputRef}
+            value={inputScan}
+            onChange={(e) => setInputScan(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Scan barcode atau ketik nomor pesanan, lalu Enter..."
+            style={{ flex: 1, background: "none", border: "none", outline: "none", fontSize: 15, fontWeight: 600, color: "#24272B" }}
+          />
+          {searching && <span style={{ fontSize: 12, color: "#9CA0A6" }}>Mencari...</span>}
+        </div>
+        <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "8px 0 0" }}>
+          Kompatibel dengan alat scanner barcode USB/Bluetooth biasa (bekerja seperti keyboard).
+        </p>
+      </Card>
+
+      {error && (
+        <div style={{ background: "#FBEAEA", borderRadius: 12, padding: 14, marginBottom: 20 }}>
+          <p style={{ fontSize: 13, color: "#C0392B", margin: 0, fontWeight: 600 }}>{error}</p>
+        </div>
+      )}
+
+      {order && (
+        <Card style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+            <div>
+              <p className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{order.no_nota}</p>
+              <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{order.clients?.nama} ({order.clients?.kode})</p>
+              <p style={{ fontSize: 12, color: "#9CA0A6", margin: "4px 0 0" }}>{order.clients?.alamat}</p>
+            </div>
+            {order.metode_bayar === "cod" && (
+              <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A" }}>COD</span>
+            )}
+          </div>
+
+          <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>
+            Rincian Barang ({jumlahBarang} total)
+          </p>
+          <div style={{ borderTop: "1px solid #EDEAE3", marginBottom: 16 }}>
+            {(order.order_items || []).map((it, i) => (
+              <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #EDEAE3", fontSize: 13 }}>
+                <span style={{ color: "#24272B" }}>{it.products?.nama}</span>
+                <span style={{ color: "#6B6F75", fontWeight: 700 }}>{it.qty} {it.products?.satuan}</span>
+              </div>
+            ))}
+          </div>
+
+          {order.outbound_verified_at ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", borderRadius: 10, padding: 12 }}>
+              <Check size={18} color="#28685D" />
+              <p style={{ fontSize: 13, color: "#28685D", fontWeight: 700, margin: 0 }}>
+                Sudah diverifikasi outbound - {new Date(order.outbound_verified_at).toLocaleString("id-ID")}
+              </p>
+            </div>
+          ) : (
+            <button
+              onClick={konfirmasiOutbound}
+              disabled={confirming}
+              style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: confirming ? "#E4E1DA" : "#28685D", color: "#fff", fontWeight: 700, fontSize: 14 }}
+            >
+              {confirming ? "Menyimpan..." : "Konfirmasi Verifikasi Outbound"}
+            </button>
+          )}
+
+          <button onClick={resetScan} style={{ width: "100%", marginTop: 10, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
+            Scan Pesanan Lain
+          </button>
+        </Card>
+      )}
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "8px 0 12px" }}>Riwayat Verifikasi Terbaru</h2>
+      {riwayat.length === 0 ? (
+        <EmptyState text="Belum ada pesanan yang diverifikasi outbound." />
+      ) : (
+        riwayat.map((r, i) => (
+          <Card key={i} style={{ marginBottom: 8, padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <div>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{r.no_nota}</p>
+                <p style={{ fontSize: 12, color: "#6B6F75", margin: "2px 0 0" }}>{r.clients?.nama}</p>
+              </div>
+              <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: 0 }}>{new Date(r.outbound_verified_at).toLocaleString("id-ID")}</p>
+            </div>
+          </Card>
+        ))
       )}
     </div>
   );
