@@ -7148,8 +7148,16 @@ function AbsenSalesPage({ token, profile }) {
   const [sudahAbsenHariIni, setSudahAbsenHariIni] = useState(false);
   const [isLibur, setIsLibur] = useState(false);
   const [keteranganLibur, setKeteranganLibur] = useState("");
-  const [absening, setAbsening] = useState(false);
   const [riwayat, setRiwayat] = useState([]);
+  const [handledClients, setHandledClients] = useState([]);
+
+  const [mode, setMode] = useState(null); // null | "pilih_toko" | "checkin"
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [gettingLocation, setGettingLocation] = useState(false);
+  const [locationError, setLocationError] = useState("");
+  const [coords, setCoords] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -7159,33 +7167,152 @@ function AbsenSalesPage({ token, profile }) {
     setLoading(true);
     setError("");
     try {
-      const [absenHariIni, liburRows, riwayatRows] = await Promise.all([
+      const [absenHariIni, liburRows, riwayatRows, clients] = await Promise.all([
         supabaseFetch(token, `absen_sales?select=id&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `hari_libur?select=keterangan&tanggal=eq.${todayStr}`),
-        supabaseFetch(token, `absen_sales?select=tanggal,waktu_absen&sales_id=eq.${profile.sales_id}&order=tanggal.desc&limit=14`),
+        supabaseFetch(token, `absen_sales?select=tanggal,waktu_absen,foto_url,clients(nama)&sales_id=eq.${profile.sales_id}&order=tanggal.desc&limit=14`),
+        supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&status=eq.aktif&order=nama.asc`),
       ]);
       setSudahAbsenHariIni(absenHariIni.length > 0);
       setIsLibur(liburRows.length > 0);
       setKeteranganLibur(liburRows[0]?.keterangan || "");
       setRiwayat(riwayatRows);
+      setHandledClients(clients);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
 
-  async function absenSekarang() {
-    setAbsening(true);
+  function mulaiAbsen(client) {
+    setSelectedClient(client);
+    setMode("checkin");
+    setLocationError("");
+    setCoords(null);
+    setGettingLocation(true);
+
+    if (!navigator.geolocation) {
+      setLocationError("HP/browser ini tidak mendukung deteksi lokasi.");
+      setGettingLocation(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGettingLocation(false);
+      },
+      (err) => {
+        setLocationError("Gagal ambil lokasi: " + err.message + " - pastikan izin lokasi diizinkan.");
+        setGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }
+
+  function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  // Ambil foto dari kamera, tempel watermark koordinat+waktu+nama toko -
+  // persis pola yang sama seperti Laporan Kunjungan, supaya konsisten.
+  async function handleFotoSelfie(e) {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file || !coords) return;
+    setUploading(true);
     try {
+      const img = await loadImageFromFile(file);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+
+      const mapSize = Math.round(Math.min(img.width, img.height) * 0.32);
+      try {
+        const mapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${coords.lat},${coords.lng}&zoom=16&size=${mapSize}x${mapSize}&maptype=mapnik`;
+        const mapRes = await fetch(mapUrl, { mode: "cors" });
+        if (!mapRes.ok) throw new Error("gagal ambil peta");
+        const mapBlob = await mapRes.blob();
+        const mapImg = await loadImageFromFile(mapBlob);
+        const mx = img.width - mapSize - 14;
+        const my = 14;
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(mx - 4, my - 4, mapSize + 8, mapSize + 8);
+        ctx.drawImage(mapImg, mx, my, mapSize, mapSize);
+        ctx.beginPath();
+        ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
+        ctx.fillStyle = "#E4453A";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } catch (mapErr) {
+        console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
+      }
+
+      const barHeight = Math.max(90, img.height * 0.12);
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+
+      const pinSize = barHeight * 0.55;
+      const pinCenterX = 14 + pinSize / 2;
+      const pinCenterY = img.height - barHeight / 2;
+      ctx.save();
+      ctx.translate(pinCenterX, pinCenterY - pinSize * 0.15);
+      ctx.beginPath();
+      ctx.arc(0, 0, pinSize / 2, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.lineTo(0, pinSize * 0.75);
+      ctx.closePath();
+      ctx.fillStyle = "#E4453A";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, -pinSize * 0.05, pinSize * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.restore();
+
+      const textX = 14 + pinSize + 14;
+      ctx.fillStyle = "#fff";
+      const fontSize = Math.max(14, Math.round(img.width / 40));
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
+      ctx.fillText(`Absen - ${selectedClient.nama} (${selectedClient.kode})`, textX, img.height - barHeight + fontSize + 10);
+      ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
+      ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
+      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
+
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
+      const filePath = `absen-${profile.sales_id}-${Date.now()}.jpg`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
+        body: blob,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+
       await supabaseFetch(token, "absen_sales", {
         method: "POST",
-        body: JSON.stringify({ sales_id: profile.sales_id, tanggal: todayStr }),
+        body: JSON.stringify({
+          sales_id: profile.sales_id, tanggal: todayStr, client_id: selectedClient.id,
+          foto_url: url, latitude: coords.lat, longitude: coords.lng,
+        }),
       });
-      setSudahAbsenHariIni(true);
-      load();
+
+      await load();
+      setMode(null);
+      setSelectedClient(null);
     } catch (e) {
-      alert("Gagal absen: " + e.message);
+      alert("Gagal simpan absen: " + e.message);
     }
-    setAbsening(false);
+    setUploading(false);
   }
 
   if (loading) return <LoadingState />;
@@ -7194,6 +7321,70 @@ function AbsenSalesPage({ token, profile }) {
   const liburHariIni = isMinggu || isLibur;
   const namaHari = now.toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
+  // ---------- MODE PILIH TOKO ----------
+  if (mode === "pilih_toko") {
+    return (
+      <div>
+        <button onClick={() => setMode(null)} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+          <ChevronLeft size={16} /> Batal
+        </button>
+        <PageHeader title="Pilih Toko" subtitle="Anda sedang di depan toko yang mana sekarang?" />
+        {handledClients.length === 0 ? (
+          <EmptyState text="Belum ada toko yang ditugaskan ke Anda." />
+        ) : (
+          handledClients.map((c) => (
+            <Card key={c.id} style={{ marginBottom: 10, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.nama}</p>
+                  <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{c.kode}</p>
+                </div>
+                <button onClick={() => mulaiAbsen(c)} style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}>
+                  Pilih
+                </button>
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
+    );
+  }
+
+  // ---------- MODE CHECKIN (ambil lokasi + foto) ----------
+  if (mode === "checkin" && selectedClient) {
+    return (
+      <div>
+        <button onClick={() => { setMode(null); setSelectedClient(null); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+          <ChevronLeft size={16} /> Batal
+        </button>
+        <PageHeader title="Absen" subtitle={`Di depan ${selectedClient.nama}`} />
+        <Card style={{ textAlign: "center", padding: 30 }}>
+          {gettingLocation ? (
+            <p style={{ fontSize: 13, color: "#6B6F75" }}>Mengambil lokasi GPS Anda...</p>
+          ) : locationError ? (
+            <>
+              <AlertCircle size={30} color="#C0392B" style={{ marginBottom: 10 }} />
+              <p style={{ fontSize: 13, color: "#C0392B", marginBottom: 14 }}>{locationError}</p>
+              <button onClick={() => mulaiAbsen(selectedClient)} style={{ padding: "10px 20px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13 }}>
+                Coba Lagi
+              </button>
+            </>
+          ) : coords ? (
+            <>
+              <Check size={30} color="#28685D" style={{ marginBottom: 10 }} />
+              <p style={{ fontSize: 13, color: "#28685D", fontWeight: 600, marginBottom: 18 }}>Lokasi berhasil diambil.</p>
+              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 28px", borderRadius: 12, border: "none", background: uploading ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
+                <Camera size={17} /> {uploading ? "Menyimpan..." : "Ambil Foto & Absen"}
+                <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploading} onChange={handleFotoSelfie} />
+              </label>
+            </>
+          ) : null}
+        </Card>
+      </div>
+    );
+  }
+
+  // ---------- TAMPILAN UTAMA ----------
   return (
     <div>
       <PageHeader title="Absen" subtitle="Absen harian - kecuali hari Minggu & tanggal merah" />
@@ -7224,13 +7415,13 @@ function AbsenSalesPage({ token, profile }) {
             <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#FBF0D9", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
               <Clock size={26} color="#8A6A1A" />
             </div>
-            <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 16px" }}>Belum Absen Hari Ini</p>
+            <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>Belum Absen Hari Ini</p>
+            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 16px" }}>Perlu foto di depan salah satu toko Anda + lokasi GPS.</p>
             <button
-              onClick={absenSekarang}
-              disabled={absening}
-              style={{ padding: "13px 32px", borderRadius: 12, border: "none", background: absening ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14.5 }}
+              onClick={() => setMode("pilih_toko")}
+              style={{ padding: "13px 32px", borderRadius: 12, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14.5 }}
             >
-              {absening ? "Menyimpan..." : "Absen Sekarang"}
+              Absen Sekarang
             </button>
           </>
         )}
@@ -7242,13 +7433,23 @@ function AbsenSalesPage({ token, profile }) {
       ) : (
         riwayat.map((r, i) => (
           <Card key={i} style={{ marginBottom: 8, padding: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: 0 }}>
-                {new Date(r.tanggal + "T00:00:00").toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
-              </p>
-              <p style={{ fontSize: 12, color: "#9CA0A6", margin: 0 }}>
-                {new Date(r.waktu_absen).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-              </p>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: 0 }}>
+                  {new Date(r.tanggal + "T00:00:00").toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
+                </p>
+                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{r.clients?.nama || "-"}</p>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <p style={{ fontSize: 12, color: "#9CA0A6", margin: 0 }}>
+                  {new Date(r.waktu_absen).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                </p>
+                {r.foto_url && (
+                  <a href={r.foto_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "#28685D", fontWeight: 700, textDecoration: "underline" }}>
+                    Lihat Foto
+                  </a>
+                )}
+              </div>
             </div>
           </Card>
         ))
