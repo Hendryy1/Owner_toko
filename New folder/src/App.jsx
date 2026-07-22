@@ -2780,7 +2780,7 @@ function SiapDikirimPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode),order_items(qty,products(kode,nama))&status=eq.menunggu_pengiriman&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp),order_items(qty,products(kode,nama))&status=eq.menunggu_pengiriman&order=created_at.asc");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -2885,11 +2885,15 @@ function SiapDikirimPage({ token }) {
         const o = orders.find((x) => x.id === showBarcode);
         if (!o) return null;
         const jumlahBarang = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
+        const teleponPenerima = o.tujuan_telp || o.clients?.telp;
+        const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
             <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
               <div id="area-cetak-barcode" style={{ textAlign: "center", padding: "10px 0" }}>
                 <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.clients?.nama}</p>
+                <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>{teleponPenerima || "-"}</p>
+                <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px", padding: "0 10px" }}>{alamatPenerima || "-"}</p>
                 <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
                 <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
                   <BarcodeLabel value={o.no_nota} />
