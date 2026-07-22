@@ -874,6 +874,7 @@ function OrdersPage({ token }) {
       {checkingOrder && (
         <CekPesananModal
           order={checkingOrder}
+          allOrders={orders}
           onConfirm={(confirmation) => confirmStock(checkingOrder.id, confirmation)}
           onClose={() => setCheckingOrder(null)}
           processing={processingId === checkingOrder.id}
@@ -886,14 +887,37 @@ function OrdersPage({ token }) {
 // ============================================================
 // MODAL CEK PESANAN (konfirmasi stock sebelum approve/tolak)
 // ============================================================
-function CekPesananModal({ order, onConfirm, onClose, processing }) {
+function CekPesananModal({ order, allOrders, onConfirm, onClose, processing }) {
   const items = order.order_items || [];
+
+  // Kalau pesanan ini COD, cek apakah toko yang sama masih punya pesanan COD
+  // LAIN yang belum terselesaikan (belum lunas & belum selesai) - buat
+  // Owner jadi pertimbangan sebelum approve COD baru lagi ke toko ini.
+  const codBelumSelesai = order.metode_bayar === "cod"
+    ? (allOrders || []).filter((o) =>
+        o.id !== order.id &&
+        o.client_id === order.client_id &&
+        o.metode_bayar === "cod" &&
+        o.status !== "selesai" &&
+        o.status !== "ditolak"
+      )
+    : [];
+
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
       <div style={{ background: "#fff", borderRadius: 14, width: 460, maxHeight: "85vh", overflowY: "auto", padding: 24 }}>
         <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700, textTransform: "uppercase" }}>Cek Pesanan</p>
         <h2 className="disp" style={{ fontSize: 20, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>{order.no_nota}</h2>
         <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{order.clients?.nama}</p>
+
+        {codBelumSelesai.length > 0 && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            <AlertCircle size={16} color="#C0392B" style={{ flexShrink: 0, marginTop: 1 }} />
+            <p style={{ fontSize: 12, color: "#C0392B", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+              Perhatian: toko ini masih punya <strong>{codBelumSelesai.length} pesanan COD</strong> yang belum terselesaikan ({codBelumSelesai.map((o) => o.no_nota).join(", ")}). Pertimbangkan dulu sebelum approve COD baru.
+            </p>
+          </div>
+        )}
 
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, marginBottom: 20 }}>
           <thead>
