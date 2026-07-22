@@ -2965,6 +2965,7 @@ function ProsesPengirimanPage({ token }) {
   const [uploadingCod, setUploadingCod] = useState(null); // "nota" | "cash" | null
   const [confirmingCodId, setConfirmingCodId] = useState(null);
   const [loadingRuteId, setLoadingRuteId] = useState(null);
+  const [clientIdsWithGps, setClientIdsWithGps] = useState(new Set());
 
   async function load() {
     setLoading(true);
@@ -2972,6 +2973,17 @@ function ProsesPengirimanPage({ token }) {
     try {
       const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat),order_items(qty,products(kode,nama))&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc");
       setOrders(rows);
+
+      // Cek toko mana saja yang PUNYA titik GPS tersimpan dari kunjungan
+      // sales - dipakai buat nyala/matiin tombol Rute per order
+      const clientIds = [...new Set(rows.map((o) => o.client_id))];
+      if (clientIds.length > 0) {
+        const kunjunganRows = await supabaseFetch(
+          token,
+          `kunjungan_sales?select=client_id&client_id=in.(${clientIds.join(",")})&latitude=not.is.null`
+        );
+        setClientIdsWithGps(new Set(kunjunganRows.map((k) => k.client_id)));
+      }
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -3155,8 +3167,15 @@ function ProsesPengirimanPage({ token }) {
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   <button
                     onClick={() => bukaRute(o)}
-                    disabled={loadingRuteId === o.id}
-                    style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12, fontWeight: 700 }}
+                    disabled={loadingRuteId === o.id || !clientIdsWithGps.has(o.client_id)}
+                    title={!clientIdsWithGps.has(o.client_id) ? "Belum ada titik GPS dari kunjungan sales untuk toko ini" : ""}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9,
+                      border: clientIdsWithGps.has(o.client_id) ? "1px solid #E4E1DA" : "1px solid #EDEAE3",
+                      background: clientIdsWithGps.has(o.client_id) ? "#fff" : "#F7F5F1",
+                      color: clientIdsWithGps.has(o.client_id) ? "#24272B" : "#B5B2AA",
+                      fontSize: 12, fontWeight: 700,
+                    }}
                   >
                     <Navigation size={14} /> {loadingRuteId === o.id ? "Mencari lokasi..." : "Rute"}
                   </button>
