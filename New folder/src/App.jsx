@@ -252,6 +252,7 @@ export default function OwnerDashboard() {
         {page === "format_nota" && <FormatNotaPage token={token} />}
         {page === "akun_staff" && <AkunStaffPage token={token} />}
         {page === "verifikasi_sales" && <VerifikasiSalesPage token={token} />}
+        {page === "laporan_kunjungan_owner" && <LaporanKunjunganOwnerPage token={token} />}
         {page === "banner_promo" && <BannerPromoPage token={token} />}
           </>
         )}
@@ -344,6 +345,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
     { key: "akun_staff", label: "Kelola Akun Staff", icon: Users, roles: ["owner"] },
     { key: "verifikasi_sales", label: "Verifikasi Sales", icon: Eye, roles: ["owner"] },
+    { key: "laporan_kunjungan_owner", label: "Laporan Kunjungan Sales", icon: MapPin, roles: ["owner", "admin_transaksi"] },
     { key: "banner_promo", label: "Banner Promo", icon: ImageIcon, roles: ["owner"] },
   ];
   const items = allItems
@@ -8263,6 +8265,114 @@ function VerifikasiSalesPage({ token }) {
         })}
       </div>
       {filtered.length === 0 && <EmptyState text="Tidak ada sales di kategori ini." />}
+    </div>
+  );
+}
+
+// ============================================================
+// LAPORAN KUNJUNGAN SALES (Owner) - lihat semua kunjungan + foto + catatan
+// ============================================================
+function LaporanKunjunganOwnerPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [kunjungan, setKunjungan] = useState([]);
+  const [salesList, setSalesList] = useState([]);
+  const [filterSales, setFilterSales] = useState("");
+  const [filterTanggal, setFilterTanggal] = useState("");
+  const [lightboxUrl, setLightboxUrl] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [rows, sales] = await Promise.all([
+        supabaseFetch(token, "kunjungan_sales?select=*,sales(nama,kode),clients(nama,kode)&order=created_at.desc&limit=300"),
+        supabaseFetch(token, "sales?select=id,nama,kode&order=nama.asc"),
+      ]);
+      setKunjungan(rows);
+      setSalesList(sales);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const filtered = kunjungan.filter((k) => {
+    if (filterSales && k.sales_id !== filterSales) return false;
+    if (filterTanggal) {
+      const tglKunjungan = new Date(k.created_at).toISOString().slice(0, 10);
+      if (tglKunjungan !== filterTanggal) return false;
+    }
+    return true;
+  });
+
+  return (
+    <div>
+      <PageHeader title="Laporan Kunjungan Sales" subtitle={`${filtered.length} kunjungan`} />
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
+        <select value={filterSales} onChange={(e) => setFilterSales(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }}>
+          <option value="">Semua Sales</option>
+          {salesList.map((s) => (
+            <option key={s.id} value={s.id}>{s.nama} ({s.kode})</option>
+          ))}
+        </select>
+        <input type="date" value={filterTanggal} onChange={(e) => setFilterTanggal(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
+        {(filterSales || filterTanggal) && (
+          <button onClick={() => { setFilterSales(""); setFilterTanggal(""); }} style={{ padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12.5, fontWeight: 600 }}>
+            Reset Filter
+          </button>
+        )}
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState text="Belum ada laporan kunjungan." />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+          {filtered.map((k) => (
+            <Card key={k.id}>
+              {k.foto_url && (
+                <img
+                  src={k.foto_url} alt="Kunjungan"
+                  onClick={() => setLightboxUrl(k.foto_url)}
+                  style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 10, marginBottom: 12, cursor: "pointer" }}
+                />
+              )}
+              <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{k.clients?.nama}</p>
+              <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 8px" }}>{k.clients?.kode}</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                <User size={13} color="#8A6A1A" />
+                <p style={{ fontSize: 12, color: "#8A6A1A", fontWeight: 600, margin: 0 }}>{k.sales?.nama} ({k.sales?.kode})</p>
+              </div>
+              {k.catatan && (
+                <div style={{ background: "#F7F5F1", borderRadius: 8, padding: 10, marginBottom: 10 }}>
+                  <p style={{ fontSize: 12, color: "#24272B", margin: 0, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{k.catatan}</p>
+                </div>
+              )}
+              <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>
+                {new Date(k.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+              </p>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {lightboxUrl && (
+        <div
+          onClick={() => setLightboxUrl(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, cursor: "zoom-out" }}
+        >
+          <img src={lightboxUrl} alt="Full" style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8, objectFit: "contain" }} />
+          <button
+            onClick={() => setLightboxUrl(null)}
+            style={{ position: "absolute", top: 20, right: 20, width: 40, height: 40, borderRadius: "50%", border: "none", background: "rgba(255,255,255,0.15)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
