@@ -5181,6 +5181,9 @@ function KunjunganSalesPage({ token, profile }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
   const now = new Date();
+  const [fotoSiapKirim, setFotoSiapKirim] = useState(null); // { url } - foto sudah diupload, tinggal isi catatan
+  const [catatanKunjungan, setCatatanKunjungan] = useState("");
+  const [menyimpanKunjungan, setMenyimpanKunjungan] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -5339,21 +5342,41 @@ function KunjunganSalesPage({ token, profile }) {
       if (!res.ok) throw new Error(await res.text());
       const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
 
+      // Foto sudah tersimpan - JANGAN langsung insert kunjungan dulu, sales
+      // wajib isi catatan kunjungan terlebih dahulu sebelum benar-benar
+      // dikonfirmasi.
+      setFotoSiapKirim({ url });
+    } catch (e) {
+      alert("Gagal upload foto: " + e.message);
+    }
+    setUploading(false);
+  }
+
+  async function konfirmasiKunjungan() {
+    if (!catatanKunjungan.trim()) {
+      alert("Isi dulu catatan kunjungan sebelum konfirmasi.");
+      return;
+    }
+    setMenyimpanKunjungan(true);
+    try {
       await supabaseFetch(token, "kunjungan_sales", {
         method: "POST",
         body: JSON.stringify({
           sales_id: profile.sales_id, client_id: selectedClient.id,
-          foto_url: url, latitude: coords.lat, longitude: coords.lng,
+          foto_url: fotoSiapKirim.url, latitude: coords.lat, longitude: coords.lng,
+          catatan: catatanKunjungan.trim(),
         }),
       });
 
       await load();
       setMode(null);
       setSelectedClient(null);
+      setFotoSiapKirim(null);
+      setCatatanKunjungan("");
     } catch (e) {
       alert("Gagal simpan kunjungan: " + e.message);
     }
-    setUploading(false);
+    setMenyimpanKunjungan(false);
   }
 
   function loadImageFromFile(file) {
@@ -5399,7 +5422,7 @@ function KunjunganSalesPage({ token, profile }) {
   if (mode === "checkin" && selectedClient) {
     return (
       <div>
-        <button onClick={() => { setMode(null); setSelectedClient(null); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+        <button onClick={() => { setMode(null); setSelectedClient(null); setFotoSiapKirim(null); setCatatanKunjungan(""); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
           <ChevronLeft size={16} /> Batal
         </button>
         <PageHeader title={`Kunjungi ${selectedClient.nama}`} subtitle={selectedClient.alamat || selectedClient.kode} />
@@ -5419,6 +5442,37 @@ function KunjunganSalesPage({ token, profile }) {
               </button>
             </div>
           ) : coords ? (
+            fotoSiapKirim ? (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", color: "#28685D", padding: 12, borderRadius: 9, fontSize: 12.5, marginBottom: 14, fontWeight: 600 }}>
+                  <Check size={16} /> Foto berhasil diambil.
+                </div>
+                <img src={fotoSiapKirim.url} alt="Foto kunjungan" style={{ width: "100%", borderRadius: 10, marginBottom: 14 }} />
+                <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Catatan Kunjungan (wajib diisi)</label>
+                <textarea
+                  value={catatanKunjungan}
+                  onChange={(e) => setCatatanKunjungan(e.target.value)}
+                  placeholder="Contoh: toko stok mulai menipis, mau order minggu depan..."
+                  rows={3}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, resize: "vertical", marginBottom: 14 }}
+                />
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button
+                    onClick={() => { setFotoSiapKirim(null); setCatatanKunjungan(""); }}
+                    style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}
+                  >
+                    Ambil Ulang
+                  </button>
+                  <button
+                    onClick={konfirmasiKunjungan}
+                    disabled={menyimpanKunjungan || !catatanKunjungan.trim()}
+                    style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: (menyimpanKunjungan || !catatanKunjungan.trim()) ? "#E4E1DA" : "#E8A426", color: (menyimpanKunjungan || !catatanKunjungan.trim()) ? "#9CA0A6" : "#24272B", fontWeight: 700, fontSize: 13 }}
+                  >
+                    {menyimpanKunjungan ? "Menyimpan..." : "Konfirmasi Kunjungan"}
+                  </button>
+                </div>
+              </div>
+            ) : (
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", color: "#28685D", padding: 12, borderRadius: 9, fontSize: 12.5, marginBottom: 18, fontWeight: 600 }}>
                 <Check size={16} /> Lokasi terdeteksi: {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
@@ -5435,6 +5489,7 @@ function KunjunganSalesPage({ token, profile }) {
                 <Camera size={18} /> {uploading ? "Menyimpan..." : "Ambil Foto Selfie"}
               </button>
             </div>
+            )
           ) : null}
         </Card>
       </div>
