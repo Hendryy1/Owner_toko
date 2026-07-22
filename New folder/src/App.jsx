@@ -103,6 +103,9 @@ export default function OwnerDashboard() {
     // Kurir cuma bisa akses Proses Pengiriman - langsung arahkan ke situ,
     // karena halaman default (Ringkasan) tidak bisa diakses kurir.
     if (profRows[0].role === "kurir") setPage("proses_kirim");
+    // admin_transaksi tidak lagi bisa akses Ringkasan (halaman default) -
+    // arahkan ke Approve Pesanan sebagai gantinya.
+    if (profRows[0].role === "admin_transaksi") setPage("orders");
 
     // Sales WAJIB terverifikasi (KTP/NPWP/KK) dulu sebelum bisa akses fitur
     // lain - kalau belum, kunci ke halaman Profil Saya saja.
@@ -312,8 +315,8 @@ function LoginScreen({ form, setForm, onLogin, error, loading }) {
 // ============================================================
 function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, isMobile, salesTerverifikasi }) {
   const allItems = [
-    { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
-    { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "admin_transaksi", "sales"] },
+    { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_keuangan"] },
+    { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "sales"] },
     { key: "profil_sales", label: "Profil Saya", icon: User, roles: ["sales"] },
     { key: "omzet_sales", label: "Omzet Saya", icon: TrendingUp, roles: ["sales"] },
     { key: "kunjungan_sales", label: "Laporan Kunjungan", icon: MapPin, roles: ["sales"] },
@@ -324,13 +327,13 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "siap_dikirim", label: "Siap Dikirim", icon: PackagePlus, roles: ["owner", "admin_transaksi", "kurir"] },
-    { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "admin_transaksi", "kurir"] },
-    { key: "outbound", label: "Outbound", icon: ScanLine, roles: ["owner", "admin_transaksi"] },
+    { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "kurir"] },
+    { key: "outbound", label: "Outbound", icon: ScanLine, roles: ["owner"] },
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "transaksi", label: "Transaksi", icon: Table2, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "rekap_nota", label: "Rekap Nota", icon: Receipt, roles: ["owner", "admin_keuangan"] },
     { key: "clients", label: "Approve Toko Baru", icon: Store, roles: ["owner", "admin_keuangan"] },
-    { key: "verifikasi_toko", label: "Verifikasi Toko", icon: Eye, roles: ["owner", "admin_transaksi"] },
+    { key: "verifikasi_toko", label: "Verifikasi Toko", icon: Eye, roles: ["owner"] },
     { key: "keuangan", label: "Laporan Keuangan", icon: Wallet, roles: ["owner", "admin_keuangan"] },
     { key: "biaya_operasional", label: "Biaya Operasional", icon: Receipt, roles: ["owner", "admin_keuangan"] },
     { key: "pajak", label: "Pajak", icon: FileEdit, roles: ["owner", "admin_keuangan"] },
@@ -342,14 +345,14 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "stock", label: "Stock Item", icon: Boxes, roles: ["owner"] },
     { key: "inbound", label: "Inbound", icon: PackagePlus, roles: ["owner"] },
     { key: "cashback", label: "Cashback", icon: Gift, roles: ["owner"] },
-    { key: "ongkir", label: "Free Ongkir", icon: Navigation, roles: ["owner", "admin_transaksi"] },
+    { key: "ongkir", label: "Free Ongkir", icon: Navigation, roles: ["owner"] },
     { key: "rekap_toko", label: "Rekap Toko", icon: Store, roles: ["owner", "admin_keuangan"] },
-    { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
+    { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_keuangan"] },
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
     { key: "akun_staff", label: "Kelola Akun Staff", icon: Users, roles: ["owner"] },
     { key: "verifikasi_sales", label: "Verifikasi Sales", icon: Eye, roles: ["owner"] },
-    { key: "laporan_kunjungan_owner", label: "Laporan Kunjungan Sales", icon: MapPin, roles: ["owner", "admin_transaksi"] },
-    { key: "laporan_periodik_sales", label: "Laporan Mingguan/Bulanan", icon: FileEdit, roles: ["owner", "admin_transaksi"] },
+    { key: "laporan_kunjungan_owner", label: "Laporan Kunjungan Sales", icon: MapPin, roles: ["owner"] },
+    { key: "laporan_periodik_sales", label: "Laporan Mingguan/Bulanan", icon: FileEdit, roles: ["owner"] },
     { key: "banner_promo", label: "Banner Promo", icon: ImageIcon, roles: ["owner"] },
   ];
   const items = allItems
