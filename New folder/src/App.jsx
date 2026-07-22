@@ -5191,6 +5191,23 @@ function KunjunganSalesPage({ token, profile }) {
   const [catatanKunjungan, setCatatanKunjungan] = useState("");
   const [menyimpanKunjungan, setMenyimpanKunjungan] = useState(false);
 
+  const [laporanMingguIni, setLaporanMingguIni] = useState(null);
+  const [laporanBulanIni, setLaporanBulanIni] = useState(null);
+  const [hambatanMinggu, setHambatanMinggu] = useState("");
+  const [hambatanBulan, setHambatanBulan] = useState("");
+  const [savingMinggu, setSavingMinggu] = useState(false);
+  const [savingBulan, setSavingBulan] = useState(false);
+
+  // Senin di minggu berjalan (patokan laporan mingguan)
+  function getSeninMingguIni() {
+    const d = new Date();
+    const day = d.getDay(); // 0=Minggu
+    const diff = day === 0 ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+  const seninMingguIni = getSeninMingguIni();
+
   useEffect(() => { load(); }, []);
 
   async function load() {
@@ -5203,14 +5220,56 @@ function KunjunganSalesPage({ token, profile }) {
       const nextYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
       const endBulan = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
-      const [clientsRows, kunjunganRows] = await Promise.all([
+      const [clientsRows, kunjunganRows, mingguRows, bulanRows] = await Promise.all([
         supabaseFetch(token, `clients?select=id,nama,kode,alamat&sales_id=eq.${profile.sales_id}&order=nama.asc`),
         supabaseFetch(token, `kunjungan_sales?select=*&sales_id=eq.${profile.sales_id}&created_at=gte.${startBulan}&created_at=lt.${endBulan}&order=created_at.desc`),
+        supabaseFetch(token, `laporan_mingguan_sales?select=*&sales_id=eq.${profile.sales_id}&minggu_mulai=eq.${getSeninMingguIni()}`),
+        supabaseFetch(token, `laporan_bulanan_sales?select=*&sales_id=eq.${profile.sales_id}&bulan=eq.${now.getMonth() + 1}&tahun=eq.${now.getFullYear()}`),
       ]);
       setHandledClients(clientsRows);
       setKunjunganBulanIni(kunjunganRows);
+      setLaporanMingguIni(mingguRows[0] || null);
+      setLaporanBulanIni(bulanRows[0] || null);
     } catch (e) { setError(e.message); }
     setLoading(false);
+  }
+
+  async function simpanLaporanMingguan() {
+    if (!hambatanMinggu.trim()) {
+      alert("Isi dulu laporan hambatan minggu ini.");
+      return;
+    }
+    setSavingMinggu(true);
+    try {
+      const [inserted] = await supabaseFetch(token, "laporan_mingguan_sales", {
+        method: "POST",
+        body: JSON.stringify({ sales_id: profile.sales_id, minggu_mulai: seninMingguIni, hambatan: hambatanMinggu.trim() }),
+      });
+      setLaporanMingguIni(inserted);
+      setHambatanMinggu("");
+    } catch (e) {
+      alert("Gagal simpan laporan mingguan: " + e.message);
+    }
+    setSavingMinggu(false);
+  }
+
+  async function simpanLaporanBulanan() {
+    if (!hambatanBulan.trim()) {
+      alert("Isi dulu laporan hambatan bulan ini.");
+      return;
+    }
+    setSavingBulan(true);
+    try {
+      const [inserted] = await supabaseFetch(token, "laporan_bulanan_sales", {
+        method: "POST",
+        body: JSON.stringify({ sales_id: profile.sales_id, bulan: now.getMonth() + 1, tahun: now.getFullYear(), hambatan: hambatanBulan.trim() }),
+      });
+      setLaporanBulanIni(inserted);
+      setHambatanBulan("");
+    } catch (e) {
+      alert("Gagal simpan laporan bulanan: " + e.message);
+    }
+    setSavingBulan(false);
   }
 
   function jumlahKunjungan(clientId) {
@@ -5544,6 +5603,80 @@ function KunjunganSalesPage({ token, profile }) {
         })}
       </div>
       {handledClients.length === 0 && <EmptyState text="Belum ada toko yang Anda handle." />}
+
+      {/* LAPORAN MINGGUAN - wajib diisi tiap minggu */}
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "32px 0 12px" }}>Laporan Mingguan</h2>
+      <Card style={{ marginBottom: 24 }}>
+        {laporanMingguIni ? (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#D8E9E6", borderRadius: 10, padding: 12 }}>
+            <Check size={16} color="#28685D" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div>
+              <p style={{ fontSize: 12.5, color: "#28685D", fontWeight: 700, margin: "0 0 4px" }}>Sudah diisi minggu ini.</p>
+              <p style={{ fontSize: 12.5, color: "#24272B", margin: 0, whiteSpace: "pre-wrap" }}>{laporanMingguIni.hambatan}</p>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBF0D9", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+              <AlertCircle size={15} color="#8A6A1A" style={{ flexShrink: 0, marginTop: 1 }} />
+              <p style={{ fontSize: 12, color: "#8A6A1A", margin: 0, lineHeight: 1.5 }}>
+                <strong>Wajib diisi</strong> - ceritakan hambatan minggu ini (misal prospek yang tertahan/gagal beserta alasannya).
+              </p>
+            </div>
+            <textarea
+              value={hambatanMinggu}
+              onChange={(e) => setHambatanMinggu(e.target.value)}
+              placeholder="Contoh: Toko A masih pertimbangkan harga, Toko B gagal karena sudah pakai supplier lain..."
+              rows={4}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, resize: "vertical", marginBottom: 12 }}
+            />
+            <button
+              onClick={simpanLaporanMingguan}
+              disabled={savingMinggu || !hambatanMinggu.trim()}
+              style={{ padding: "11px 24px", borderRadius: 10, border: "none", background: (savingMinggu || !hambatanMinggu.trim()) ? "#E4E1DA" : "#E8A426", color: (savingMinggu || !hambatanMinggu.trim()) ? "#9CA0A6" : "#24272B", fontWeight: 700, fontSize: 13.5 }}
+            >
+              {savingMinggu ? "Menyimpan..." : "Kirim Laporan Mingguan"}
+            </button>
+          </div>
+        )}
+      </Card>
+
+      {/* LAPORAN BULANAN - wajib diisi tiap bulan */}
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Laporan Bulanan</h2>
+      <Card>
+        {laporanBulanIni ? (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#D8E9E6", borderRadius: 10, padding: 12 }}>
+            <Check size={16} color="#28685D" style={{ flexShrink: 0, marginTop: 1 }} />
+            <div>
+              <p style={{ fontSize: 12.5, color: "#28685D", fontWeight: 700, margin: "0 0 4px" }}>Sudah diisi bulan ini.</p>
+              <p style={{ fontSize: 12.5, color: "#24272B", margin: 0, whiteSpace: "pre-wrap" }}>{laporanBulanIni.hambatan}</p>
+            </div>
+          </div>
+        ) : (
+          <div>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBF0D9", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+              <AlertCircle size={15} color="#8A6A1A" style={{ flexShrink: 0, marginTop: 1 }} />
+              <p style={{ fontSize: 12, color: "#8A6A1A", margin: 0, lineHeight: 1.5 }}>
+                <strong>Wajib diisi</strong> - rangkum hambatan bulan ini (prospek yang tertahan/gagal beserta alasannya).
+              </p>
+            </div>
+            <textarea
+              value={hambatanBulan}
+              onChange={(e) => setHambatanBulan(e.target.value)}
+              placeholder="Contoh: Bulan ini 3 prospek gagal deal karena masalah harga & jarak pengiriman..."
+              rows={4}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, resize: "vertical", marginBottom: 12 }}
+            />
+            <button
+              onClick={simpanLaporanBulanan}
+              disabled={savingBulan || !hambatanBulan.trim()}
+              style={{ padding: "11px 24px", borderRadius: 10, border: "none", background: (savingBulan || !hambatanBulan.trim()) ? "#E4E1DA" : "#E8A426", color: (savingBulan || !hambatanBulan.trim()) ? "#9CA0A6" : "#24272B", fontWeight: 700, fontSize: 13.5 }}
+            >
+              {savingBulan ? "Menyimpan..." : "Kirim Laporan Bulanan"}
+            </button>
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
