@@ -3091,23 +3091,6 @@ function ProsesPengirimanPage({ token }) {
     }
   }
 
-  async function uploadBuktiPengiriman(order, file) {
-    await uploadFotoOrder(order, file, "bukti_pengiriman_url", "kirim");
-  }
-
-  async function confirmProsesDikirim(orderId) {
-    setProcessingId(orderId);
-    try {
-      const now = new Date().toISOString();
-      await supabaseFetch(token, `orders?id=eq.${orderId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "proses_dikirim", tanggal_dikirim: now }),
-      });
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "proses_dikirim", tanggal_dikirim: now } : o)));
-    } catch (e) { alert("Gagal update: " + e.message); }
-    setProcessingId(null);
-  }
-
   async function uploadFotoOrder(order, file, kolom, fieldKey) {
     setUploadingId(order.id);
     setUploadingField(fieldKey);
@@ -3253,25 +3236,9 @@ function ProsesPengirimanPage({ token }) {
                     </button>
                   )}
                   {!isDikirim ? (
-                    <>
-                      {hasProofKirim ? (
-                        <a href={o.bukti_pengiriman_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#28685D", fontWeight: 700, textDecoration: "underline", marginRight: 4 }}>
-                          Lihat Bukti Pengiriman
-                        </a>
-                      ) : (
-                        <label style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 14px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-                          {uploadingId === o.id && uploadingField === "kirim" ? "Mengupload..." : <><UploadCloud size={14} /> Upload Bukti Pengiriman</>}
-                          <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadBuktiPengiriman(o, e.target.files[0]); }} />
-                        </label>
-                      )}
-                      <button
-                        disabled={processingId === o.id || !hasProofKirim}
-                        onClick={() => confirmProsesDikirim(o.id)}
-                        style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: hasProofKirim ? "#E8A426" : "#E4E1DA", color: hasProofKirim ? "#24272B" : "#9CA0A6", fontSize: 12.5, fontWeight: 700 }}
-                      >
-                        Konfirmasi Proses Dikirim
-                      </button>
-                    </>
+                    <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#FBF0D9", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700 }}>
+                      <ScanLine size={14} /> Menunggu Scan Outbound
+                    </span>
                   ) : (
                     <>
                       <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
