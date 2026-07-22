@@ -6592,6 +6592,21 @@ function AkunStaffPage({ token }) {
 // yang bekerja seperti keyboard - "mengetik" hasil scan + Enter.
 // Juga bisa diketik manual kalau tidak ada alat scanner.)
 // ============================================================
+// Loader library html5-qrcode dari CDN - buat scan barcode pakai kamera HP
+let html5QrcodeLoadPromise = null;
+function loadHtml5Qrcode() {
+  if (window.Html5Qrcode) return Promise.resolve();
+  if (html5QrcodeLoadPromise) return html5QrcodeLoadPromise;
+  html5QrcodeLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js";
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+  return html5QrcodeLoadPromise;
+}
+
 function OutboundPage({ token }) {
   const [inputScan, setInputScan] = useState("");
   const [order, setOrder] = useState(null);
@@ -6600,10 +6615,58 @@ function OutboundPage({ token }) {
   const [confirming, setConfirming] = useState(false);
   const [riwayat, setRiwayat] = useState([]);
   const inputRef = useRef(null);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const html5QrRef = useRef(null);
 
   useEffect(() => {
     inputRef.current?.focus();
     loadRiwayat();
+  }, []);
+
+  async function mulaiScanKamera() {
+    setCameraError("");
+    setShowCamera(true);
+    try {
+      await loadHtml5Qrcode();
+      // Kasih waktu sedikit supaya div #reader-kamera sempat ter-render dulu
+      setTimeout(async () => {
+        try {
+          const html5Qr = new window.Html5Qrcode("reader-kamera");
+          html5QrRef.current = html5Qr;
+          await html5Qr.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 260, height: 140 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39] },
+            (decodedText) => {
+              setInputScan(decodedText);
+              cariPesanan(decodedText);
+              tutupKamera();
+            },
+            () => { /* frame tanpa barcode terdeteksi - normal, diamkan */ }
+          );
+        } catch (e) {
+          setCameraError("Gagal buka kamera: " + e.message + " (pastikan izinkan akses kamera di browser)");
+        }
+      }, 200);
+    } catch (e) {
+      setCameraError("Gagal muat library scanner: " + e.message);
+    }
+  }
+
+  function tutupKamera() {
+    if (html5QrRef.current) {
+      html5QrRef.current.stop().catch(() => {}).finally(() => {
+        html5QrRef.current = null;
+      });
+    }
+    setShowCamera(false);
+  }
+
+  useEffect(() => {
+    // Pastikan kamera dimatikan kalau komponen ini ditutup/pindah halaman
+    return () => {
+      if (html5QrRef.current) html5QrRef.current.stop().catch(() => {});
+    };
   }, []);
 
   async function loadRiwayat() {
@@ -6679,10 +6742,30 @@ function OutboundPage({ token }) {
           />
           {searching && <span style={{ fontSize: 12, color: "#9CA0A6" }}>Mencari...</span>}
         </div>
+        <button
+          onClick={mulaiScanKamera}
+          style={{ width: "100%", marginTop: 10, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 12, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}
+        >
+          <Camera size={16} /> Scan Pakai Kamera HP
+        </button>
         <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "8px 0 0" }}>
-          Kompatibel dengan alat scanner barcode USB/Bluetooth biasa (bekerja seperti keyboard).
+          Kompatibel dengan alat scanner barcode USB/Bluetooth biasa (bekerja seperti keyboard), atau pakai kamera HP langsung lewat tombol di atas.
         </p>
       </Card>
+
+      {showCamera && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode</p>
+          <div id="reader-kamera" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
+          {cameraError && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraError}</p>}
+          <button
+            onClick={tutupKamera}
+            style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+          >
+            Tutup Kamera
+          </button>
+        </div>
+      )}
 
       {error && (
         <div style={{ background: "#FBEAEA", borderRadius: 12, padding: 14, marginBottom: 20 }}>
