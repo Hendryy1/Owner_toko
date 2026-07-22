@@ -2964,17 +2964,57 @@ function ProsesPengirimanPage({ token }) {
   const [buktiCashCod, setBuktiCashCod] = useState(null);
   const [uploadingCod, setUploadingCod] = useState(null); // "nota" | "cash" | null
   const [confirmingCodId, setConfirmingCodId] = useState(null);
+  const [loadingRuteId, setLoadingRuteId] = useState(null);
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode),order_items(qty,products(kode,nama))&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat),order_items(qty,products(kode,nama))&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  // Buka rute dari lokasi HP kurir SAAT INI ke alamat toko tujuan, langsung
+  // di Google Maps (bukan bikin navigasi sendiri - terlalu berat & berisiko
+  // kalau dibuat dari nol). Titik tujuan pakai koordinat GPS dari kunjungan
+  // sales terakhir kalau ada (lebih presisi), kalau belum pernah dikunjungi
+  // pakai alamat teks toko saja (Google Maps yang cari sendiri).
+  async function bukaRute(order) {
+    setLoadingRuteId(order.id);
+    try {
+      // Cek dulu apakah toko ini pernah dikunjungi sales & punya koordinat GPS tersimpan
+      const kunjungan = await supabaseFetch(
+        token,
+        `kunjungan_sales?select=latitude,longitude&client_id=eq.${order.client_id}&order=created_at.desc&limit=1`
+      );
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const originLat = pos.coords.latitude;
+          const originLng = pos.coords.longitude;
+          let destinationParam;
+          if (kunjungan && kunjungan.length > 0) {
+            destinationParam = `${kunjungan[0].latitude},${kunjungan[0].longitude}`;
+          } else {
+            destinationParam = encodeURIComponent(order.clients?.alamat || order.tujuan_alamat || "");
+          }
+          const url = `https://www.google.com/maps/dir/?api=1&origin=${originLat},${originLng}&destination=${destinationParam}&travelmode=driving`;
+          window.open(url, "_blank");
+          setLoadingRuteId(null);
+        },
+        (err) => {
+          alert("Gagal ambil lokasi HP Anda: " + err.message + " (pastikan izinkan akses lokasi di browser)");
+          setLoadingRuteId(null);
+        }
+      );
+    } catch (e) {
+      alert("Gagal siapkan rute: " + e.message);
+      setLoadingRuteId(null);
+    }
+  }
 
   async function uploadBuktiPengiriman(order, file) {
     await uploadFotoOrder(order, file, "bukti_pengiriman_url", "kirim");
@@ -3113,6 +3153,13 @@ function ProsesPengirimanPage({ token }) {
                   )}
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => bukaRute(o)}
+                    disabled={loadingRuteId === o.id}
+                    style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12, fontWeight: 700 }}
+                  >
+                    <Navigation size={14} /> {loadingRuteId === o.id ? "Mencari lokasi..." : "Rute"}
+                  </button>
                   {!isDikirim ? (
                     <>
                       {hasProofKirim ? (
