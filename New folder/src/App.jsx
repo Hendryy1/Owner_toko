@@ -3182,7 +3182,7 @@ function ProsesPengirimanPage({ token }) {
                   {isDikirim && (
                     <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>
                       Dikirim {Math.floor(elapsedDays)} hari lalu
-                      {!isCod && !canConfirmArrived && ` - tunggu ${Math.ceil(3 - elapsedDays)} hari lagi untuk konfirmasi sampai`}
+                      {!wajibUploadBukti && !canConfirmArrived && ` - tunggu ${Math.ceil(3 - elapsedDays)} hari lagi untuk konfirmasi sampai`}
                     </p>
                   )}
                 </div>
