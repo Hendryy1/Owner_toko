@@ -223,7 +223,6 @@ export default function OwnerDashboard() {
         {page === "omzet_sales" && <OmzetSalesPage token={token} profile={profile} />}
         {page === "kunjungan_sales" && <KunjunganSalesPage token={token} profile={profile} />}
         {page === "absen_sales" && <AbsenSalesPage token={token} profile={profile} />}
-        {page === "catatan_toko_sales" && <CatatanTokoSalesPage token={token} profile={profile} />}
         {page === "area_sales" && <AreaSalesPage token={token} profile={profile} />}
         {page === "request_area" && <RequestAreaOwnerPage token={token} />}
         {page === "rekap_absen" && <RekapAbsenPage token={token} />}
@@ -319,7 +318,6 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "omzet_sales", label: "Omzet Saya", icon: TrendingUp, roles: ["sales"] },
     { key: "kunjungan_sales", label: "Laporan Kunjungan", icon: MapPin, roles: ["sales"] },
     { key: "absen_sales", label: "Absen", icon: Clock, roles: ["sales"] },
-    { key: "catatan_toko_sales", label: "Catatan Toko", icon: FileEdit, roles: ["sales"] },
     { key: "area_sales", label: "Area", icon: MapPin, roles: ["sales"] },
     { key: "request_area", label: "Request Area Sales", icon: MapPin, roles: ["owner"] },
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
@@ -4801,7 +4799,7 @@ function ProfilSalesPage({ token, profile }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
-  const [form, setForm] = useState({ nama: "", alamat: "", email: "", noHp: "", fotoUrl: "" });
+  const [form, setForm] = useState({ nama: "", alamat: "", kota: "", provinsi: "", kodePos: "", email: "", noHp: "", fotoUrl: "" });
   const [dataTerkunci, setDataTerkunci] = useState(false);
 
   const [statusVerifikasi, setStatusVerifikasi] = useState("belum_upload");
@@ -4819,11 +4817,11 @@ function ProfilSalesPage({ token, profile }) {
     setError("");
     try {
       if (!profile?.sales_id) throw new Error("Akun ini belum terhubung ke data sales manapun.");
-      const rows = await supabaseFetch(token, `sales?select=nama,alamat,email,no_hp,foto_url,data_pribadi_terkunci,status_verifikasi,alasan_verifikasi_ditolak,foto_ktp_url,foto_npwp_url,foto_kk_url&id=eq.${profile.sales_id}`);
+      const rows = await supabaseFetch(token, `sales?select=nama,alamat,kota,provinsi,kode_pos,email,no_hp,foto_url,data_pribadi_terkunci,status_verifikasi,alasan_verifikasi_ditolak,foto_ktp_url,foto_npwp_url,foto_kk_url&id=eq.${profile.sales_id}`);
       const s = rows[0] || {};
       setForm({
-        nama: s.nama || "", alamat: s.alamat || "", email: s.email || "",
-        noHp: s.no_hp || "", fotoUrl: s.foto_url || "",
+        nama: s.nama || "", alamat: s.alamat || "", kota: s.kota || "", provinsi: s.provinsi || "", kodePos: s.kode_pos || "",
+        email: s.email || "", noHp: s.no_hp || "", fotoUrl: s.foto_url || "",
       });
       setDataTerkunci(!!s.data_pribadi_terkunci);
       setStatusVerifikasi(s.status_verifikasi || "belum_upload");
@@ -4862,7 +4860,8 @@ function ProfilSalesPage({ token, profile }) {
       await supabaseFetch(token, `sales?id=eq.${profile.sales_id}`, {
         method: "PATCH",
         body: JSON.stringify({
-          nama: form.nama, alamat: form.alamat || null, email: form.email || null,
+          nama: form.nama, alamat: form.alamat || null, kota: form.kota || null,
+          provinsi: form.provinsi || null, kode_pos: form.kodePos || null, email: form.email || null,
           no_hp: form.noHp || null, foto_url: form.fotoUrl || null,
           // Begitu disimpan PERTAMA KALI, kunci data pribadi (nama/alamat/
           // email/no HP) - kalau mau ubah lagi ke depannya harus hubungi Owner
@@ -4963,8 +4962,24 @@ function ProfilSalesPage({ token, profile }) {
         </div>
 
         <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle}>Alamat</label>
-          <textarea value={form.alamat} onChange={(e) => setForm({ ...form, alamat: e.target.value })} disabled={dataTerkunci} rows={3} style={dataTerkunci ? { ...fieldStyleLocked, resize: "vertical" } : { ...fieldStyle, resize: "vertical" }} />
+          <label style={labelStyle}>Alamat (Jalan, No. Rumah, RT/RW)</label>
+          <textarea value={form.alamat} onChange={(e) => setForm({ ...form, alamat: e.target.value })} disabled={dataTerkunci} rows={2} style={dataTerkunci ? { ...fieldStyleLocked, resize: "vertical" } : { ...fieldStyle, resize: "vertical" }} />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+          <div>
+            <label style={labelStyle}>Kota/Kabupaten</label>
+            <input value={form.kota} onChange={(e) => setForm({ ...form, kota: e.target.value })} disabled={dataTerkunci} style={dataTerkunci ? fieldStyleLocked : fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Provinsi</label>
+            <input value={form.provinsi} onChange={(e) => setForm({ ...form, provinsi: e.target.value })} disabled={dataTerkunci} style={dataTerkunci ? fieldStyleLocked : fieldStyle} />
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Kode Pos</label>
+          <input value={form.kodePos} onChange={(e) => setForm({ ...form, kodePos: e.target.value })} disabled={dataTerkunci} style={{ ...(dataTerkunci ? fieldStyleLocked : fieldStyle), maxWidth: 160 }} />
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
@@ -5199,6 +5214,11 @@ function KunjunganSalesPage({ token, profile }) {
   const [hambatanBulan, setHambatanBulan] = useState("");
   const [savingMinggu, setSavingMinggu] = useState(false);
   const [savingBulan, setSavingBulan] = useState(false);
+  const [checkinTab, setCheckinTab] = useState("foto"); // "foto" | "catatan"
+  const [catatanTokoIni, setCatatanTokoIni] = useState([]);
+  const [catatanBaruToko, setCatatanBaruToko] = useState("");
+  const [loadingCatatanToko, setLoadingCatatanToko] = useState(false);
+  const [savingCatatanToko, setSavingCatatanToko] = useState(false);
 
   // Senin di minggu berjalan (patokan laporan mingguan)
   function getSeninMingguIni() {
@@ -5288,6 +5308,43 @@ function KunjunganSalesPage({ token, profile }) {
     return kunjunganBulanIni.some((k) => k.client_id === clientId && new Date(k.created_at).toDateString() === todayStr);
   }
 
+  async function loadCatatanToko(clientId) {
+    setLoadingCatatanToko(true);
+    try {
+      const rows = await supabaseFetch(token, `catatan_toko_sales?select=*&client_id=eq.${clientId}&sales_id=eq.${profile.sales_id}&order=created_at.desc`);
+      setCatatanTokoIni(rows);
+    } catch (e) {
+      console.log("Gagal muat catatan toko:", e.message);
+    }
+    setLoadingCatatanToko(false);
+  }
+
+  async function simpanCatatanToko() {
+    if (!catatanBaruToko.trim()) return;
+    setSavingCatatanToko(true);
+    try {
+      const [inserted] = await supabaseFetch(token, "catatan_toko_sales", {
+        method: "POST",
+        body: JSON.stringify({ client_id: selectedClient.id, sales_id: profile.sales_id, catatan: catatanBaruToko.trim() }),
+      });
+      setCatatanTokoIni((prev) => [inserted, ...prev]);
+      setCatatanBaruToko("");
+    } catch (e) {
+      alert("Gagal simpan catatan: " + e.message);
+    }
+    setSavingCatatanToko(false);
+  }
+
+  async function hapusCatatanToko(id) {
+    if (!confirm("Hapus catatan ini?")) return;
+    try {
+      await supabaseFetch(token, `catatan_toko_sales?id=eq.${id}`, { method: "DELETE" });
+      setCatatanTokoIni((prev) => prev.filter((c) => c.id !== id));
+    } catch (e) {
+      alert("Gagal hapus: " + e.message);
+    }
+  }
+
   function mulaiCheckin(client) {
     if (sudahKunjunganHariIni(client.id)) {
       alert(`Anda sudah membuat laporan kunjungan untuk ${client.nama} hari ini. Silakan coba lagi besok.`);
@@ -5295,6 +5352,8 @@ function KunjunganSalesPage({ token, profile }) {
     }
     setSelectedClient(client);
     setMode("checkin");
+    setCheckinTab("foto");
+    loadCatatanToko(client.id);
     setLocationError("");
     setCoords(null);
     setGettingLocation(true);
@@ -5493,6 +5552,61 @@ function KunjunganSalesPage({ token, profile }) {
           <ChevronLeft size={16} /> Batal
         </button>
         <PageHeader title={`Kunjungi ${selectedClient.nama}`} subtitle={selectedClient.alamat || selectedClient.kode} />
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, maxWidth: 420 }}>
+          <button
+            onClick={() => setCheckinTab("foto")}
+            style={{ flex: 1, padding: "10px", borderRadius: 9, border: checkinTab === "foto" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: checkinTab === "foto" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+          >
+            Ambil Foto
+          </button>
+          <button
+            onClick={() => setCheckinTab("catatan")}
+            style={{ flex: 1, padding: "10px", borderRadius: 9, border: checkinTab === "catatan" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: checkinTab === "catatan" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+          >
+            Catatan Toko
+          </button>
+        </div>
+
+        {checkinTab === "catatan" ? (
+          <Card style={{ maxWidth: 420 }}>
+            <textarea
+              value={catatanBaruToko}
+              onChange={(e) => setCatatanBaruToko(e.target.value)}
+              placeholder="Tulis catatan baru tentang toko ini..."
+              rows={3}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, resize: "vertical", marginBottom: 10 }}
+            />
+            <button
+              onClick={simpanCatatanToko}
+              disabled={savingCatatanToko || !catatanBaruToko.trim()}
+              style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: (savingCatatanToko || !catatanBaruToko.trim()) ? "#E4E1DA" : "#E8A426", color: (savingCatatanToko || !catatanBaruToko.trim()) ? "#9CA0A6" : "#24272B", fontWeight: 700, fontSize: 13.5, marginBottom: 18 }}
+            >
+              {savingCatatanToko ? "Menyimpan..." : "Simpan Catatan"}
+            </button>
+
+            <p style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 10px" }}>Riwayat Catatan</p>
+            {loadingCatatanToko ? (
+              <p style={{ fontSize: 12.5, color: "#9CA0A6" }}>Memuat...</p>
+            ) : catatanTokoIni.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: "#9CA0A6" }}>Belum ada catatan untuk toko ini.</p>
+            ) : (
+              catatanTokoIni.map((c) => (
+                <div key={c.id} style={{ borderTop: "1px solid #EDEAE3", paddingTop: 10, marginTop: 10 }}>
+                  <p style={{ fontSize: 12.5, color: "#24272B", margin: "0 0 6px", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{c.catatan}</p>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: 0 }}>
+                      {new Date(c.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+                    </p>
+                    <button onClick={() => hapusCatatanToko(c.id)} style={{ background: "none", border: "none", color: "#C0392B", fontSize: 11, fontWeight: 600, padding: 0 }}>
+                      Hapus
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </Card>
+        ) : (
         <Card style={{ maxWidth: 420 }}>
           {gettingLocation ? (
             <div style={{ textAlign: "center", padding: "24px 0" }}>
@@ -5559,6 +5673,7 @@ function KunjunganSalesPage({ token, profile }) {
             )
           ) : null}
         </Card>
+        )}
       </div>
     );
   }
@@ -8233,7 +8348,7 @@ function VerifikasiSalesPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "sales?select=id,kode,nama,alamat,email,no_hp,foto_ktp_url,foto_npwp_url,foto_kk_url,status_verifikasi,alasan_verifikasi_ditolak&status_verifikasi=neq.belum_upload&order=nama.asc");
+      const rows = await supabaseFetch(token, "sales?select=id,kode,nama,alamat,kota,provinsi,kode_pos,email,no_hp,foto_ktp_url,foto_npwp_url,foto_kk_url,status_verifikasi,alasan_verifikasi_ditolak&status_verifikasi=neq.belum_upload&order=nama.asc");
       setSalesList(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -8361,7 +8476,9 @@ function VerifikasiSalesPage({ token }) {
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                   <span style={{ fontSize: 11, color: "#9CA0A6", flexShrink: 0 }}>Alamat</span>
-                  <span style={{ fontSize: 11.5, color: "#24272B", fontWeight: 600, textAlign: "right" }}>{s.alamat || "-"}</span>
+                  <span style={{ fontSize: 11.5, color: "#24272B", fontWeight: 600, textAlign: "right" }}>
+                    {[s.alamat, s.kota, s.provinsi, s.kode_pos].filter(Boolean).join(", ") || "-"}
+                  </span>
                 </div>
               </div>
 
