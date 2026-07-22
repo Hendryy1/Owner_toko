@@ -875,6 +875,7 @@ function OrdersPage({ token }) {
         <CekPesananModal
           order={checkingOrder}
           allOrders={orders}
+          token={token}
           onConfirm={(confirmation) => confirmStock(checkingOrder.id, confirmation)}
           onClose={() => setCheckingOrder(null)}
           processing={processingId === checkingOrder.id}
@@ -887,8 +888,21 @@ function OrdersPage({ token }) {
 // ============================================================
 // MODAL CEK PESANAN (konfirmasi stock sebelum approve/tolak)
 // ============================================================
-function CekPesananModal({ order, allOrders, onConfirm, onClose, processing }) {
+function CekPesananModal({ order, allOrders, token, onConfirm, onClose, processing }) {
   const items = order.order_items || [];
+  const [saldoToko, setSaldoToko] = useState(null);
+  const [loadingSaldo, setLoadingSaldo] = useState(true);
+
+  useEffect(() => {
+    if (order.metode_bayar !== "transfer") { setLoadingSaldo(false); return; }
+    supabaseFetch(token, `v_saldo_toko?select=saldo&client_id=eq.${order.client_id}`)
+      .then((rows) => setSaldoToko(Number(rows[0]?.saldo || 0)))
+      .catch(() => setSaldoToko(0))
+      .finally(() => setLoadingSaldo(false));
+  }, [order.id]);
+
+  const totalOrder = items.reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+  const saldoCukup = saldoToko !== null && saldoToko >= totalOrder;
 
   // Kalau pesanan ini COD, cek apakah toko yang sama masih punya pesanan COD
   // LAIN yang belum terselesaikan (belum lunas & belum selesai) - buat
@@ -919,11 +933,13 @@ function CekPesananModal({ order, allOrders, onConfirm, onClose, processing }) {
           </div>
         )}
 
-        {order.metode_bayar === "transfer" && order.status_bayar === "lunas" && (
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#D8E9E6", borderRadius: 10, padding: 12, marginBottom: 16 }}>
-            <Check size={16} color="#28685D" style={{ flexShrink: 0, marginTop: 1 }} />
-            <p style={{ fontSize: 12, color: "#28685D", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
-              Pesanan ini sudah dibayar (metode Transfer) - kemungkinan otomatis lunas dari saldo toko.
+        {order.metode_bayar === "transfer" && !loadingSaldo && saldoToko !== null && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: saldoCukup ? "#D8E9E6" : "#FFFBF0", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            {saldoCukup ? <Check size={16} color="#28685D" style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertCircle size={16} color="#8A6A1A" style={{ flexShrink: 0, marginTop: 1 }} />}
+            <p style={{ fontSize: 12, color: saldoCukup ? "#28685D" : "#8A6A1A", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+              {saldoCukup
+                ? `Saldo toko ini cukup (${rupiah(saldoToko)}) - pesanan akan otomatis lunas begitu di-approve.`
+                : `Saldo toko ini ${rupiah(saldoToko)}, belum cukup untuk melunasi total pesanan (${rupiah(totalOrder)}) secara penuh.`}
             </p>
           </div>
         )}
