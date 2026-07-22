@@ -204,6 +204,7 @@ export default function OwnerDashboard() {
         {page === "omzet_sales" && <OmzetSalesPage token={token} profile={profile} />}
         {page === "kunjungan_sales" && <KunjunganSalesPage token={token} profile={profile} />}
         {page === "absen_sales" && <AbsenSalesPage token={token} profile={profile} />}
+        {page === "catatan_toko_sales" && <CatatanTokoSalesPage token={token} profile={profile} />}
         {page === "rekap_absen" && <RekapAbsenPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
@@ -292,6 +293,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "omzet_sales", label: "Omzet Saya", icon: TrendingUp, roles: ["sales"] },
     { key: "kunjungan_sales", label: "Laporan Kunjungan", icon: MapPin, roles: ["sales"] },
     { key: "absen_sales", label: "Absen", icon: Clock, roles: ["sales"] },
+    { key: "catatan_toko_sales", label: "Catatan Toko", icon: FileEdit, roles: ["sales"] },
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan"] },
@@ -7709,6 +7711,156 @@ function RekapAbsenPage({ token }) {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// CATATAN TOKO (Sales) - buat catatan bebas per toko, ada riwayat
+// ============================================================
+function CatatanTokoSalesPage({ token, profile }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [clients, setClients] = useState([]);
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [catatanList, setCatatanList] = useState([]);
+  const [catatanBaru, setCatatanBaru] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [loadingCatatan, setLoadingCatatan] = useState(false);
+  const [search, setSearch] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&status=eq.aktif&order=nama.asc`);
+      setClients(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function bukaToko(client) {
+    setSelectedClient(client);
+    setLoadingCatatan(true);
+    try {
+      const rows = await supabaseFetch(token, `catatan_toko_sales?select=*&client_id=eq.${client.id}&sales_id=eq.${profile.sales_id}&order=created_at.desc`);
+      setCatatanList(rows);
+    } catch (e) {
+      alert("Gagal muat catatan: " + e.message);
+    }
+    setLoadingCatatan(false);
+  }
+
+  async function simpanCatatan() {
+    if (!catatanBaru.trim()) return;
+    setSaving(true);
+    try {
+      const [inserted] = await supabaseFetch(token, "catatan_toko_sales", {
+        method: "POST",
+        body: JSON.stringify({ client_id: selectedClient.id, sales_id: profile.sales_id, catatan: catatanBaru.trim() }),
+      });
+      setCatatanList((prev) => [inserted, ...prev]);
+      setCatatanBaru("");
+    } catch (e) {
+      alert("Gagal simpan catatan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function hapusCatatan(id) {
+    if (!confirm("Hapus catatan ini?")) return;
+    try {
+      await supabaseFetch(token, `catatan_toko_sales?id=eq.${id}`, { method: "DELETE" });
+      setCatatanList((prev) => prev.filter((c) => c.id !== id));
+    } catch (e) {
+      alert("Gagal hapus: " + e.message);
+    }
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  // ---------- HALAMAN DETAIL CATATAN 1 TOKO ----------
+  if (selectedClient) {
+    return (
+      <div>
+        <button onClick={() => { setSelectedClient(null); setCatatanBaru(""); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+          <ChevronLeft size={16} /> Kembali
+        </button>
+        <PageHeader title={selectedClient.nama} subtitle={`Kode: ${selectedClient.kode}`} />
+
+        <Card style={{ marginBottom: 20 }}>
+          <textarea
+            value={catatanBaru}
+            onChange={(e) => setCatatanBaru(e.target.value)}
+            placeholder="Tulis catatan baru tentang toko ini..."
+            rows={3}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, resize: "vertical", marginBottom: 10 }}
+          />
+          <button
+            onClick={simpanCatatan}
+            disabled={saving || !catatanBaru.trim()}
+            style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: (saving || !catatanBaru.trim()) ? "#E4E1DA" : "#E8A426", color: (saving || !catatanBaru.trim()) ? "#9CA0A6" : "#24272B", fontWeight: 700, fontSize: 13.5 }}
+          >
+            {saving ? "Menyimpan..." : "Simpan Catatan"}
+          </button>
+        </Card>
+
+        <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Riwayat Catatan</h2>
+        {loadingCatatan ? (
+          <LoadingState />
+        ) : catatanList.length === 0 ? (
+          <EmptyState text="Belum ada catatan untuk toko ini." />
+        ) : (
+          catatanList.map((c) => (
+            <Card key={c.id} style={{ marginBottom: 10, padding: 14 }}>
+              <p style={{ fontSize: 13, color: "#24272B", margin: "0 0 8px", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{c.catatan}</p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>
+                  {new Date(c.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+                </p>
+                <button onClick={() => hapusCatatan(c.id)} style={{ background: "none", border: "none", color: "#C0392B", fontSize: 11.5, fontWeight: 600, padding: 0 }}>
+                  Hapus
+                </button>
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
+    );
+  }
+
+  // ---------- DAFTAR TOKO ----------
+  const filteredClients = clients.filter((c) =>
+    c.nama.toLowerCase().includes(search.toLowerCase()) || c.kode.toLowerCase().includes(search.toLowerCase())
+  );
+
+  return (
+    <div>
+      <PageHeader title="Catatan Toko" subtitle="Pilih toko untuk lihat/tulis catatan" />
+      <input
+        value={search} onChange={(e) => setSearch(e.target.value)}
+        placeholder="Cari nama/kode toko..."
+        style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1.5px solid #E4E1DA", fontSize: 13.5, marginBottom: 16 }}
+      />
+      {filteredClients.length === 0 ? (
+        <EmptyState text="Tidak ada toko yang cocok." />
+      ) : (
+        filteredClients.map((c) => (
+          <div key={c.id} onClick={() => bukaToko(c)} style={{ cursor: "pointer" }}>
+            <Card style={{ marginBottom: 10, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.nama}</p>
+                  <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{c.kode}</p>
+                </div>
+                <ChevronRight size={17} color="#B5B2AA" />
+              </div>
+            </Card>
+          </div>
+        ))
       )}
     </div>
   );
