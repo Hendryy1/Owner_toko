@@ -2971,7 +2971,7 @@ function ProsesPengirimanPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat),order_items(qty,products(kode,nama))&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,kota),order_items(qty,products(kode,nama))&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc");
       setOrders(rows);
 
       // Cek toko mana saja yang PUNYA titik GPS tersimpan dari kunjungan
@@ -3146,6 +3146,7 @@ function ProsesPengirimanPage({ token }) {
           const hasBarangSampai = !!o.bukti_barang_sampai_url;
           const hasNotaTtd = !!o.bukti_nota_ttd_url;
           const codDocsLengkap = hasBarangSampai && hasNotaTtd;
+          const isPekanbaru = !!(o.clients?.kota && o.clients.kota.trim().toLowerCase() === "pekanbaru");
           return (
             <Card key={o.id} style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
@@ -3165,20 +3166,22 @@ function ProsesPengirimanPage({ token }) {
                   )}
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <button
-                    onClick={() => bukaRute(o)}
-                    disabled={loadingRuteId === o.id || !clientIdsWithGps.has(o.client_id)}
-                    title={!clientIdsWithGps.has(o.client_id) ? "Belum ada titik GPS dari kunjungan sales untuk toko ini" : ""}
-                    style={{
-                      display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9,
-                      border: clientIdsWithGps.has(o.client_id) ? "1px solid #E4E1DA" : "1px solid #EDEAE3",
-                      background: clientIdsWithGps.has(o.client_id) ? "#fff" : "#F7F5F1",
-                      color: clientIdsWithGps.has(o.client_id) ? "#24272B" : "#B5B2AA",
-                      fontSize: 12, fontWeight: 700,
-                    }}
-                  >
-                    <Navigation size={14} /> {loadingRuteId === o.id ? "Mencari lokasi..." : "Rute"}
-                  </button>
+                  {isPekanbaru && (
+                    <button
+                      onClick={() => bukaRute(o)}
+                      disabled={loadingRuteId === o.id || !clientIdsWithGps.has(o.client_id)}
+                      title={!clientIdsWithGps.has(o.client_id) ? "Belum ada titik GPS dari kunjungan sales untuk toko ini" : ""}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9,
+                        border: clientIdsWithGps.has(o.client_id) ? "1px solid #E4E1DA" : "1px solid #EDEAE3",
+                        background: clientIdsWithGps.has(o.client_id) ? "#fff" : "#F7F5F1",
+                        color: clientIdsWithGps.has(o.client_id) ? "#24272B" : "#B5B2AA",
+                        fontSize: 12, fontWeight: 700,
+                      }}
+                    >
+                      <Navigation size={14} /> {loadingRuteId === o.id ? "Mencari lokasi..." : "Rute"}
+                    </button>
+                  )}
                   {!isDikirim ? (
                     <>
                       {hasProofKirim ? (
