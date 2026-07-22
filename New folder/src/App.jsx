@@ -452,6 +452,50 @@ function BarcodeLabel({ value, width = 2, height = 60 }) {
   return <svg ref={svgRef} />;
 }
 
+// ============================================================
+// QR CODE LABEL - render QR Code pakai library qrcodejs (dari CDN)
+// ============================================================
+let qrCodeJsLoadPromise = null;
+function loadQrCodeJs() {
+  if (window.QRCode) return Promise.resolve();
+  if (qrCodeJsLoadPromise) return qrCodeJsLoadPromise;
+  qrCodeJsLoadPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+  return qrCodeJsLoadPromise;
+}
+
+function QRCodeLabel({ value, size = 160 }) {
+  const containerRef = useRef(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadQrCodeJs().then(() => { if (!cancelled) setReady(true); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (ready && containerRef.current && value) {
+      containerRef.current.innerHTML = ""; // bersihkan dulu kalau render ulang
+      try {
+        new window.QRCode(containerRef.current, { text: value, width: size, height: size });
+      } catch (e) { /* abaikan kalau gagal generate */ }
+    }
+  }, [ready, value, size]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+      <div ref={containerRef} />
+      <p style={{ fontSize: 12, fontWeight: 700, color: "#24272B", marginTop: 6, fontFamily: "monospace" }}>{value}</p>
+    </div>
+  );
+}
+
 function Card({ children, style }) {
   return <div style={{ background: "#fff", border: "1px solid #EDEAE3", borderRadius: 14, padding: 18, ...style }}>{children}</div>;
 }
@@ -2843,7 +2887,7 @@ function SiapDikirimPage({ token, role }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp),order_items(qty,products(kode,nama))&status=eq.menunggu_pengiriman&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,kota),order_items(qty,products(kode,nama))&status=eq.menunggu_pengiriman&order=created_at.asc");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -2952,6 +2996,7 @@ function SiapDikirimPage({ token, role }) {
         const jumlahBarang = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
         const teleponPenerima = o.tujuan_telp || o.clients?.telp;
         const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
+        const isPekanbaru = !!(o.clients?.kota && o.clients.kota.trim().toLowerCase() === "pekanbaru");
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
             <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
@@ -2961,7 +3006,7 @@ function SiapDikirimPage({ token, role }) {
                 <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
                 <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
                 <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
-                  <BarcodeLabel value={o.no_nota} />
+                  {isPekanbaru ? <QRCodeLabel value={o.no_nota} /> : <BarcodeLabel value={o.no_nota} />}
                 </div>
 
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, textAlign: "left" }}>
@@ -6879,7 +6924,7 @@ function OutboundPage({ token }) {
           html5QrRef.current = html5Qr;
           await html5Qr.start(
             { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 260, height: 140 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39] },
+            { fps: 10, qrbox: { width: 260, height: 140 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
             (decodedText) => {
               setInputScan(decodedText);
               cariPesanan(decodedText);
