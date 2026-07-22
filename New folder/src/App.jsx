@@ -2526,17 +2526,18 @@ function KonfirmasiPembayaranPage({ token }) {
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
   const [processingId, setProcessingId] = useState(null);
+  const [reviewingCod, setReviewingCod] = useState(null); // order id yang lagi direview
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      // Ambil order yang PERNAH masuk tahap ini: masih menunggu_pembayaran ATAU
-      // status_bayar sudah lunas (walau sekarang sudah lanjut ke tahap manapun) -
-      // supaya ada riwayat permanen, tidak hilang begitu pindah tahap berikutnya.
-      // Order COD DIKECUALIKAN total - pembayarannya dikonfirmasi lewat menu
-      // Proses Pengiriman (saat barang sampai), bukan di sini.
-      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,bukti_transfer_url,clients(nama,kode,jenis_pembayaran),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&metode_bayar=neq.cod&order=created_at.desc&limit=200");
+      // 3 kelompok order yang perlu tampil di sini:
+      // 1. Transfer - masih menunggu_pembayaran (perlu konfirmasi bukti transfer)
+      // 2. Transfer/COD - status_bayar sudah lunas (riwayat)
+      // 3. COD - sudah dikonfirmasi kurir (status_bayar lunas, tapi status masih
+      //    proses_dikirim) - perlu DIREVIEW Owner dulu sebelum benar-benar selesai
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -2558,11 +2559,25 @@ function KonfirmasiPembayaranPage({ token }) {
     setProcessingId(null);
   }
 
+  async function selesaikanPesananCod(orderId) {
+    setProcessingId(orderId);
+    try {
+      await supabaseFetch(token, `orders?id=eq.${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "selesai" }),
+      });
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: "selesai" } : o)));
+      setReviewingCod(null);
+    } catch (e) { alert("Gagal update: " + e.message); }
+    setProcessingId(null);
+  }
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
-  const menunggu = orders.filter((o) => o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas");
-  const riwayat = orders.filter((o) => o.status_bayar === "lunas");
+  const menunggu = orders.filter((o) => o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas" && o.metode_bayar !== "cod");
+  const perluReviewCod = orders.filter((o) => o.metode_bayar === "cod" && o.status_bayar === "lunas" && o.status !== "selesai");
+  const riwayat = orders.filter((o) => o.status_bayar === "lunas" && !(o.metode_bayar === "cod" && o.status !== "selesai"));
 
   function renderCard(o) {
     const isLunas = o.status_bayar === "lunas";
@@ -2611,12 +2626,93 @@ function KonfirmasiPembayaranPage({ token }) {
         menunggu.map(renderCard)
       )}
 
+      {perluReviewCod.length > 0 && (
+        <>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Perlu Review - Pesanan COD</h2>
+          {perluReviewCod.map((o) => {
+            const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+            return (
+              <Card key={o.id} style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
+                      {o.no_nota}
+                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                    </p>
+                    <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                    <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "4px 0 0" }}>{rupiah(total)}</p>
+                  </div>
+                  <button
+                    onClick={() => setReviewingCod(o.id)}
+                    style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                  >
+                    Review Pesanan
+                  </button>
+                </div>
+              </Card>
+            );
+          })}
+        </>
+      )}
+
       <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Riwayat</h2>
       {riwayat.length === 0 ? (
         <EmptyState text="Belum ada riwayat pembayaran yang dikonfirmasi." />
       ) : (
         riwayat.map(renderCard)
       )}
+
+      {/* MODAL REVIEW PESANAN COD - lihat nota + semua bukti sebelum selesaikan */}
+      {reviewingCod && (() => {
+        const o = orders.find((x) => x.id === reviewingCod);
+        if (!o) return null;
+        const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+        const dokumen = [
+          { label: "Bukti Pengiriman", url: o.bukti_pengiriman_url },
+          { label: "Bukti Barang Sampai", url: o.bukti_barang_sampai_url },
+          { label: "Nota TTD Penerima", url: o.bukti_nota_ttd_url },
+          { label: "Bukti Nota COD", url: o.bukti_nota_cod_url },
+          { label: "Bukti Cash COD", url: o.bukti_cash_cod_url },
+        ];
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 520, maxHeight: "88vh", overflowY: "auto", padding: 26 }}>
+              <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Review Pesanan COD</h2>
+              <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 4px" }}>{o.no_nota} · {o.clients?.nama} ({o.clients?.kode})</p>
+              <p className="disp" style={{ fontSize: 20, fontWeight: 700, color: "#24272B", margin: "0 0 20px" }}>{rupiah(total)}</p>
+
+              <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 10px" }}>Dokumen & Bukti</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 22 }}>
+                {dokumen.map((d) => (
+                  <div key={d.label}>
+                    <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>{d.label}</p>
+                    {d.url ? (
+                      <a href={d.url} target="_blank" rel="noopener noreferrer">
+                        <img src={d.url} alt={d.label} style={{ width: "100%", height: 110, objectFit: "cover", borderRadius: 8, border: "1px solid #EDEAE3" }} />
+                      </a>
+                    ) : (
+                      <div style={{ width: "100%", height: 110, borderRadius: 8, background: "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#9CA0A6" }}>Tidak ada</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setReviewingCod(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                  Tutup
+                </button>
+                <button
+                  onClick={() => selesaikanPesananCod(o.id)}
+                  disabled={processingId === o.id}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: processingId === o.id ? "#E4E1DA" : "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+                >
+                  {processingId === o.id ? "Menyimpan..." : "Selesaikan Pesanan"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -2681,14 +2777,17 @@ function ProsesPengirimanPage({ token }) {
     }
     setConfirmingCodId(order.id);
     try {
+      // Cuma tandai LUNAS di sini - status order TETAP proses_dikirim,
+      // supaya Owner masih bisa REVIEW dulu di menu Konfirmasi Pembayaran
+      // (lihat nota + semua bukti) sebelum benar-benar diselesaikan.
       await supabaseFetch(token, `orders?id=eq.${order.id}`, {
         method: "PATCH",
         body: JSON.stringify({
           bukti_nota_cod_url: buktiNotaCod, bukti_cash_cod_url: buktiCashCod,
-          status_bayar: "lunas", status: "selesai",
+          status_bayar: "lunas",
         }),
       });
-      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, bukti_nota_cod_url: buktiNotaCod, bukti_cash_cod_url: buktiCashCod, status_bayar: "lunas" } : o)));
       setShowKonfirmasiCod(null);
       setBuktiNotaCod(null);
       setBuktiCashCod(null);
@@ -2833,12 +2932,18 @@ function ProsesPengirimanPage({ token }) {
                             </a>
                           )}
                           {codDocsLengkap && (
-                            <button
-                              onClick={() => setShowKonfirmasiCod(o.id)}
-                              style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
-                            >
-                              Konfirmasi Pembayaran COD
-                            </button>
+                            o.status_bayar === "lunas" ? (
+                              <span style={{ padding: "8px 14px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
+                                Menunggu Review Owner
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => setShowKonfirmasiCod(o.id)}
+                                style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                              >
+                                Konfirmasi Pembayaran COD
+                              </button>
+                            )
                           )}
                         </>
                       ) : (
