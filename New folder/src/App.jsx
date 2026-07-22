@@ -2891,9 +2891,9 @@ function SiapDikirimPage({ token }) {
           <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
             <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
               <div id="area-cetak-barcode" style={{ textAlign: "center", padding: "10px 0" }}>
-                <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.clients?.nama}</p>
-                <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>{teleponPenerima || "-"}</p>
-                <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px", padding: "0 10px" }}>{alamatPenerima || "-"}</p>
+                <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Penerima: {o.clients?.nama}</p>
+                <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>No HP: {teleponPenerima || "-"}</p>
+                <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
                 <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
                 <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
                   <BarcodeLabel value={o.no_nota} />
