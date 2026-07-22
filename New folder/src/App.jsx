@@ -224,6 +224,8 @@ export default function OwnerDashboard() {
         {page === "kunjungan_sales" && <KunjunganSalesPage token={token} profile={profile} />}
         {page === "absen_sales" && <AbsenSalesPage token={token} profile={profile} />}
         {page === "catatan_toko_sales" && <CatatanTokoSalesPage token={token} profile={profile} />}
+        {page === "area_sales" && <AreaSalesPage token={token} profile={profile} />}
+        {page === "request_area" && <RequestAreaOwnerPage token={token} />}
         {page === "rekap_absen" && <RekapAbsenPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
@@ -317,6 +319,8 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "kunjungan_sales", label: "Laporan Kunjungan", icon: MapPin, roles: ["sales"] },
     { key: "absen_sales", label: "Absen", icon: Clock, roles: ["sales"] },
     { key: "catatan_toko_sales", label: "Catatan Toko", icon: FileEdit, roles: ["sales"] },
+    { key: "area_sales", label: "Area", icon: MapPin, roles: ["sales"] },
+    { key: "request_area", label: "Request Area Sales", icon: MapPin, roles: ["owner"] },
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan"] },
@@ -8372,6 +8376,253 @@ function LaporanKunjunganOwnerPage({ token }) {
             <X size={20} />
           </button>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// AREA (Sales) - request perluasan daerah ke Owner
+// ============================================================
+function AreaSalesPage({ token, profile }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [riwayat, setRiwayat] = useState([]);
+  const [showForm, setShowForm] = useState(false);
+  const [areaDiminta, setAreaDiminta] = useState("");
+  const [alasan, setAlasan] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, `request_area_sales?select=*&sales_id=eq.${profile.sales_id}&order=created_at.desc`);
+      setRiwayat(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function kirimRequest() {
+    if (!areaDiminta.trim()) {
+      alert("Isi dulu area yang ingin diminta.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const [inserted] = await supabaseFetch(token, "request_area_sales", {
+        method: "POST",
+        body: JSON.stringify({ sales_id: profile.sales_id, area_diminta: areaDiminta.trim(), alasan: alasan.trim() || null }),
+      });
+      setRiwayat((prev) => [inserted, ...prev]);
+      setShowForm(false);
+      setAreaDiminta("");
+      setAlasan("");
+    } catch (e) {
+      alert("Gagal kirim request: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const statusBadge = {
+    menunggu: { text: "Menunggu Review", bg: "#FBF0D9", color: "#8A6A1A" },
+    disetujui: { text: "Disetujui", bg: "#D8E9E6", color: "#28685D" },
+    ditolak: { text: "Ditolak", bg: "#FBEAEA", color: "#C0392B" },
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+        <PageHeader title="Area" subtitle="Request perluasan area kerja ke Owner" />
+        <button
+          onClick={() => setShowForm(true)}
+          style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13, flexShrink: 0, marginTop: 4 }}
+        >
+          + Request Area
+        </button>
+      </div>
+
+      {riwayat.length === 0 ? (
+        <EmptyState text="Belum ada request area yang diajukan." />
+      ) : (
+        riwayat.map((r) => {
+          const badge = statusBadge[r.status];
+          return (
+            <Card key={r.id} style={{ marginBottom: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                <p style={{ fontSize: 14.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{r.area_diminta}</p>
+                <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color, flexShrink: 0 }}>{badge.text}</span>
+              </div>
+              {r.alasan && <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 8px", lineHeight: 1.5 }}>{r.alasan}</p>}
+              {r.catatan_owner && (
+                <div style={{ background: "#F7F5F1", borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                  <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 3px", fontWeight: 700 }}>CATATAN OWNER</p>
+                  <p style={{ fontSize: 12, color: "#24272B", margin: 0 }}>{r.catatan_owner}</p>
+                </div>
+              )}
+              <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>
+                {new Date(r.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+              </p>
+            </Card>
+          );
+        })
+      )}
+
+      {showForm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 420, padding: 24 }}>
+            <h2 className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 16px" }}>Request Perluasan Area</h2>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Area yang Diminta</label>
+              <input
+                value={areaDiminta} onChange={(e) => setAreaDiminta(e.target.value)}
+                placeholder="Contoh: Kecamatan Marpoyan Damai, Pekanbaru"
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5 }}
+              />
+            </div>
+            <div style={{ marginBottom: 18 }}>
+              <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Alasan (opsional)</label>
+              <textarea
+                value={alasan} onChange={(e) => setAlasan(e.target.value)}
+                placeholder="Kenapa ingin memperluas ke area ini..."
+                rows={3}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, resize: "vertical" }}
+              />
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => { setShowForm(false); setAreaDiminta(""); setAlasan(""); }} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                Batal
+              </button>
+              <button onClick={kirimRequest} disabled={saving} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: saving ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+                {saving ? "Mengirim..." : "Kirim Request"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// REQUEST AREA SALES (Owner) - review request perluasan area
+// ============================================================
+function RequestAreaOwnerPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [requestList, setRequestList] = useState([]);
+  const [filter, setFilter] = useState("menunggu");
+  const [processingId, setProcessingId] = useState(null);
+  const [catatanMap, setCatatanMap] = useState({}); // { requestId: teks catatan }
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "request_area_sales?select=*,sales(nama,kode)&order=created_at.desc");
+      setRequestList(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function proses(id, status) {
+    setProcessingId(id);
+    try {
+      await supabaseFetch(token, `request_area_sales?id=eq.${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status, catatan_owner: catatanMap[id] || null, diproses_at: new Date().toISOString() }),
+      });
+      setRequestList((prev) => prev.map((r) => (r.id === id ? { ...r, status, catatan_owner: catatanMap[id] || null } : r)));
+    } catch (e) {
+      alert("Gagal proses: " + e.message);
+    }
+    setProcessingId(null);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const filtered = requestList.filter((r) => filter === "semua" || r.status === filter);
+  const statusBadge = {
+    menunggu: { text: "Menunggu Review", bg: "#FBF0D9", color: "#8A6A1A" },
+    disetujui: { text: "Disetujui", bg: "#D8E9E6", color: "#28685D" },
+    ditolak: { text: "Ditolak", bg: "#FBEAEA", color: "#C0392B" },
+  };
+
+  return (
+    <div>
+      <PageHeader title="Request Area Sales" subtitle="Review permintaan perluasan area kerja sales" />
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {[
+          { key: "menunggu", label: "Menunggu Review" },
+          { key: "disetujui", label: "Disetujui" },
+          { key: "ditolak", label: "Ditolak" },
+          { key: "semua", label: "Semua" },
+        ].map((f) => (
+          <button
+            key={f.key}
+            onClick={() => setFilter(f.key)}
+            style={{ padding: "8px 16px", borderRadius: 9, border: filter === f.key ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: filter === f.key ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState text="Tidak ada request di kategori ini." />
+      ) : (
+        filtered.map((r) => {
+          const badge = statusBadge[r.status];
+          return (
+            <Card key={r.id} style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                <div>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{r.area_diminta}</p>
+                  <p style={{ fontSize: 12, color: "#8A6A1A", fontWeight: 600, margin: 0 }}>{r.sales?.nama} ({r.sales?.kode})</p>
+                </div>
+                <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color, flexShrink: 0 }}>{badge.text}</span>
+              </div>
+              {r.alasan && <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 10px", lineHeight: 1.5 }}>{r.alasan}</p>}
+              <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 12px" }}>
+                {new Date(r.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+              </p>
+
+              {r.status === "menunggu" ? (
+                <div>
+                  <textarea
+                    value={catatanMap[r.id] || ""}
+                    onChange={(e) => setCatatanMap((prev) => ({ ...prev, [r.id]: e.target.value }))}
+                    placeholder="Catatan untuk sales (opsional)..."
+                    rows={2}
+                    style={{ width: "100%", padding: 9, borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5, marginBottom: 8, resize: "vertical" }}
+                  />
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button onClick={() => proses(r.id, "disetujui")} disabled={processingId === r.id} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", background: "#28685D", color: "#fff", fontSize: 12.5, fontWeight: 700 }}>
+                      Setujui
+                    </button>
+                    <button onClick={() => proses(r.id, "ditolak")} disabled={processingId === r.id} style={{ flex: 1, padding: 10, borderRadius: 9, border: "1.5px solid #C0392B", background: "#fff", color: "#C0392B", fontSize: 12.5, fontWeight: 700 }}>
+                      Tolak
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                r.catatan_owner && (
+                  <div style={{ background: "#F7F5F1", borderRadius: 8, padding: 10 }}>
+                    <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 3px", fontWeight: 700 }}>CATATAN ANDA</p>
+                    <p style={{ fontSize: 12, color: "#24272B", margin: 0 }}>{r.catatan_owner}</p>
+                  </div>
+                )
+              )}
+            </Card>
+          );
+        })
       )}
     </div>
   );
