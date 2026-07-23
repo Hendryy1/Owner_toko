@@ -3302,7 +3302,7 @@ function SiapDikirimPage({ token, role }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,kota),order_items(*,products(kode,nama,satuan))&status=eq.menunggu_pengiriman&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,kota,jenis_pembayaran),order_items(*,products(kode,nama,satuan))&status=eq.menunggu_pengiriman&order=created_at.asc");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
