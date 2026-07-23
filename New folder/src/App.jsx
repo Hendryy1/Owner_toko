@@ -3501,7 +3501,7 @@ function SiapDikirimPage({ token, role }) {
     <div>
       <PageHeader title="Siap Dikirim" subtitle={`${orders.length} pesanan siap dikirim - cetak barcode untuk masing-masing`} />
 
-      {orders.length > 0 && role !== "kurir" && (
+      {orders.length > 0 && role !== "kurir" && role !== "staff_gudang" && (
         <Card style={{ marginBottom: 16, padding: 14 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#24272B", cursor: "pointer" }}>
@@ -3557,7 +3557,7 @@ function SiapDikirimPage({ token, role }) {
             <Card key={o.id} style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  {role !== "kurir" && (
+                  {role !== "kurir" && role !== "staff_gudang" && (
                     <input
                       type="checkbox" checked={selectedIds.has(o.id)} onChange={() => toggleSelect(o.id)}
                       style={{ width: 16, height: 16, marginTop: 4 }}
@@ -3574,7 +3574,7 @@ function SiapDikirimPage({ token, role }) {
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  {role !== "kurir" && (
+                  {role !== "kurir" && role !== "staff_gudang" && (
                     <>
                       <button
                         onClick={() => { setPrintingOrder(o); setPrintingType("nota"); }}
