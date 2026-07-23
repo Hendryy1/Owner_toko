@@ -3614,6 +3614,7 @@ function TransaksiPage({ token }) {
 function CashbackPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [rules, setRules] = useState([]);
+  const [riwayatCashback, setRiwayatCashback] = useState([]);
   const [products, setProducts] = useState([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -3640,12 +3641,14 @@ function CashbackPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const [ruleRows, productRows] = await Promise.all([
+      const [ruleRows, productRows, riwayatRows] = await Promise.all([
         supabaseFetch(token, "cashback_rules?select=*,products(kode,nama,satuan)&order=created_at.desc"),
         supabaseFetch(token, "products?select=id,kode,nama,satuan,isi_per_koli,diskon_koli_pct&aktif=eq.true&order=kode.asc"),
+        supabaseFetch(token, "cashback_ledger?select=*,orders(no_nota),clients(nama,alamat)&order=created_at.desc&limit=200"),
       ]);
       setRules(ruleRows);
       setProducts(productRows);
+      setRiwayatCashback(riwayatRows);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -3897,6 +3900,38 @@ function CashbackPage({ token }) {
           </tbody>
         </table>
         {rules.length === 0 && <EmptyState text="Belum ada aturan cashback." />}
+      </Card>
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Riwayat Cashback</h2>
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["No. Pesanan", "Toko", "Alamat", "Cashback", "Status", "Tanggal"].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {riwayatCashback.map((r) => (
+              <tr key={r.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{r.orders?.no_nota || "-"}</td>
+                <td style={{ padding: "12px 14px" }}>{r.clients?.nama || "-"}</td>
+                <td style={{ padding: "12px 14px", color: "#6B6F75", fontSize: 12 }}>{r.clients?.alamat || "-"}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 700, color: "#28685D" }}>{rupiah(r.nilai_cashback)}</td>
+                <td style={{ padding: "12px 14px" }}>
+                  <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: r.status === "sudah_dibayar" ? "#D8E9E6" : "#FBF0D9", color: r.status === "sudah_dibayar" ? "#28685D" : "#8A6A1A" }}>
+                    {r.status === "sudah_dibayar" ? "Sudah Dibayar" : "Menunggu"}
+                  </span>
+                </td>
+                <td style={{ padding: "12px 14px", color: "#9CA0A6", fontSize: 11.5 }}>
+                  {new Date(r.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {riwayatCashback.length === 0 && <EmptyState text="Belum ada riwayat cashback." />}
       </Card>
 
       {/* ============ DISKON TAMBAHAN PER BARANG ============ */}
