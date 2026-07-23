@@ -3520,6 +3520,14 @@ function SiapDikirimPage({ token, role }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
+  // Order yang kena "Keterlambatan Pengemasan" otomatis naik ke paling atas
+  const ordersUrut = [...orders].sort((a, b) => {
+    const aTerlambat = cekTerlambatPengemasan(a);
+    const bTerlambat = cekTerlambatPengemasan(b);
+    if (aTerlambat === bTerlambat) return 0;
+    return aTerlambat ? -1 : 1;
+  });
+
   return (
     <div>
       <PageHeader title="Siap Dikirim" subtitle={`${orders.length} pesanan siap dikirim - cetak barcode untuk masing-masing`} />
@@ -3570,7 +3578,7 @@ function SiapDikirimPage({ token, role }) {
       {orders.length === 0 ? (
         <EmptyState text="Tidak ada pesanan yang siap dikirim saat ini." />
       ) : (
-        orders.map((o) => {
+        ordersUrut.map((o) => {
           const isCod = o.metode_bayar === "cod";
           const sudahDicetak = !!o.barcode_dicetak_at;
           const hasProofKirim = !!o.bukti_pengiriman_url;
