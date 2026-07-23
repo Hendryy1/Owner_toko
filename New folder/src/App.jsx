@@ -1019,17 +1019,6 @@ function CekPesananModal({ order, allOrders, token, onConfirm, onClose, processi
           </div>
         )}
 
-        {order.metode_bayar === "transfer" && !loadingSaldo && saldoToko !== null && (
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: saldoCukup ? "#D8E9E6" : "#FFFBF0", borderRadius: 10, padding: 12, marginBottom: 16 }}>
-            {saldoCukup ? <Check size={16} color="#28685D" style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertCircle size={16} color="#8A6A1A" style={{ flexShrink: 0, marginTop: 1 }} />}
-            <p style={{ fontSize: 12, color: saldoCukup ? "#28685D" : "#8A6A1A", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
-              {saldoCukup
-                ? `Saldo toko ini cukup (${rupiah(saldoToko)}) - pesanan akan otomatis lunas begitu di-approve.`
-                : `Saldo toko ini ${rupiah(saldoToko)}, belum cukup untuk melunasi total pesanan (${rupiah(totalOrder)}) secara penuh.`}
-            </p>
-          </div>
-        )}
-
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, marginBottom: 20 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
@@ -3045,7 +3034,10 @@ function SiapDikirimPage({ token, role }) {
           <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
             <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
               <div id="area-cetak-barcode" style={{ textAlign: "center", padding: "10px 0" }}>
-                <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Penerima: {o.clients?.nama}</p>
+                {o.is_dropship && (
+                  <p style={{ fontSize: 12.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700 }}>Pengirim: {o.nama_pengirim_dropship || o.clients?.nama}</p>
+                )}
+                <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Penerima: {o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama}</p>
                 <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>No HP: {teleponPenerima || "-"}</p>
                 <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
                 <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
