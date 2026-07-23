@@ -538,6 +538,87 @@ function QRCodeLabel({ value, size = 160 }) {
   );
 }
 
+// ============================================================
+// KONTEN LABEL BARCODE - dipakai untuk cetak satuan maupun massal
+// ============================================================
+function BarcodeLabelContent({ order: o }) {
+  const jumlahBarang = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
+  const teleponPenerima = o.tujuan_telp || o.clients?.telp;
+  const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
+  const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+  const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+  return (
+    <div className="barcode-label-content" style={{ textAlign: "center", padding: "10px 0" }}>
+      {o.is_dropship && (
+        <p style={{ fontSize: 12.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700 }}>Pengirim: {o.nama_pengirim_dropship || o.clients?.nama}</p>
+      )}
+      <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Penerima: {o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama}</p>
+      <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>No HP: {teleponPenerima || "-"}</p>
+      <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
+      <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
+        {isPekanbaru ? <QRCodeLabel value={o.no_nota} /> : <BarcodeLabel value={o.no_nota} />}
+      </div>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, textAlign: "left" }}>
+        <thead>
+          <tr style={{ borderBottom: "1.5px solid #24272B" }}>
+            <th style={{ padding: "4px 4px", fontWeight: 700 }}>Kode</th>
+            <th style={{ padding: "4px 4px", fontWeight: 700 }}>Nama Barang</th>
+            <th style={{ padding: "4px 4px", fontWeight: 700, textAlign: "right" }}>Pcs</th>
+          </tr>
+        </thead>
+        <tbody>
+          {(o.order_items || []).map((it, i) => (
+            <tr key={i} style={{ borderBottom: "1px solid #EDEAE3" }}>
+              <td style={{ padding: "4px 4px", color: "#6B6F75" }}>{it.products?.kode || "-"}</td>
+              <td style={{ padding: "4px 4px", color: "#24272B" }}>{it.products?.nama || "-"}</td>
+              <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700, textAlign: "right" }}>{it.qty}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// ============================================================
+// MODAL CETAK BARCODE MASSAL - beberapa label sekaligus, halaman terpisah
+// ============================================================
+function BulkBarcodeModal({ orders, onClose, onSelesaiCetak }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          .barcode-label-content, .barcode-label-content * { visibility: visible; }
+          .barcode-bulk-item { page-break-after: always; }
+          .no-print { display: none !important; }
+        }
+      `}</style>
+      <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
+        <p className="no-print" style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 14px" }}>{orders.length} label siap dicetak - klik Print untuk cetak semua sekaligus.</p>
+        {orders.map((o) => (
+          <div key={o.id} className="barcode-bulk-item" style={{ borderTop: "1px dashed #E4E1DA", paddingTop: 12, marginTop: 12 }}>
+            <BarcodeLabelContent order={o} />
+          </div>
+        ))}
+        <div className="no-print" style={{ display: "flex", gap: 10, marginTop: 10 }}>
+          <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+            Tutup
+          </button>
+          <button
+            onClick={onSelesaiCetak}
+            style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          >
+            <Printer size={15} /> Print Semua ({orders.length})
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Card({ children, style }) {
   return <div style={{ background: "#fff", border: "1px solid #EDEAE3", borderRadius: 14, padding: 18, ...style }}>{children}</div>;
 }
@@ -3012,6 +3093,7 @@ function SiapDikirimPage({ token, role }) {
   const [printingType, setPrintingType] = useState("nota"); // "nota" | "surat_jalan"
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkPrint, setBulkPrint] = useState(null); // { orders, type } | null
+  const [bulkBarcode, setBulkBarcode] = useState(null); // array order | null
 
   function toggleSelect(id) {
     setSelectedIds((prev) => {
@@ -3094,6 +3176,20 @@ function SiapDikirimPage({ token, role }) {
     await tandaiSudahDicetak(orderId);
   }
 
+  async function handleCetakMassalBarcode() {
+    window.print();
+    setMarkingPrinted(true);
+    try {
+      const now = new Date().toISOString();
+      const ids = bulkBarcode.map((o) => o.id);
+      await supabaseFetch(token, `orders?id=in.(${ids.join(",")})`, { method: "PATCH", body: JSON.stringify({ barcode_dicetak_at: now }) });
+      setOrders((prev) => prev.map((o) => (ids.includes(o.id) ? { ...o, barcode_dicetak_at: now } : o)));
+    } catch (e) {
+      alert("Gagal tandai sudah dicetak: " + e.message);
+    }
+    setMarkingPrinted(false);
+  }
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
@@ -3109,6 +3205,17 @@ function SiapDikirimPage({ token, role }) {
               Pilih Semua ({selectedIds.size} terpilih)
             </label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button
+                onClick={() => {
+                  const dipilih = orders.filter((o) => selectedIds.has(o.id));
+                  if (dipilih.length === 0) { alert("Pilih dulu minimal 1 pesanan."); return; }
+                  setBulkBarcode(dipilih);
+                }}
+                disabled={selectedIds.size === 0}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
+              >
+                <Barcode size={14} /> Cetak Barcode Terpilih
+              </button>
               <button
                 onClick={() => cetakMassal("nota")}
                 disabled={selectedIds.size === 0}
@@ -3211,56 +3318,22 @@ function SiapDikirimPage({ token, role }) {
 
       {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} settings={notaSettings} onClose={() => setPrintingOrder(null)} />}
       {bulkPrint && <BulkPrintModal orders={bulkPrint.orders} type={bulkPrint.type} settings={notaSettings} onClose={() => setBulkPrint(null)} />}
+      {bulkBarcode && <BulkBarcodeModal orders={bulkBarcode} onClose={() => setBulkBarcode(null)} onSelesaiCetak={handleCetakMassalBarcode} />}
 
       {/* MODAL CETAK BARCODE - barcode no_nota + nama toko + rincian barang */}
       {showBarcode && (() => {
         const o = orders.find((x) => x.id === showBarcode);
         if (!o) return null;
-        const jumlahBarang = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
-        const teleponPenerima = o.tujuan_telp || o.clients?.telp;
-        const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
-        const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-          const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
             <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
-              <div id="area-cetak-barcode" style={{ textAlign: "center", padding: "10px 0" }}>
-                {o.is_dropship && (
-                  <p style={{ fontSize: 12.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700 }}>Pengirim: {o.nama_pengirim_dropship || o.clients?.nama}</p>
-                )}
-                <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Penerima: {o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama}</p>
-                <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>No HP: {teleponPenerima || "-"}</p>
-                <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
-                <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
-                <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
-                  {isPekanbaru ? <QRCodeLabel value={o.no_nota} /> : <BarcodeLabel value={o.no_nota} />}
-                </div>
-
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, textAlign: "left" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1.5px solid #24272B" }}>
-                      <th style={{ padding: "4px 4px", fontWeight: 700 }}>Kode</th>
-                      <th style={{ padding: "4px 4px", fontWeight: 700 }}>Nama Barang</th>
-                      <th style={{ padding: "4px 4px", fontWeight: 700, textAlign: "right" }}>Pcs</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(o.order_items || []).map((it, i) => (
-                      <tr key={i} style={{ borderBottom: "1px solid #EDEAE3" }}>
-                        <td style={{ padding: "4px 4px", color: "#6B6F75" }}>{it.products?.kode || "-"}</td>
-                        <td style={{ padding: "4px 4px", color: "#24272B" }}>{it.products?.nama || "-"}</td>
-                        <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700, textAlign: "right" }}>{it.qty}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <BarcodeLabelContent order={o} />
 
               <style>{`
                 @media print {
                   body * { visibility: hidden; }
-                  #area-cetak-barcode, #area-cetak-barcode * { visibility: visible; }
-                  #area-cetak-barcode { position: fixed; top: 30px; left: 0; right: 0; }
+                  .barcode-label-content, .barcode-label-content * { visibility: visible; }
+                  .barcode-label-content { position: fixed; top: 30px; left: 0; right: 0; }
                 }
               `}</style>
 
