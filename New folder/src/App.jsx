@@ -1742,6 +1742,9 @@ function PiutangPage({ token }) {
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
   const [saving, setSaving] = useState(false);
+  const [expandedId, setExpandedId] = useState(null); // client_id yang lagi dibuka
+  const [detailMap, setDetailMap] = useState({}); // { client_id: [order,...] }
+  const [loadingDetail, setLoadingDetail] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -1753,6 +1756,27 @@ function PiutangPage({ token }) {
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  async function toggleExpand(clientId) {
+    if (expandedId === clientId) {
+      setExpandedId(null);
+      return;
+    }
+    setExpandedId(clientId);
+    if (!detailMap[clientId]) {
+      setLoadingDetail(clientId);
+      try {
+        const orders = await supabaseFetch(
+          token,
+          `orders?select=id,no_nota,created_at,order_items(subtotal_setelah_diskon)&client_id=eq.${clientId}&metode_bayar=eq.cod&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc`
+        );
+        setDetailMap((prev) => ({ ...prev, [clientId]: orders }));
+      } catch (e) {
+        alert("Gagal muat rincian: " + e.message);
+      }
+      setLoadingDetail(null);
+    }
+  }
 
   function startEdit(r) {
     setEditingId(r.client_id);
@@ -1795,8 +1819,17 @@ function PiutangPage({ token }) {
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.client_id} style={{ borderTop: "1px solid #EDEAE3" }}>
-                <td style={{ padding: "12px 14px", fontWeight: 600 }}>{r.nama}</td>
+              <React.Fragment key={r.client_id}>
+              <tr style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 600 }}>
+                  <button
+                    onClick={() => toggleExpand(r.client_id)}
+                    style={{ background: "none", border: "none", padding: 0, color: "#24272B", fontWeight: 600, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    {expandedId === r.client_id ? <ChevronRight size={14} style={{ transform: "rotate(90deg)", transition: "transform 0.15s" }} /> : <ChevronRight size={14} />}
+                    {r.nama}
+                  </button>
+                </td>
                 <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(r.total_piutang)}</td>
                 <td style={{ padding: "12px 14px" }}>
                   {editingId === r.client_id ? (
@@ -1827,6 +1860,47 @@ function PiutangPage({ token }) {
                   )}
                 </td>
               </tr>
+              {expandedId === r.client_id && (
+                <tr>
+                  <td colSpan={4} style={{ padding: 0, background: "#FAFAF8" }}>
+                    <div style={{ padding: "14px 14px 14px 34px" }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 10px" }}>
+                        Pesanan COD yang termasuk piutang ini
+                      </p>
+                      {loadingDetail === r.client_id ? (
+                        <p style={{ fontSize: 12.5, color: "#9CA0A6" }}>Memuat...</p>
+                      ) : (detailMap[r.client_id] || []).length === 0 ? (
+                        <p style={{ fontSize: 12.5, color: "#9CA0A6" }}>Tidak ada rincian pesanan (kemungkinan data sudah berubah, coba refresh).</p>
+                      ) : (
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                          <thead>
+                            <tr>
+                              {["No. Nota", "Tanggal Dibuat", "Nilai"].map((h) => (
+                                <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: "#9CA0A6", fontWeight: 700, fontSize: 10.5 }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(detailMap[r.client_id] || []).map((o) => {
+                              const nilai = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+                              return (
+                                <tr key={o.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                                  <td style={{ padding: "6px 10px", fontWeight: 700 }}>{o.no_nota}</td>
+                                  <td style={{ padding: "6px 10px", color: "#6B6F75" }}>
+                                    {new Date(o.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                                  </td>
+                                  <td style={{ padding: "6px 10px", fontWeight: 600 }}>{rupiah(nilai)}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
