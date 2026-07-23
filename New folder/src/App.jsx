@@ -3586,7 +3586,7 @@ function SiapDikirimPage({ token, role }) {
                   <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
                   {terlambatPengemasan && (
                     <p style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "#C0392B", fontWeight: 700, margin: "4px 0 0" }}>
-                      <AlertCircle size={13} /> Keterlambatan Pengemasan - masuk sebelum jam 13:00, bukti pengiriman belum diupload di hari yang sama
+                      <AlertCircle size={13} /> Keterlambatan Pengemasan
                     </p>
                   )}
                   </div>
