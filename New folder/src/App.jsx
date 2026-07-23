@@ -2893,12 +2893,25 @@ function RekapNotaPage({ token }) {
     setProcessingId(null);
   }
 
+  const [activeTab, setActiveTab] = useState("nota"); // "nota" | "cashback"
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const cashbackTerbayarkan = filtered.filter((o) => o.cashback_ledger?.[0]?.status === "sudah_dibayar");
 
   return (
     <div>
       <PageHeader title="Rekap Nota" subtitle="Status perjalanan tiap nota, dari pengecekan stock sampai selesai" />
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <button onClick={() => setActiveTab("nota")} style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "nota" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "nota" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}>
+          Rekap Nota
+        </button>
+        <button onClick={() => setActiveTab("cashback")} style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "cashback" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "cashback" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}>
+          Cashback Terbayarkan
+        </button>
+      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 20 }}>
         <StatCard label="Total Omzet (sesuai filter)" value={rupiah(totalOmzet)} color="#24272B" bg="#F7F5F1" small />
@@ -2913,17 +2926,49 @@ function RekapNotaPage({ token }) {
         <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
           {BULAN.map((b, i) => <option key={i} value={i}>{b}</option>)}
         </select>
-        <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
-          <option value="semua">Semua Status</option>
-          <option value="menunggu_persetujuan">Menunggu Pengecekan Stock</option>
-          <option value="menunggu_pembayaran">Menunggu Pembayaran / Bisa Cetak</option>
-          <option value="menunggu_pengiriman">Menunggu Pengiriman</option>
-          <option value="proses_dikirim">Proses Dikirim</option>
-          <option value="selesai">Telah Diselesaikan</option>
-          <option value="ditolak">Ditolak</option>
-        </select>
+        {activeTab === "nota" && (
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+            <option value="semua">Semua Status</option>
+            <option value="menunggu_persetujuan">Menunggu Pengecekan Stock</option>
+            <option value="menunggu_pembayaran">Menunggu Pembayaran / Bisa Cetak</option>
+            <option value="menunggu_pengiriman">Menunggu Pengiriman</option>
+            <option value="proses_dikirim">Proses Dikirim</option>
+            <option value="selesai">Telah Diselesaikan</option>
+            <option value="ditolak">Ditolak</option>
+          </select>
+        )}
       </div>
 
+      {activeTab === "cashback" ? (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ background: "#F7F5F1" }}>
+                {["No. Nota", "Toko", "Alamat", "Cashback", "Tanggal Dibayar"].map((h) => (
+                  <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {cashbackTerbayarkan.map((o) => {
+                const cb = o.cashback_ledger?.[0];
+                return (
+                  <tr key={o.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                    <td style={{ padding: "12px 14px", fontWeight: 700 }}>{o.no_nota}</td>
+                    <td style={{ padding: "12px 14px" }}>{o.clients?.nama}</td>
+                    <td style={{ padding: "12px 14px", color: "#6B6F75", fontSize: 12 }}>{o.clients?.alamat}</td>
+                    <td style={{ padding: "12px 14px", fontWeight: 700, color: "#28685D" }}>{rupiah(cb?.nilai_cashback)}</td>
+                    <td style={{ padding: "12px 14px", color: "#9CA0A6", fontSize: 11.5 }}>
+                      {new Date(o.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {cashbackTerbayarkan.length === 0 && <EmptyState text="Belum ada cashback yang terbayarkan sesuai filter ini." />}
+        </Card>
+      ) : (
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
@@ -2987,6 +3032,7 @@ function RekapNotaPage({ token }) {
         </table>
         {filtered.length === 0 && <EmptyState text="Tidak ada nota pada periode/filter ini." />}
       </Card>
+      )}
 
       {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} settings={notaSettings} onClose={() => setPrintingOrder(null)} />}
     </div>
