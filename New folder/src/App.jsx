@@ -2876,6 +2876,10 @@ function RekapNotaPage({ token }) {
     const cb = o.cashback_ledger?.[0];
     return s + (cb && cb.status === "belum_dibayar" ? Number(cb.nilai_cashback) : 0);
   }, 0);
+  const totalCashbackTerbayarkan = filtered.reduce((s, o) => {
+    const cb = o.cashback_ledger?.[0];
+    return s + (cb && cb.status === "sudah_dibayar" ? Number(cb.nilai_cashback) : 0);
+  }, 0);
   const totalOmzet = filtered.filter((o) => o.status !== "ditolak").reduce((s, o) => s + orderTotal(o), 0);
   const totalSelesai = filtered.filter((o) => o.status === "selesai").reduce((s, o) => s + orderTotal(o), 0);
 
@@ -2913,10 +2917,11 @@ function RekapNotaPage({ token }) {
         </button>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 20 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 20 }}>
         <StatCard label="Total Omzet (sesuai filter)" value={rupiah(totalOmzet)} color="#24272B" bg="#F7F5F1" small />
         <StatCard label="Telah Diselesaikan" value={rupiah(totalSelesai)} color="#28685D" bg="#D8E9E6" small />
         <StatCard label="Cashback Belum Dibayar" value={rupiah(totalCashbackBelumDibayar)} color="#B8860B" bg="#FBF0D9" small />
+        <StatCard label="Cashback Terbayarkan" value={rupiah(totalCashbackTerbayarkan)} color="#28685D" bg="#D8E9E6" small />
       </div>
 
       <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
