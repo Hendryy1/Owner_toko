@@ -1566,7 +1566,9 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
             onClick={() => bukaTabPreviewCetak(
               <>
                 {orders.map((o) => (
-                  <NotaPrintContent key={o.id} order={o} type={type} settings={settings} />
+                  <div key={o.id} style={{ marginBottom: "10mm" }}>
+                    <NotaPrintContent order={o} type={type} settings={settings} />
+                  </div>
                 ))}
               </>,
               type === "surat_jalan" ? "Surat Jalan Massal" : "Nota Massal",
