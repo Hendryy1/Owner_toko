@@ -476,7 +476,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
     { key: "siap_dikirim", label: "Siap Dikirim", icon: PackagePlus, roles: ["owner", "admin_transaksi", "kurir", "staff_gudang"] },
     { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "kurir"] },
-    { key: "outbound", label: "Outbound", icon: ScanLine, roles: ["owner"] },
+    { key: "outbound", label: "Outbound", icon: ScanLine, roles: ["owner", "staff_gudang"] },
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "transaksi", label: "Transaksi", icon: Table2, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "rekap_nota", label: "Rekap Nota", icon: Receipt, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
