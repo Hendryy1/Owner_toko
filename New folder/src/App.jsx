@@ -2963,12 +2963,21 @@ function SiapDikirimPage({ token, role }) {
   const [showBarcode, setShowBarcode] = useState(null); // order id
   const [markingPrinted, setMarkingPrinted] = useState(false);
   const [uploadingId, setUploadingId] = useState(null);
+  const [notaSettings, setNotaSettings] = useState(null);
+  const [printingOrder, setPrintingOrder] = useState(null);
+  const [printingType, setPrintingType] = useState("nota"); // "nota" | "surat_jalan"
+
+  useEffect(() => {
+    supabaseFetch(token, "nota_settings?select=*&limit=1")
+      .then((rows) => setNotaSettings(rows[0] || null))
+      .catch(() => {});
+  }, []);
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,kota),order_items(qty,products(kode,nama))&status=eq.menunggu_pengiriman&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,kota),order_items(*,products(kode,nama,satuan))&status=eq.menunggu_pengiriman&order=created_at.asc");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -3025,6 +3034,8 @@ function SiapDikirimPage({ token, role }) {
           const isCod = o.metode_bayar === "cod";
           const sudahDicetak = !!o.barcode_dicetak_at;
           const hasProofKirim = !!o.bukti_pengiriman_url;
+          const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+          const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
           return (
             <Card key={o.id} style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -3039,18 +3050,34 @@ function SiapDikirimPage({ token, role }) {
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                   {role !== "kurir" && (
-                    <button
-                      onClick={() => setShowBarcode(o.id)}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "none",
-                        background: sudahDicetak ? "#28685D" : "#E8A426",
-                        color: sudahDicetak ? "#fff" : "#24272B",
-                        fontSize: 12.5, fontWeight: 700,
-                      }}
-                    >
-                      {sudahDicetak ? <Check size={15} /> : <Barcode size={15} />}
-                      {sudahDicetak ? "Sudah Dicetak" : "Cetak Barcode"}
-                    </button>
+                    <>
+                      <button
+                        onClick={() => { setPrintingOrder(o); setPrintingType("nota"); }}
+                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                      >
+                        <Receipt size={15} /> Cetak Nota
+                      </button>
+                      {isPekanbaru && (
+                        <button
+                          onClick={() => { setPrintingOrder(o); setPrintingType("surat_jalan"); }}
+                          style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                        >
+                          <FileEdit size={15} /> Cetak Surat Jalan
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setShowBarcode(o.id)}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "none",
+                          background: sudahDicetak ? "#28685D" : "#E8A426",
+                          color: sudahDicetak ? "#fff" : "#24272B",
+                          fontSize: 12.5, fontWeight: 700,
+                        }}
+                      >
+                        {sudahDicetak ? <Check size={15} /> : <Barcode size={15} />}
+                        {sudahDicetak ? "Sudah Dicetak" : "Cetak Barcode"}
+                      </button>
+                    </>
                   )}
 
                   {hasProofKirim ? (
@@ -3069,6 +3096,8 @@ function SiapDikirimPage({ token, role }) {
           );
         })
       )}
+
+      {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} settings={notaSettings} onClose={() => setPrintingOrder(null)} />}
 
       {/* MODAL CETAK BARCODE - barcode no_nota + nama toko + rincian barang */}
       {showBarcode && (() => {
