@@ -1,10 +1,54 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
+import ReactDOMServer from "react-dom/server";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
   Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine
 } from "lucide-react";
 
 const COMPANY_NAME = "PT Nama Perusahaan Anda";
+
+// ============================================================
+// BUKA TAB BARU UNTUK PREVIEW SEBELUM PRINT - render konten JSX jadi
+// HTML statis, tampilkan di tab baru dengan tombol Cetak sendiri, supaya
+// pengguna bisa review dulu sebelum benar-benar mencetak.
+// ============================================================
+function bukaTabPreviewCetak(jsxContent, judulTab, ukuranKertas) {
+  const htmlKonten = ReactDOMServer.renderToStaticMarkup(jsxContent);
+  const win = window.open("", "_blank");
+  if (!win) {
+    alert("Gagal buka tab baru - pastikan pop-up tidak diblokir browser.");
+    return;
+  }
+  win.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>${judulTab}</title>
+        <meta charset="utf-8" />
+        <style>
+          @page { size: ${ukuranKertas}; margin: 0; }
+          body { font-family: 'Inter', Arial, sans-serif; margin: 0; padding: 20px; background: #F7F5F1; }
+          .tombol-cetak-bar { position: sticky; top: 0; display: flex; justify-content: center; gap: 10px; padding: 14px; background: #24272B; margin: -20px -20px 20px; z-index: 10; }
+          .tombol-cetak-bar button { padding: 11px 24px; border-radius: 10px; border: none; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+          .btn-cetak { background: #E8A426; color: #24272B; }
+          .btn-tutup { background: #fff; color: #24272B; }
+          @media print {
+            .tombol-cetak-bar { display: none !important; }
+            body { padding: 0; background: #fff; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="tombol-cetak-bar">
+          <button class="btn-cetak" onclick="window.print()">Cetak Sekarang</button>
+          <button class="btn-tutup" onclick="window.close()">Tutup Tab Ini</button>
+        </div>
+        ${htmlKonten}
+      </body>
+    </html>
+  `);
+  win.document.close();
+}
 
 // ============================================================
 // KONEKSI SUPABASE
@@ -1372,7 +1416,10 @@ function NotaPrintModal({ order, type, settings, onClose }) {
           <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
             Tutup
           </button>
-          <button onClick={() => window.print()} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <button
+            onClick={() => bukaTabPreviewCetak(<NotaPrintContent order={order} type={type} settings={settings} />, type === "surat_jalan" ? "Surat Jalan" : "Nota", "9.5in 11in")}
+            style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          >
             <Printer size={15} /> Print
           </button>
         </div>
@@ -1414,7 +1461,20 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
           <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
             Tutup
           </button>
-          <button onClick={() => window.print()} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+          <button
+            onClick={() => bukaTabPreviewCetak(
+              <>
+                {orders.map((o, i) => (
+                  <div key={o.id} style={{ pageBreakAfter: i < orders.length - 1 ? "always" : "auto" }}>
+                    <NotaPrintContent order={o} type={type} settings={settings} />
+                  </div>
+                ))}
+              </>,
+              type === "surat_jalan" ? "Surat Jalan Massal" : "Nota Massal",
+              "9.5in 11in"
+            )}
+            style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          >
             <Printer size={15} /> Print Semua ({orders.length})
           </button>
         </div>
@@ -3178,13 +3238,23 @@ function SiapDikirimPage({ token, role }) {
     setMarkingPrinted(false);
   }
 
-  async function handleCetak(orderId) {
-    window.print();
-    await tandaiSudahDicetak(orderId);
+  async function handleCetak(order) {
+    bukaTabPreviewCetak(<BarcodeLabelContent order={order} />, "Barcode", "100mm 150mm");
+    await tandaiSudahDicetak(order.id);
   }
 
   async function handleCetakMassalBarcode() {
-    window.print();
+    bukaTabPreviewCetak(
+      <>
+        {bulkBarcode.map((o, i) => (
+          <div key={o.id} style={{ pageBreakAfter: i < bulkBarcode.length - 1 ? "always" : "auto" }}>
+            <BarcodeLabelContent order={o} />
+          </div>
+        ))}
+      </>,
+      "Barcode Massal",
+      "100mm 150mm"
+    );
     setMarkingPrinted(true);
     try {
       const now = new Date().toISOString();
@@ -3350,7 +3420,7 @@ function SiapDikirimPage({ token, role }) {
                   Tutup
                 </button>
                 <button
-                  onClick={() => handleCetak(o.id)}
+                  onClick={() => handleCetak(o)}
                   disabled={markingPrinted}
                   style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: markingPrinted ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
                 >
