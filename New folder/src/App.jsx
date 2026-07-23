@@ -394,7 +394,7 @@ export default function OwnerDashboard() {
         {page === "saldo_va" && <SaldoVaPage token={token} />}
         {page === "barang" && <BarangTerlarisPage token={token} />}
         {page === "produk" && <ProductPage token={token} />}
-        {page === "stock" && <StockItemPage token={token} />}
+        {page === "stock" && <StockItemPage token={token} role={profile?.role} />}
         {page === "inbound" && <InboundPage token={token} />}
         {page === "cashback" && <CashbackPage token={token} />}
         {page === "ongkir" && <FreeOngkirPage token={token} />}
@@ -2664,7 +2664,7 @@ function RekapTokoPage({ token }) {
 // ============================================================
 // STOCK ITEM (khusus Owner)
 // ============================================================
-function StockItemPage({ token }) {
+function StockItemPage({ token, role }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
@@ -2694,21 +2694,25 @@ function StockItemPage({ token }) {
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
   const grandTotal = rows.reduce((sum, r) => sum + r.total_modal, 0);
+  const sembunyikanModal = role === "admin_transaksi";
+  const kolomTabel = sembunyikanModal ? ["Kode", "Nama Barang", "Kategori", "Satuan", "Stock"] : ["Kode", "Nama Barang", "Kategori", "Satuan", "Stock", "Harga Modal", "Total Modal"];
 
   return (
     <div>
-      <PageHeader title="Stock Item" subtitle="Nilai modal barang berdasarkan stock akhir - data rahasia, hanya Owner" />
+      <PageHeader title="Stock Item" subtitle={sembunyikanModal ? "Stock akhir tiap barang" : "Nilai modal barang berdasarkan stock akhir - data rahasia, hanya Owner"} />
 
-      <Card style={{ marginBottom: 16, display: "inline-block" }}>
-        <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Total Modal Seluruh Stock</p>
-        <p className="disp" style={{ fontSize: 26, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(grandTotal)}</p>
-      </Card>
+      {!sembunyikanModal && (
+        <Card style={{ marginBottom: 16, display: "inline-block" }}>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Total Modal Seluruh Stock</p>
+          <p className="disp" style={{ fontSize: 26, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(grandTotal)}</p>
+        </Card>
+      )}
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
-              {["Kode", "Nama Barang", "Kategori", "Satuan", "Stock", "Harga Modal", "Total Modal"].map((h) => (
+              {kolomTabel.map((h) => (
                 <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
               ))}
             </tr>
@@ -2723,8 +2727,12 @@ function StockItemPage({ token }) {
                 <td style={{ padding: "12px 14px", fontWeight: 600, color: r.stock_akhir < 0 ? "#C0392B" : "#24272B" }}>
                   {r.stock_akhir}{r.stock_akhir < 0 && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#C0392B" }}>MINUS!</span>}
                 </td>
-                <td style={{ padding: "12px 14px" }}>{rupiah(r.harga_modal)}</td>
-                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(r.total_modal)}</td>
+                {!sembunyikanModal && (
+                  <>
+                    <td style={{ padding: "12px 14px" }}>{rupiah(r.harga_modal)}</td>
+                    <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(r.total_modal)}</td>
+                  </>
+                )}
               </tr>
             ))}
           </tbody>
