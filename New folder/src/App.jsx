@@ -6525,6 +6525,37 @@ function BiayaOperasionalPage({ token, role }) {
           </select>
         </div>
         <StatCard label={`Total Biaya Operasional - ${BULAN[filterMonth]} ${filterYear}`} value={rupiah(totalBiayaBulanIni)} color="#C0392B" bg="#FBEAEA" />
+
+        <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Tambah Biaya Operasional</h2>
+        <Card style={{ maxWidth: 480 }}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Tanggal</label>
+            <input type="date" value={form.tanggal} onChange={(e) => setForm({ ...form, tanggal: e.target.value })} style={fieldStyle} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Kategori</label>
+            <input value={form.kategori} onChange={(e) => setForm({ ...form, kategori: e.target.value })} placeholder="misal: Listrik, Gaji, Sewa Gudang" style={fieldStyle} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Jumlah (Rp)</label>
+            <input type="number" value={form.jumlah} onChange={(e) => setForm({ ...form, jumlah: e.target.value })} style={fieldStyle} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>Keterangan (opsional)</label>
+            <textarea value={form.keterangan} onChange={(e) => setForm({ ...form, keterangan: e.target.value })} rows={2} style={{ ...fieldStyle, resize: "vertical" }} />
+          </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 16, cursor: "pointer" }}>
+            <input type="checkbox" checked={form.berulang} onChange={(e) => setForm({ ...form, berulang: e.target.checked })} style={{ width: 16, height: 16 }} />
+            Biaya ini berulang tiap bulan
+          </label>
+          <button
+            onClick={submitForm}
+            disabled={saving}
+            style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: saving ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}
+          >
+            {saving ? "Menyimpan..." : "Tambah Biaya"}
+          </button>
+        </Card>
       </div>
     );
   }
