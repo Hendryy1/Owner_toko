@@ -3615,6 +3615,9 @@ function CashbackPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [rules, setRules] = useState([]);
   const [riwayatCashback, setRiwayatCashback] = useState([]);
+  const [editingTanggalId, setEditingTanggalId] = useState(null);
+  const [editTanggalMap, setEditTanggalMap] = useState({}); // { ruleId: { mulai, selesai } }
+  const [savingTanggalId, setSavingTanggalId] = useState(null);
   const [products, setProducts] = useState([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -3772,6 +3775,23 @@ function CashbackPage({ token }) {
     } catch (e) { alert("Gagal hapus: " + e.message); }
   }
 
+  async function simpanTanggalRule(ruleId) {
+    const edit = editTanggalMap[ruleId];
+    if (!edit) return;
+    setSavingTanggalId(ruleId);
+    try {
+      await supabaseFetch(token, `cashback_rules?id=eq.${ruleId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ tanggal_mulai: edit.mulai || null, tanggal_selesai: edit.selesai || null }),
+      });
+      setRules((prev) => prev.map((r) => (r.id === ruleId ? { ...r, tanggal_mulai: edit.mulai || null, tanggal_selesai: edit.selesai || null } : r)));
+      setEditingTanggalId(null);
+    } catch (e) {
+      alert("Gagal simpan tanggal: " + e.message);
+    }
+    setSavingTanggalId(null);
+  }
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
@@ -3878,9 +3898,47 @@ function CashbackPage({ token }) {
                   {r.jenis_cashback === "persen" ? `${r.nilai_cashback}%` : rupiah(r.nilai_cashback)}
                 </td>
                 <td style={{ padding: "12px 14px", fontSize: 11.5, color: "#6B6F75" }}>
-                  {r.tanggal_mulai || r.tanggal_selesai
-                    ? `${r.tanggal_mulai ? new Date(r.tanggal_mulai + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "..."} - ${r.tanggal_selesai ? new Date(r.tanggal_selesai + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "..."}`
-                    : "Tanpa batas waktu"}
+                  {editingTanggalId === r.id ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 150 }}>
+                      <input
+                        type="date"
+                        value={editTanggalMap[r.id]?.mulai ?? (r.tanggal_mulai || "")}
+                        onChange={(e) => setEditTanggalMap((prev) => ({ ...prev, [r.id]: { ...prev[r.id], mulai: e.target.value } }))}
+                        style={{ padding: "5px 7px", borderRadius: 6, border: "1.5px solid #E4E1DA", fontSize: 11.5 }}
+                      />
+                      <input
+                        type="date"
+                        value={editTanggalMap[r.id]?.selesai ?? (r.tanggal_selesai || "")}
+                        onChange={(e) => setEditTanggalMap((prev) => ({ ...prev, [r.id]: { ...prev[r.id], selesai: e.target.value } }))}
+                        style={{ padding: "5px 7px", borderRadius: 6, border: "1.5px solid #E4E1DA", fontSize: 11.5 }}
+                      />
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          onClick={() => simpanTanggalRule(r.id)}
+                          disabled={savingTanggalId === r.id}
+                          style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700 }}
+                        >
+                          {savingTanggalId === r.id ? "..." : "Simpan"}
+                        </button>
+                        <button onClick={() => setEditingTanggalId(null)} style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11, fontWeight: 600 }}>
+                          Batal
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {r.tanggal_mulai || r.tanggal_selesai
+                        ? `${r.tanggal_mulai ? new Date(r.tanggal_mulai + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "..."} - ${r.tanggal_selesai ? new Date(r.tanggal_selesai + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "..."}`
+                        : "Tanpa batas waktu"}
+                      {" "}
+                      <button
+                        onClick={() => { setEditingTanggalId(r.id); setEditTanggalMap((prev) => ({ ...prev, [r.id]: { mulai: r.tanggal_mulai || "", selesai: r.tanggal_selesai || "" } })); }}
+                        style={{ background: "none", border: "none", color: "#8A6A1A", fontSize: 11, fontWeight: 700, padding: 0, textDecoration: "underline" }}
+                      >
+                        Edit
+                      </button>
+                    </>
+                  )}
                 </td>
                 <td style={{ padding: "12px 14px" }}>
                   <button
