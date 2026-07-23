@@ -1019,6 +1019,17 @@ function CekPesananModal({ order, allOrders, token, onConfirm, onClose, processi
           </div>
         )}
 
+        {order.metode_bayar === "transfer" && !loadingSaldo && saldoToko !== null && (
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: saldoCukup ? "#D8E9E6" : "#FFFBF0", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            {saldoCukup ? <Check size={16} color="#28685D" style={{ flexShrink: 0, marginTop: 1 }} /> : <AlertCircle size={16} color="#8A6A1A" style={{ flexShrink: 0, marginTop: 1 }} />}
+            <p style={{ fontSize: 12, color: saldoCukup ? "#28685D" : "#8A6A1A", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+              {saldoCukup
+                ? "Saldo toko ini cukup - pesanan akan otomatis lunas begitu di-approve."
+                : "Saldo toko ini belum cukup untuk melunasi total pesanan secara penuh."}
+            </p>
+          </div>
+        )}
+
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, marginBottom: 20 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
