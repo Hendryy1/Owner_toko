@@ -3475,16 +3475,26 @@ function SiapDikirimPage({ token, role }) {
     setMarkingPrinted(false);
   }
 
-  // Pesanan yang MASUK sebelum jam 13:00, tapi bukti pengiriman BELUM
-  // diupload sampai hari ini sudah berganti (bukan hari yang sama lagi
-  // dengan created_at) - dianggap terlambat pengemasannya.
+  // Aturan 1: order masuk SEBELUM jam 13:00 - wajib upload bukti pengiriman
+  // di HARI YANG SAMA. Aturan 2: order masuk SETELAH jam 13:00 - wajib
+  // upload bukti paling lambat jam 13:00 keesokan harinya. Kalau lewat dari
+  // batas itu dan bukti belum diupload, dianggap terlambat pengemasannya.
   function cekTerlambatPengemasan(o) {
-    const dibuat = new Date(o.created_at);
-    if (dibuat.getHours() >= 13) return false; // masuk setelah jam 1 siang, tidak masuk aturan ini
     if (o.bukti_pengiriman_url) return false; // sudah upload bukti, tidak dianggap terlambat
+    const dibuat = new Date(o.created_at);
     const sekarang = new Date();
-    const sameDay = dibuat.getFullYear() === sekarang.getFullYear() && dibuat.getMonth() === sekarang.getMonth() && dibuat.getDate() === sekarang.getDate();
-    return !sameDay;
+
+    if (dibuat.getHours() < 13) {
+      // Aturan 1 - batas waktunya di hari yang sama (tengah malam)
+      const sameDay = dibuat.getFullYear() === sekarang.getFullYear() && dibuat.getMonth() === sekarang.getMonth() && dibuat.getDate() === sekarang.getDate();
+      return !sameDay;
+    } else {
+      // Aturan 2 - batas waktunya jam 13:00 keesokan harinya
+      const batasWaktu = new Date(dibuat);
+      batasWaktu.setDate(batasWaktu.getDate() + 1);
+      batasWaktu.setHours(13, 0, 0, 0);
+      return sekarang > batasWaktu;
+    }
   }
 
   async function handleCetak(order) {
