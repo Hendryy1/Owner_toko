@@ -3398,6 +3398,7 @@ function SiapDikirimPage({ token, role }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkPrint, setBulkPrint] = useState(null); // { orders, type } | null
   const [bulkBarcode, setBulkBarcode] = useState(null); // array order | null
+  const [activeTab, setActiveTab] = useState("baru"); // "baru" | "terlambat"
 
   function toggleSelect(id) {
     setSelectedIds((prev) => {
@@ -3528,15 +3529,46 @@ function SiapDikirimPage({ token, role }) {
     return aTerlambat ? -1 : 1;
   });
 
+  const orderBaru = ordersUrut.filter((o) => !cekTerlambatPengemasan(o));
+  const orderTerlambat = ordersUrut.filter((o) => cekTerlambatPengemasan(o));
+  const orderTampil = activeTab === "terlambat" ? orderTerlambat : orderBaru;
+
   return (
     <div>
       <PageHeader title="Siap Dikirim" subtitle={`${orders.length} pesanan siap dikirim - cetak barcode untuk masing-masing`} />
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button
+          onClick={() => setActiveTab("baru")}
+          style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "baru" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "baru" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+        >
+          Pesanan Baru ({orderBaru.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("terlambat")}
+          style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "terlambat" ? "1.5px solid #C0392B" : "1.5px solid #E4E1DA", background: activeTab === "terlambat" ? "#FBEAEA" : "#fff", color: activeTab === "terlambat" ? "#C0392B" : "#24272B", fontSize: 13, fontWeight: 700 }}
+        >
+          Keterlambatan Pengemasan ({orderTerlambat.length})
+        </button>
+      </div>
 
       {orders.length > 0 && role !== "kurir" && role !== "staff_gudang" && (
         <Card style={{ marginBottom: 16, padding: 14 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#24272B", cursor: "pointer" }}>
-              <input type="checkbox" checked={selectedIds.size === orders.length && orders.length > 0} onChange={toggleSelectAll} style={{ width: 16, height: 16 }} />
+              <input
+                type="checkbox"
+                checked={orderTampil.length > 0 && orderTampil.every((o) => selectedIds.has(o.id))}
+                onChange={() => {
+                  const semuaTerpilih = orderTampil.length > 0 && orderTampil.every((o) => selectedIds.has(o.id));
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    orderTampil.forEach((o) => (semuaTerpilih ? next.delete(o.id) : next.add(o.id)));
+                    return next;
+                  });
+                }}
+                style={{ width: 16, height: 16 }}
+              />
               Pilih Semua ({selectedIds.size} terpilih)
             </label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -3575,10 +3607,10 @@ function SiapDikirimPage({ token, role }) {
         </Card>
       )}
 
-      {orders.length === 0 ? (
-        <EmptyState text="Tidak ada pesanan yang siap dikirim saat ini." />
+      {orderTampil.length === 0 ? (
+        <EmptyState text={activeTab === "terlambat" ? "Tidak ada pesanan yang terlambat pengemasannya. Kerja bagus!" : "Tidak ada pesanan baru yang siap dikirim saat ini."} />
       ) : (
-        ordersUrut.map((o) => {
+        orderTampil.map((o) => {
           const isCod = o.metode_bayar === "cod";
           const sudahDicetak = !!o.barcode_dicetak_at;
           const hasProofKirim = !!o.bukti_pengiriman_url;
