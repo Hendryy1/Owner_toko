@@ -83,8 +83,10 @@ function bukaTabPreviewBarcode(orders) {
         <p style="font-size:12.5px;color:#6B6F75;margin:0 0 2px">No HP: ${teleponPenerima || "-"}</p>
         <p style="font-size:11.5px;color:#6B6F75;margin:0 0 10px;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>
         <p style="font-size:12.5px;color:#6B6F75;margin:0 0 16px">${jumlahBarang} barang dipesan</p>
-        <div style="display:flex;justify-content:center;margin-bottom:16px">
-          ${isPekanbaru ? `<div id="qr-${i}"></div>` : `<svg id="barcode-${i}"></svg>`}
+        <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:16px">
+          ${isPekanbaru
+            ? `<div id="qr-${i}"></div><p style="font-size:12px;font-weight:700;color:#24272B;margin-top:6px;font-family:monospace">${o.no_nota}</p>`
+            : `<svg id="barcode-${i}"></svg>`}
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:left">
           <thead>
@@ -3374,17 +3376,6 @@ function SiapDikirimPage({ token, role }) {
             </label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button
-                onClick={() => {
-                  const dipilih = orders.filter((o) => selectedIds.has(o.id));
-                  if (dipilih.length === 0) { alert("Pilih dulu minimal 1 pesanan."); return; }
-                  setBulkBarcode(dipilih);
-                }}
-                disabled={selectedIds.size === 0}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
-              >
-                <Barcode size={14} /> Cetak Barcode Terpilih
-              </button>
-              <button
                 onClick={() => cetakMassal("nota")}
                 disabled={selectedIds.size === 0}
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
@@ -3397,6 +3388,17 @@ function SiapDikirimPage({ token, role }) {
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
               >
                 <FileEdit size={14} /> Cetak Surat Jalan Terpilih
+              </button>
+              <button
+                onClick={() => {
+                  const dipilih = orders.filter((o) => selectedIds.has(o.id));
+                  if (dipilih.length === 0) { alert("Pilih dulu minimal 1 pesanan."); return; }
+                  setBulkBarcode(dipilih);
+                }}
+                disabled={selectedIds.size === 0}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
+              >
+                <Barcode size={14} /> Cetak Barcode Terpilih
               </button>
             </div>
           </div>
