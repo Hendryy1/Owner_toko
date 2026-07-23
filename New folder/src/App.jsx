@@ -592,11 +592,13 @@ function BulkBarcodeModal({ orders, onClose, onSelesaiCetak }) {
         @media print {
           body * { visibility: hidden; }
           .barcode-label-content, .barcode-label-content * { visibility: visible; }
-          .barcode-bulk-item { page-break-after: always; }
+          .barcode-bulk-item { page-break-after: always; break-after: page; }
+          .barcode-bulk-item:last-child { page-break-after: auto; break-after: auto; }
+          .barcode-bulk-container { max-height: none !important; overflow: visible !important; }
           .no-print { display: none !important; }
         }
       `}</style>
-      <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
+      <div className="barcode-bulk-container" style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
         <p className="no-print" style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 14px" }}>{orders.length} label siap dicetak - klik Print untuk cetak semua sekaligus.</p>
         {orders.map((o) => (
           <div key={o.id} className="barcode-bulk-item" style={{ borderTop: "1px dashed #E4E1DA", paddingTop: 12, marginTop: 12 }}>
@@ -1389,12 +1391,14 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
           @page { size: 9.5in 11in; margin: 0.4in; }
           body * { visibility: hidden; }
           .nota-print-area, .nota-print-area * { visibility: visible; }
-          .bulk-print-item { position: relative; page-break-after: always; }
+          .bulk-print-item { page-break-after: always; break-after: page; }
+          .bulk-print-item:last-child { page-break-after: auto; break-after: auto; }
+          .bulk-print-container { max-height: none !important; overflow: visible !important; }
           .nota-print-overlay { position: static !important; background: none !important; padding: 0 !important; }
           .no-print { display: none !important; }
         }
       `}</style>
-      <div style={{ background: "#fff", borderRadius: 14, width: 620, maxHeight: "90vh", overflowY: "auto", padding: 0 }}>
+      <div className="bulk-print-container" style={{ background: "#fff", borderRadius: 14, width: 620, maxHeight: "90vh", overflowY: "auto", padding: 0 }}>
         <div className="no-print" style={{ padding: "20px 36px 0" }}>
           <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{orders.length} dokumen siap dicetak - klik Print untuk cetak semua sekaligus.</p>
         </div>
