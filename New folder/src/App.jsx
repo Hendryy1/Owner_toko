@@ -3828,6 +3828,17 @@ function ProsesPengirimanPage({ token }) {
     return (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
   }
 
+  // Pesanan yang MASUK sebelum jam 13:00, tapi belum masuk status "Proses
+  // Dikirim" (dikirim) di HARI YANG SAMA - dianggap terlambat pengirimannya.
+  function cekTerlambat(o) {
+    const dibuat = new Date(o.created_at);
+    if (dibuat.getHours() >= 13) return false; // masuk setelah jam 1 siang, tidak masuk aturan ini
+    if (!o.tanggal_dikirim) return true; // masuk sebelum jam 13:00 tapi belum juga dikirim
+    const dikirim = new Date(o.tanggal_dikirim);
+    const sameDay = dibuat.getFullYear() === dikirim.getFullYear() && dibuat.getMonth() === dikirim.getMonth() && dibuat.getDate() === dikirim.getDate();
+    return !sameDay;
+  }
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
@@ -3864,6 +3875,7 @@ function ProsesPengirimanPage({ token }) {
           const hasBarangSampai = !!o.bukti_barang_sampai_url;
           const hasNotaTtd = !!o.bukti_nota_ttd_url;
           const codDocsLengkap = hasBarangSampai && hasNotaTtd;
+          const terlambat = cekTerlambat(o);
           const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
           const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
           // Transfer yang tujuannya Pekanbaru WAJIB pakai alur upload bukti
@@ -3884,6 +3896,11 @@ function ProsesPengirimanPage({ token }) {
                     )}
                   </p>
                   <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                  {terlambat && (
+                    <p style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "#C0392B", fontWeight: 700, margin: "4px 0 0" }}>
+                      <AlertCircle size={13} /> Keterlambatan Pengiriman - pesanan masuk sebelum jam 13:00 dan tidak dikirim di hari yang sama
+                    </p>
+                  )}
                   {isDikirim && (
                     <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>
                       Dikirim {Math.floor(elapsedDays)} hari lalu
