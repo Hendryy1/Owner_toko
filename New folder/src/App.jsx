@@ -3478,9 +3478,10 @@ function SiapDikirimPage({ token, role }) {
   // Aturan 1: order masuk SEBELUM jam 13:00 - wajib upload bukti pengiriman
   // di HARI YANG SAMA. Aturan 2: order masuk SETELAH jam 13:00 - wajib
   // upload bukti paling lambat jam 13:00 keesokan harinya. Kalau lewat dari
-  // batas itu dan bukti belum diupload, dianggap terlambat pengemasannya.
+  // batas itu dan order INI MASIH ada di Siap Dikirim (artinya belum
+  // di-outbound, walau bukti pengiriman sudah diupload sekalipun), tetap
+  // dianggap terlambat pengemasannya.
   function cekTerlambatPengemasan(o) {
-    if (o.bukti_pengiriman_url) return false; // sudah upload bukti, tidak dianggap terlambat
     const dibuat = new Date(o.created_at);
     const sekarang = new Date();
 
