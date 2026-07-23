@@ -2762,6 +2762,9 @@ function KonfirmasiPembayaranPage({ token }) {
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
   const menunggu = orders.filter((o) => o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas" && o.metode_bayar !== "cod");
+  // Bisa direview KAPAN SAJA: SEMUA order yang statusnya masih proses_dikirim
+  // (belum selesai) - baik COD maupun Transfer, di kota manapun - baik
+  // dokumennya sudah lengkap maupun belum, supaya Owner bisa pantau progres.
   // Bisa direview KAPAN SAJA: semua order COD, atau Transfer tujuan
   // Pekanbaru, yang statusnya masih proses_dikirim (belum selesai) - baik
   // dokumennya sudah lengkap maupun belum, supaya Owner bisa pantau progres.
@@ -2824,9 +2827,11 @@ function KonfirmasiPembayaranPage({ token }) {
 
       {perluReviewCod.length > 0 && (
         <>
-          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Pesanan COD & Transfer Pekanbaru (Proses Dikirim)</h2>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Perlu Review Pengiriman (COD & Transfer Pekanbaru)</h2>
           {perluReviewCod.map((o) => {
             const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+            const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+            const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
             const docsLengkap = o.metode_bayar === "cod"
               ? !!o.bukti_barang_sampai_url && !!o.bukti_nota_ttd_url && !!o.bukti_nota_cod_url && !!o.bukti_cash_cod_url
               : !!o.bukti_barang_sampai_url && !!o.bukti_nota_ttd_url;
@@ -3615,7 +3620,7 @@ function CashbackPage({ token }) {
   const [form, setForm] = useState({
     jenisRule: "nominal_bulanan",
     minimalOmzetBulan: "", productId: "", minimalQty: "",
-    jenisCashback: "persen", nilaiCashback: "",
+    jenisCashback: "persen", nilaiCashback: "", tanggalMulai: "", tanggalSelesai: "",
   });
 
   // Diskon tambahan per barang (edit isi_per_koli & diskon_koli_pct langsung)
@@ -3647,7 +3652,7 @@ function CashbackPage({ token }) {
   useEffect(() => { load(); }, []);
 
   function resetForm() {
-    setForm({ jenisRule: "nominal_bulanan", minimalOmzetBulan: "", productId: "", minimalQty: "", jenisCashback: "persen", nilaiCashback: "" });
+    setForm({ jenisRule: "nominal_bulanan", minimalOmzetBulan: "", productId: "", minimalQty: "", jenisCashback: "persen", nilaiCashback: "", tanggalMulai: "", tanggalSelesai: "" });
   }
 
   function startEditProduct(p) {
@@ -3735,6 +3740,8 @@ function CashbackPage({ token }) {
           minimal_qty: form.jenisRule === "per_barang" ? Number(form.minimalQty) : null,
           jenis_cashback: form.jenisCashback,
           nilai_cashback: Number(form.nilaiCashback),
+          tanggal_mulai: form.tanggalMulai || null,
+          tanggal_selesai: form.tanggalSelesai || null,
           aktif: true,
         }),
       });
@@ -3826,6 +3833,18 @@ function CashbackPage({ token }) {
           </div>
         </div>
 
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+          <div>
+            <label style={labelStyle}>Berlaku Mulai (opsional)</label>
+            <input type="date" value={form.tanggalMulai} onChange={(e) => setForm({ ...form, tanggalMulai: e.target.value })} style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Berlaku Sampai (opsional)</label>
+            <input type="date" value={form.tanggalSelesai} onChange={(e) => setForm({ ...form, tanggalSelesai: e.target.value })} style={fieldStyle} />
+          </div>
+        </div>
+        <p style={{ fontSize: 11, color: "#9CA0A6", margin: "-10px 0 16px" }}>Kosongkan kalau aturan ini berlaku tanpa batas waktu.</p>
+
         <button onClick={submitRule} disabled={saving} style={{ padding: "11px 22px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", gap: 6 }}>
           <Gift size={16} /> {saving ? "Menyimpan..." : "Tambah Aturan"}
         </button>
@@ -3836,7 +3855,7 @@ function CashbackPage({ token }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
-              {["Jenis", "Syarat", "Cashback", "Status", ""].map((h) => (
+              {["Jenis", "Syarat", "Cashback", "Masa Berlaku", "Status", ""].map((h) => (
                 <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
               ))}
             </tr>
@@ -3854,6 +3873,11 @@ function CashbackPage({ token }) {
                 </td>
                 <td style={{ padding: "12px 14px", fontWeight: 700 }}>
                   {r.jenis_cashback === "persen" ? `${r.nilai_cashback}%` : rupiah(r.nilai_cashback)}
+                </td>
+                <td style={{ padding: "12px 14px", fontSize: 11.5, color: "#6B6F75" }}>
+                  {r.tanggal_mulai || r.tanggal_selesai
+                    ? `${r.tanggal_mulai ? new Date(r.tanggal_mulai + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "..."} - ${r.tanggal_selesai ? new Date(r.tanggal_selesai + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "..."}`
+                    : "Tanpa batas waktu"}
                 </td>
                 <td style={{ padding: "12px 14px" }}>
                   <button
