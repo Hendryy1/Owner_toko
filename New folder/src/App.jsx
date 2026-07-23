@@ -2717,7 +2717,13 @@ function KonfirmasiPembayaranPage({ token }) {
       // 2. Transfer/COD - status_bayar sudah lunas (riwayat)
       // 3. COD - sudah dikonfirmasi kurir (status_bayar lunas, tapi status masih
       //    proses_dikirim) - perlu DIREVIEW Owner dulu sebelum benar-benar selesai
-      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas)&order=created_at.desc&limit=200");
+      // Ambil order yang relevan buat halaman ini:
+      // 1. Transfer - masih menunggu_pembayaran (perlu konfirmasi bukti transfer)
+      // 2. Sudah lunas (riwayat)
+      // 3. COD/Transfer-Pekanbaru yang statusnya proses_dikirim - SEMUA,
+      //    walau dokumennya BELUM lengkap - supaya Owner bisa lihat progres
+      //    upload kapan saja, meski belum bisa selesaikan sampai lengkap.
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas,status.eq.proses_dikirim)&order=created_at.desc&limit=200");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -2756,16 +2762,15 @@ function KonfirmasiPembayaranPage({ token }) {
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
   const menunggu = orders.filter((o) => o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas" && o.metode_bayar !== "cod");
-  // Perlu direview Owner: COD yang sudah dikonfirmasi kurir, ATAU Transfer
-  // tujuan Pekanbaru yang kedua dokumennya (barang sampai + nota TTD) sudah
-  // lengkap - keduanya sama-sama perlu pengecekan akhir sebelum diselesaikan.
+  // Bisa direview KAPAN SAJA: semua order COD, atau Transfer tujuan
+  // Pekanbaru, yang statusnya masih proses_dikirim (belum selesai) - baik
+  // dokumennya sudah lengkap maupun belum, supaya Owner bisa pantau progres.
   const perluReviewCod = orders.filter((o) => {
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-          const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
-    const docsLengkap = !!o.bukti_barang_sampai_url && !!o.bukti_nota_ttd_url;
-    if (o.status === "selesai") return false;
-    if (o.metode_bayar === "cod") return o.status_bayar === "lunas";
-    if (o.metode_bayar === "transfer" && isPekanbaru) return docsLengkap && o.status_bayar === "lunas";
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    if (o.status !== "proses_dikirim") return false;
+    if (o.metode_bayar === "cod") return true;
+    if (o.metode_bayar === "transfer" && isPekanbaru) return true;
     return false;
   });
   const riwayat = orders.filter((o) => o.status_bayar === "lunas" && !perluReviewCod.includes(o));
@@ -2819,9 +2824,12 @@ function KonfirmasiPembayaranPage({ token }) {
 
       {perluReviewCod.length > 0 && (
         <>
-          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Perlu Review Pengiriman (COD & Transfer Pekanbaru)</h2>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Pesanan COD & Transfer Pekanbaru (Proses Dikirim)</h2>
           {perluReviewCod.map((o) => {
             const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+            const docsLengkap = o.metode_bayar === "cod"
+              ? !!o.bukti_barang_sampai_url && !!o.bukti_nota_ttd_url && !!o.bukti_nota_cod_url && !!o.bukti_cash_cod_url
+              : !!o.bukti_barang_sampai_url && !!o.bukti_nota_ttd_url;
             return (
               <Card key={o.id} style={{ marginBottom: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -2832,6 +2840,11 @@ function KonfirmasiPembayaranPage({ token }) {
                         <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
                       ) : (
                         <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#D8E9E6", color: "#28685D", verticalAlign: "middle" }}>Transfer - Pekanbaru</span>
+                      )}
+                      {docsLengkap ? (
+                        <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#D8E9E6", color: "#28685D", verticalAlign: "middle" }}>Dokumen Lengkap</span>
+                      ) : (
+                        <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B", verticalAlign: "middle" }}>Dokumen Belum Lengkap</span>
                       )}
                     </p>
                     <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
@@ -2857,27 +2870,37 @@ function KonfirmasiPembayaranPage({ token }) {
         riwayat.map(renderCard)
       )}
 
-      {/* MODAL REVIEW PESANAN COD - lihat nota + semua bukti sebelum selesaikan */}
+      {/* MODAL REVIEW PESANAN - lihat nota + semua bukti sebelum selesaikan */}
       {reviewingCod && (() => {
         const o = orders.find((x) => x.id === reviewingCod);
         if (!o) return null;
         const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
-        const dokumen = [
-          { label: "Bukti Pengiriman", url: o.bukti_pengiriman_url },
-          { label: "Bukti Barang Sampai", url: o.bukti_barang_sampai_url },
-          { label: "Nota TTD Penerima", url: o.bukti_nota_ttd_url },
-          { label: "Bukti Nota COD", url: o.bukti_nota_cod_url },
-          { label: "Bukti Cash COD", url: o.bukti_cash_cod_url },
-        ];
+        const isCodOrder = o.metode_bayar === "cod";
+        // Transfer-Pekanbaru cuma butuh 2 dokumen (barang sampai + nota TTD),
+        // tidak perlu bukti nota/cash COD (itu memang khusus COD)
+        const dokumen = isCodOrder
+          ? [
+              { label: "Bukti Pengiriman", url: o.bukti_pengiriman_url },
+              { label: "Bukti Barang Sampai", url: o.bukti_barang_sampai_url },
+              { label: "Nota TTD Penerima", url: o.bukti_nota_ttd_url },
+              { label: "Bukti Nota COD", url: o.bukti_nota_cod_url },
+              { label: "Bukti Cash COD", url: o.bukti_cash_cod_url },
+            ]
+          : [
+              { label: "Bukti Pengiriman", url: o.bukti_pengiriman_url },
+              { label: "Bukti Barang Sampai", url: o.bukti_barang_sampai_url },
+              { label: "Nota TTD Penerima", url: o.bukti_nota_ttd_url },
+            ];
+        const docsLengkap = dokumen.every((d) => !!d.url);
         return (
           <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
             <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 520, maxHeight: "88vh", overflowY: "auto", padding: 26 }}>
-              <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Review Pesanan COD</h2>
+              <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Review Pesanan {isCodOrder ? "COD" : "Transfer"}</h2>
               <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 4px" }}>{o.no_nota} · {o.clients?.nama} ({o.clients?.kode})</p>
               <p className="disp" style={{ fontSize: 20, fontWeight: 700, color: "#24272B", margin: "0 0 20px" }}>{rupiah(total)}</p>
 
               <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 10px" }}>Dokumen & Bukti</p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 22 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
                 {dokumen.map((d) => (
                   <div key={d.label}>
                     <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>{d.label}</p>
@@ -2886,11 +2909,20 @@ function KonfirmasiPembayaranPage({ token }) {
                         <img src={d.url} alt={d.label} style={{ width: "100%", height: 110, objectFit: "cover", borderRadius: 8, border: "1px solid #EDEAE3" }} />
                       </a>
                     ) : (
-                      <div style={{ width: "100%", height: 110, borderRadius: 8, background: "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#9CA0A6" }}>Tidak ada</div>
+                      <div style={{ width: "100%", height: 110, borderRadius: 8, background: "#FBEAEA", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: "#C0392B", fontWeight: 600 }}>Belum diupload</div>
                     )}
                   </div>
                 ))}
               </div>
+
+              {!docsLengkap && (
+                <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+                  <AlertCircle size={15} color="#C0392B" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <p style={{ fontSize: 12, color: "#C0392B", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+                    Dokumen belum lengkap - pesanan belum bisa diselesaikan. Anda cuma bisa lihat progresnya dulu.
+                  </p>
+                </div>
+              )}
 
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={() => setReviewingCod(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
@@ -2898,10 +2930,11 @@ function KonfirmasiPembayaranPage({ token }) {
                 </button>
                 <button
                   onClick={() => selesaikanPesananCod(o.id)}
-                  disabled={processingId === o.id}
-                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: processingId === o.id ? "#E4E1DA" : "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+                  disabled={processingId === o.id || !docsLengkap}
+                  title={!docsLengkap ? "Dokumen belum lengkap" : ""}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: (processingId === o.id || !docsLengkap) ? "#E4E1DA" : "#28685D", color: (processingId === o.id || !docsLengkap) ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 13.5 }}
                 >
-                  {processingId === o.id ? "Menyimpan..." : "Selesaikan Pesanan"}
+                  {processingId === o.id ? "Menyimpan..." : !docsLengkap ? "Dokumen Belum Lengkap" : "Selesaikan Pesanan"}
                 </button>
               </div>
             </div>
