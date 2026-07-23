@@ -51,6 +51,107 @@ function bukaTabPreviewCetak(jsxContent, judulTab, ukuranKertas) {
 }
 
 // ============================================================
+// BUKA TAB BARU KHUSUS BARCODE/QR - barcode digambar oleh library JS
+// SETELAH elemen muncul, jadi tidak bisa dipakai cara "render ke HTML
+// statis" biasa. Di sini kita tulis placeholder kosong + script untuk
+// menggambar ulang barcode/QR-nya LANGSUNG DI DALAM tab baru itu.
+// ============================================================
+function bukaTabPreviewBarcode(orders) {
+  const win = window.open("", "_blank");
+  if (!win) {
+    alert("Gagal buka tab baru - pastikan pop-up tidak diblokir browser.");
+    return;
+  }
+
+  const itemsHtml = orders.map((o, i) => {
+    const jumlahBarang = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
+    const teleponPenerima = o.tujuan_telp || o.clients?.telp;
+    const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
+    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const namaPenerima = o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama;
+    const baris = (o.order_items || []).map((it) => `
+      <tr style="border-bottom:1px solid #EDEAE3">
+        <td style="padding:4px;color:#6B6F75">${it.products?.kode || "-"}</td>
+        <td style="padding:4px;color:#24272B">${it.products?.nama || "-"}</td>
+        <td style="padding:4px;color:#24272B;font-weight:700;text-align:right">${it.qty}</td>
+      </tr>`).join("");
+    return `
+      <div class="barcode-item" style="text-align:center;padding:10px 0;${i < orders.length - 1 ? "page-break-after:always;" : ""}">
+        ${o.is_dropship ? `<p style="font-size:12.5px;color:#8A6A1A;margin:0 0 4px;font-weight:700">Pengirim: ${o.nama_pengirim_dropship || o.clients?.nama}</p>` : ""}
+        <p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 2px">Penerima: ${namaPenerima}</p>
+        <p style="font-size:12.5px;color:#6B6F75;margin:0 0 2px">No HP: ${teleponPenerima || "-"}</p>
+        <p style="font-size:11.5px;color:#6B6F75;margin:0 0 10px;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>
+        <p style="font-size:12.5px;color:#6B6F75;margin:0 0 16px">${jumlahBarang} barang dipesan</p>
+        <div style="display:flex;justify-content:center;margin-bottom:16px">
+          ${isPekanbaru ? `<div id="qr-${i}"></div>` : `<svg id="barcode-${i}"></svg>`}
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:left">
+          <thead>
+            <tr style="border-bottom:1.5px solid #24272B">
+              <th style="padding:4px;font-weight:700">Kode</th>
+              <th style="padding:4px;font-weight:700">Nama Barang</th>
+              <th style="padding:4px;font-weight:700;text-align:right">Pcs</th>
+            </tr>
+          </thead>
+          <tbody>${baris}</tbody>
+        </table>
+      </div>`;
+  }).join("");
+
+  // Data yang dibutuhkan script inisialisasi (nomor nota + apakah Pekanbaru)
+  const dataBarcode = orders.map((o, i) => {
+    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    return { idx: i, noNota: o.no_nota, isPekanbaru };
+  });
+
+  win.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>${orders.length > 1 ? "Barcode Massal" : "Barcode"}</title>
+        <meta charset="utf-8" />
+        <style>
+          @page { size: 100mm 150mm; margin: 5mm; }
+          body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #F7F5F1; }
+          .tombol-cetak-bar { position: sticky; top: 0; display: flex; justify-content: center; gap: 10px; padding: 14px; background: #24272B; margin: -20px -20px 20px; z-index: 10; }
+          .tombol-cetak-bar button { padding: 11px 24px; border-radius: 10px; border: none; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+          .btn-cetak { background: #E8A426; color: #24272B; }
+          .btn-tutup { background: #fff; color: #24272B; }
+          @media print {
+            .tombol-cetak-bar { display: none !important; }
+            body { padding: 0; background: #fff; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="tombol-cetak-bar">
+          <button class="btn-cetak" onclick="window.print()">Cetak Sekarang</button>
+          <button class="btn-tutup" onclick="window.close()">Tutup Tab Ini</button>
+        </div>
+        ${itemsHtml}
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.12.3/JsBarcode.all.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+        <script>
+          window.onload = function () {
+            var data = ${JSON.stringify(dataBarcode)};
+            data.forEach(function (d) {
+              if (d.isPekanbaru) {
+                new QRCode(document.getElementById("qr-" + d.idx), { text: d.noNota, width: 160, height: 160 });
+              } else {
+                JsBarcode("#barcode-" + d.idx, d.noNota, { format: "CODE39", width: 2, height: 60, displayValue: true, fontSize: 14, margin: 6 });
+              }
+            });
+          };
+        </script>
+      </body>
+    </html>
+  `);
+  win.document.close();
+}
+
+// ============================================================
 // KONEKSI SUPABASE
 // ============================================================
 const SUPABASE_URL = "https://bzlktpveupyxtcuhrmgg.supabase.co";
@@ -3239,22 +3340,12 @@ function SiapDikirimPage({ token, role }) {
   }
 
   async function handleCetak(order) {
-    bukaTabPreviewCetak(<BarcodeLabelContent order={order} />, "Barcode", "100mm 150mm");
+    bukaTabPreviewBarcode([order]);
     await tandaiSudahDicetak(order.id);
   }
 
   async function handleCetakMassalBarcode() {
-    bukaTabPreviewCetak(
-      <>
-        {bulkBarcode.map((o, i) => (
-          <div key={o.id} style={{ pageBreakAfter: i < bulkBarcode.length - 1 ? "always" : "auto" }}>
-            <BarcodeLabelContent order={o} />
-          </div>
-        ))}
-      </>,
-      "Barcode Massal",
-      "100mm 150mm"
-    );
+    bukaTabPreviewBarcode(bulkBarcode);
     setMarkingPrinted(true);
     try {
       const now = new Date().toISOString();
