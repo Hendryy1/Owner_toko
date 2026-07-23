@@ -593,7 +593,8 @@ function BulkBarcodeModal({ orders, onClose, onSelesaiCetak }) {
           @page { size: 100mm 150mm; margin: 5mm; }
           body * { visibility: hidden; }
           .barcode-label-content, .barcode-label-content * { visibility: visible; }
-          .barcode-bulk-item { page-break-after: always; break-after: page; }
+          .barcode-label-content { position: static !important; top: auto !important; left: auto !important; right: auto !important; }
+          .barcode-bulk-item { page-break-after: always; break-after: page; position: relative !important; }
           .barcode-bulk-item:last-child { page-break-after: auto; break-after: auto; }
           .barcode-bulk-container { max-height: none !important; overflow: visible !important; }
           .no-print { display: none !important; }
@@ -1392,7 +1393,8 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
           @page { size: 9.5in 11in; margin: 0.4in; }
           body * { visibility: hidden; }
           .nota-print-area, .nota-print-area * { visibility: visible; }
-          .bulk-print-item { page-break-after: always; break-after: page; }
+          .nota-print-area { position: static !important; top: auto !important; left: auto !important; width: auto !important; }
+          .bulk-print-item { page-break-after: always; break-after: page; position: relative !important; }
           .bulk-print-item:last-child { page-break-after: auto; break-after: auto; }
           .bulk-print-container { max-height: none !important; overflow: visible !important; }
           .nota-print-overlay { position: static !important; background: none !important; padding: 0 !important; }
