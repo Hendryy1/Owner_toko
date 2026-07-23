@@ -6512,53 +6512,10 @@ function BiayaOperasionalPage({ token, role }) {
 
   // Admin Transaksi cuma boleh lihat TOTAL biaya operasional bulan itu,
   // tidak boleh lihat rincian per item ataupun tambah/ubah/hapus.
-  if (role === "admin_transaksi") {
-    return (
-      <div>
-        <PageHeader title="Biaya Operasional" subtitle="Total biaya operasional bulanan" />
-        <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
-          <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
-            {yearsAvailable.map((y) => <option key={y} value={y}>{y}</option>)}
-          </select>
-          <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
-            {BULAN.slice(1).map((b, i) => <option key={i + 1} value={i + 1}>{b}</option>)}
-          </select>
-        </div>
-        <StatCard label={`Total Biaya Operasional - ${BULAN[filterMonth]} ${filterYear}`} value={rupiah(totalBiayaBulanIni)} color="#C0392B" bg="#FBEAEA" />
-
-        <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Tambah Biaya Operasional</h2>
-        <Card style={{ maxWidth: 480 }}>
-          <div style={{ marginBottom: 14 }}>
-            <label style={labelStyle}>Tanggal</label>
-            <input type="date" value={form.tanggal} onChange={(e) => setForm({ ...form, tanggal: e.target.value })} style={fieldStyle} />
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={labelStyle}>Kategori</label>
-            <input value={form.kategori} onChange={(e) => setForm({ ...form, kategori: e.target.value })} placeholder="misal: Listrik, Gaji, Sewa Gudang" style={fieldStyle} />
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={labelStyle}>Jumlah (Rp)</label>
-            <input type="number" value={form.jumlah} onChange={(e) => setForm({ ...form, jumlah: e.target.value })} style={fieldStyle} />
-          </div>
-          <div style={{ marginBottom: 14 }}>
-            <label style={labelStyle}>Keterangan (opsional)</label>
-            <textarea value={form.keterangan} onChange={(e) => setForm({ ...form, keterangan: e.target.value })} rows={2} style={{ ...fieldStyle, resize: "vertical" }} />
-          </div>
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, marginBottom: 16, cursor: "pointer" }}>
-            <input type="checkbox" checked={form.berulang} onChange={(e) => setForm({ ...form, berulang: e.target.checked })} style={{ width: 16, height: 16 }} />
-            Biaya ini berulang tiap bulan
-          </label>
-          <button
-            onClick={submitForm}
-            disabled={saving}
-            style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: saving ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}
-          >
-            {saving ? "Menyimpan..." : "Tambah Biaya"}
-          </button>
-        </Card>
-      </div>
-    );
-  }
+  // Catatan: admin_transaksi sekarang lihat tampilan LENGKAP yang sama
+  // seperti Owner (termasuk daftar rincian) - tapi tombol Edit/Hapus
+  // disembunyikan untuk role ini di bagian render tabel di bawah, karena
+  // izin RLS admin_transaksi cuma SELECT + INSERT (belum UPDATE/DELETE).
 
   return (
     <div>
@@ -6649,14 +6606,16 @@ function BiayaOperasionalPage({ token, role }) {
                 <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(b.jumlah)}</td>
                 <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{b.keterangan || "-"}</td>
                 <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
-                  <div style={{ display: "flex", gap: 6 }}>
-                    <button onClick={() => startEdit(b)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 600 }}>
-                      Edit
-                    </button>
-                    <button onClick={() => hapusBiaya(b.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "none", color: "#C0392B", fontSize: 11, fontWeight: 700 }}>
-                      Hapus
-                    </button>
-                  </div>
+                  {role !== "admin_transaksi" && (
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => startEdit(b)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 600 }}>
+                        Edit
+                      </button>
+                      <button onClick={() => hapusBiaya(b.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "none", color: "#C0392B", fontSize: 11, fontWeight: 700 }}>
+                        Hapus
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             ))}
