@@ -387,7 +387,7 @@ export default function OwnerDashboard() {
         {page === "clients" && <ClientsPage token={token} />}
         {page === "verifikasi_toko" && <VerifikasiTokoPage token={token} />}
         {page === "keuangan" && <KeuanganPage token={token} />}
-        {page === "biaya_operasional" && <BiayaOperasionalPage token={token} />}
+        {page === "biaya_operasional" && <BiayaOperasionalPage token={token} role={profile?.role} />}
         {page === "pajak" && <PajakPage token={token} />}
         {page === "bunga_investor" && <BungaInvestorPage token={token} />}
         {page === "piutang" && <PiutangPage token={token} />}
@@ -6394,7 +6394,7 @@ function KunjunganSalesPage({ token, profile }) {
 // ============================================================
 // BIAYA OPERASIONAL (hitung laba kotor & kelola biaya operasional)
 // ============================================================
-function BiayaOperasionalPage({ token }) {
+function BiayaOperasionalPage({ token, role }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [biayaList, setBiayaList] = useState([]);
@@ -6509,6 +6509,25 @@ function BiayaOperasionalPage({ token }) {
 
   const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
   const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  // Admin Transaksi cuma boleh lihat TOTAL biaya operasional bulan itu,
+  // tidak boleh lihat rincian per item ataupun tambah/ubah/hapus.
+  if (role === "admin_transaksi") {
+    return (
+      <div>
+        <PageHeader title="Biaya Operasional" subtitle="Total biaya operasional bulanan" />
+        <div style={{ display: "flex", gap: 10, marginBottom: 20 }}>
+          <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+            {yearsAvailable.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+            {BULAN.slice(1).map((b, i) => <option key={i + 1} value={i + 1}>{b}</option>)}
+          </select>
+        </div>
+        <StatCard label={`Total Biaya Operasional - ${BULAN[filterMonth]} ${filterYear}`} value={rupiah(totalBiayaBulanIni)} color="#C0392B" bg="#FBEAEA" />
+      </div>
+    );
+  }
 
   return (
     <div>
