@@ -590,6 +590,7 @@ function BulkBarcodeModal({ orders, onClose, onSelesaiCetak }) {
     <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
       <style>{`
         @media print {
+          @page { size: 100mm 150mm; margin: 5mm; }
           body * { visibility: hidden; }
           .barcode-label-content, .barcode-label-content * { visibility: visible; }
           .barcode-bulk-item { page-break-after: always; break-after: page; }
@@ -3335,6 +3336,7 @@ function SiapDikirimPage({ token, role }) {
 
               <style>{`
                 @media print {
+                  @page { size: 100mm 150mm; margin: 5mm; }
                   body * { visibility: hidden; }
                   .barcode-label-content, .barcode-label-content * { visibility: visible; }
                   .barcode-label-content { position: fixed; top: 30px; left: 0; right: 0; }
