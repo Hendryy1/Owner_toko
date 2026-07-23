@@ -250,6 +250,7 @@ export default function OwnerDashboard() {
     // Kurir cuma bisa akses Proses Pengiriman - langsung arahkan ke situ,
     // karena halaman default (Ringkasan) tidak bisa diakses kurir.
     if (profRows[0].role === "kurir") setPage("proses_kirim");
+    if (profRows[0].role === "staff_gudang") setPage("siap_dikirim");
     // admin_transaksi tidak lagi bisa akses Ringkasan (halaman default) -
     // arahkan ke Approve Pesanan sebagai gantinya.
     if (profRows[0].role === "admin_transaksi") setPage("orders");
@@ -473,7 +474,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
-    { key: "siap_dikirim", label: "Siap Dikirim", icon: PackagePlus, roles: ["owner", "admin_transaksi", "kurir"] },
+    { key: "siap_dikirim", label: "Siap Dikirim", icon: PackagePlus, roles: ["owner", "admin_transaksi", "kurir", "staff_gudang"] },
     { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "kurir"] },
     { key: "outbound", label: "Outbound", icon: ScanLine, roles: ["owner"] },
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
@@ -3522,17 +3523,19 @@ function SiapDikirimPage({ token, role }) {
               >
                 <FileEdit size={14} /> Cetak Surat Jalan Terpilih
               </button>
-              <button
-                onClick={() => {
-                  const dipilih = orders.filter((o) => selectedIds.has(o.id));
-                  if (dipilih.length === 0) { alert("Pilih dulu minimal 1 pesanan."); return; }
-                  setBulkBarcode(dipilih);
-                }}
-                disabled={selectedIds.size === 0}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
-              >
-                <Barcode size={14} /> Cetak Barcode Terpilih
-              </button>
+              {role !== "staff_gudang" && (
+                <button
+                  onClick={() => {
+                    const dipilih = orders.filter((o) => selectedIds.has(o.id));
+                    if (dipilih.length === 0) { alert("Pilih dulu minimal 1 pesanan."); return; }
+                    setBulkBarcode(dipilih);
+                  }}
+                  disabled={selectedIds.size === 0}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                >
+                  <Barcode size={14} /> Cetak Barcode Terpilih
+                </button>
+              )}
             </div>
           </div>
           <p style={{ fontSize: 11, color: "#9CA0A6", margin: "8px 0 0" }}>
@@ -3587,18 +3590,20 @@ function SiapDikirimPage({ token, role }) {
                           <FileEdit size={15} /> Cetak Surat Jalan
                         </button>
                       )}
-                      <button
-                        onClick={() => setShowBarcode(o.id)}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "none",
-                          background: sudahDicetak ? "#28685D" : "#E8A426",
-                          color: sudahDicetak ? "#fff" : "#24272B",
-                          fontSize: 12.5, fontWeight: 700,
-                        }}
-                      >
-                        {sudahDicetak ? <Check size={15} /> : <Barcode size={15} />}
-                        {sudahDicetak ? "Sudah Dicetak" : "Cetak Barcode"}
-                      </button>
+                      {role !== "staff_gudang" && (
+                        <button
+                          onClick={() => setShowBarcode(o.id)}
+                          style={{
+                            display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "none",
+                            background: sudahDicetak ? "#28685D" : "#E8A426",
+                            color: sudahDicetak ? "#fff" : "#24272B",
+                            fontSize: 12.5, fontWeight: 700,
+                          }}
+                        >
+                          {sudahDicetak ? <Check size={15} /> : <Barcode size={15} />}
+                          {sudahDicetak ? "Sudah Dicetak" : "Cetak Barcode"}
+                        </button>
+                      )}
                     </>
                   )}
 
@@ -7831,7 +7836,7 @@ function AkunStaffPage({ token }) {
 
   const ROLE_LABEL = {
     owner: "Owner", admin_transaksi: "Admin Transaksi", admin_keuangan: "Admin Keuangan",
-    sales: "Sales", kurir: "Kurir",
+    sales: "Sales", kurir: "Kurir", staff_gudang: "Staff Gudang",
   };
 
   async function load() {
@@ -7988,6 +7993,7 @@ function AkunStaffPage({ token }) {
                 <option value="admin_transaksi">Admin Transaksi</option>
                 <option value="admin_keuangan">Admin Keuangan</option>
                 <option value="kurir">Kurir</option>
+                <option value="staff_gudang">Staff Gudang</option>
               </select>
             </div>
             {form.role === "sales" && (
