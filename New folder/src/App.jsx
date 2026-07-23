@@ -3831,13 +3831,31 @@ function ProsesPengirimanPage({ token }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
+  // Order yang statusnya "Menunggu Review Owner" (COD/Transfer-Pekanbaru
+  // yang dokumennya sudah lengkap & lunas) otomatis diletakkan paling
+  // bawah daftar, supaya yang masih perlu diproses tampil duluan di atas.
+  function isMenungguReviewOwner(o) {
+    const isCodOrder = o.metode_bayar === "cod";
+    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+    const isPekanbaruOrder = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const wajibUploadBuktiOrder = isCodOrder || (o.metode_bayar === "transfer" && isPekanbaruOrder);
+    const docsLengkapOrder = !!o.bukti_barang_sampai_url && !!o.bukti_nota_ttd_url;
+    return o.status === "proses_dikirim" && wajibUploadBuktiOrder && docsLengkapOrder && o.status_bayar === "lunas";
+  }
+  const ordersUrut = [...orders].sort((a, b) => {
+    const aReview = isMenungguReviewOwner(a);
+    const bReview = isMenungguReviewOwner(b);
+    if (aReview === bReview) return 0;
+    return aReview ? 1 : -1;
+  });
+
   return (
     <div>
       <PageHeader title="Proses Pengiriman" subtitle={`${orders.length} pesanan dalam proses pengiriman`} />
       {orders.length === 0 ? (
         <EmptyState text="Tidak ada pesanan dalam proses pengiriman saat ini." />
       ) : (
-        orders.map((o) => {
+        ordersUrut.map((o) => {
           const isDikirim = o.status === "proses_dikirim";
           const isCod = o.metode_bayar === "cod";
           const hasProofKirim = !!o.bukti_pengiriman_url;
