@@ -6530,19 +6530,23 @@ function BiayaOperasionalPage({ token, role }) {
         </select>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
-        <Card>
-          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Laba Kotor</p>
-          <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(labaKotorBulanIni)}</p>
-        </Card>
+      <div style={{ display: "grid", gridTemplateColumns: role === "admin_transaksi" ? "1fr" : "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
+        {role !== "admin_transaksi" && (
+          <Card>
+            <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Laba Kotor</p>
+            <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(labaKotorBulanIni)}</p>
+          </Card>
+        )}
         <Card>
           <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Total Biaya Operasional</p>
           <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: "#C0392B", margin: 0 }}>{rupiah(totalBiayaBulanIni)}</p>
         </Card>
-        <Card>
-          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Laba Bersih</p>
-          <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: labaBersih >= 0 ? "#28685D" : "#C0392B", margin: 0 }}>{rupiah(labaBersih)}</p>
-        </Card>
+        {role !== "admin_transaksi" && (
+          <Card>
+            <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Laba Bersih</p>
+            <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: labaBersih >= 0 ? "#28685D" : "#C0392B", margin: 0 }}>{rupiah(labaBersih)}</p>
+          </Card>
+        )}
       </div>
 
       <Card style={{ maxWidth: 560, marginBottom: 24 }}>
