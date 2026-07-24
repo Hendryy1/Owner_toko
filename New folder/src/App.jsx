@@ -408,6 +408,7 @@ export default function OwnerDashboard() {
         {page === "laporan_kunjungan_owner" && <LaporanKunjunganOwnerPage token={token} />}
         {page === "laporan_periodik_sales" && <LaporanPeriodikSalesOwnerPage token={token} />}
         {page === "laporan_kurir" && <LaporanKurirPage token={token} />}
+        {page === "buat_laporan_kurir" && <BuatLaporanKurirPage token={token} />}
         {page === "banner_promo" && <BannerPromoPage token={token} />}
           </>
         )}
@@ -505,6 +506,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "laporan_kunjungan_owner", label: "Laporan Kunjungan Sales", icon: MapPin, roles: ["owner"] },
     { key: "laporan_periodik_sales", label: "Laporan Mingguan/Bulanan", icon: FileEdit, roles: ["owner"] },
     { key: "laporan_kurir", label: "Laporan Kurir", icon: Truck, roles: ["owner", "admin_transaksi"] },
+    { key: "buat_laporan_kurir", label: "Buat Laporan Kurir", icon: ScanLine, roles: ["owner", "admin_transaksi"] },
     { key: "banner_promo", label: "Banner Promo", icon: ImageIcon, roles: ["owner"] },
   ];
   const items = allItems
@@ -10002,8 +10004,80 @@ function SiapDikirimBaruPage({ token, role }) {
 // LAPORAN KURIR - kerangka awal, 2 tab (Kurir Baraka & Kurir Toko),
 // masing-masing siap dihubungkan ke sumber data/laporannya nanti.
 // ============================================================
+function LaporanKurirDocContent({ laporan, items }) {
+  return (
+    <div className="nota-print-area" style={{ padding: "36px 44px", fontFamily: "'Times New Roman', serif" }}>
+      <div style={{ textAlign: "center", marginBottom: 24 }}>
+        <p style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{COMPANY_NAME}</p>
+        <p style={{ fontSize: 15, fontWeight: 700, margin: "18px 0 0", textDecoration: "underline" }}>BUKTI SERAH TERIMA PAKET</p>
+        <p style={{ fontSize: 13, margin: "4px 0 0" }}>{laporan.jenis_kurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"}</p>
+      </div>
+
+      <table style={{ marginBottom: 20, fontSize: 13 }}><tbody>
+        <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Tanggal</td><td>: {new Date(laporan.created_at).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}</td></tr>
+        <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Nama Kurir</td><td>: {laporan.nama_kurir}</td></tr>
+        <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>No. HP</td><td>: {laporan.no_hp_kurir || "-"}</td></tr>
+        <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Jumlah Koli</td><td>: {laporan.jumlah_koli}</td></tr>
+      </tbody></table>
+
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginBottom: 30 }}>
+        <thead>
+          <tr>
+            <th style={{ border: "1px solid #24272B", padding: "6px 10px", width: 50 }}>No</th>
+            <th style={{ border: "1px solid #24272B", padding: "6px 10px", textAlign: "left" }}>Nomor Nota</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, i) => (
+            <tr key={it.id}>
+              <td style={{ border: "1px solid #24272B", padding: "6px 10px", textAlign: "center" }}>{i + 1}</td>
+              <td style={{ border: "1px solid #24272B", padding: "6px 10px" }}>{it.no_nota}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <div style={{ textAlign: "center", width: 220 }}>
+          <p style={{ fontSize: 13, margin: "0 0 10px" }}>Yang Menerima,</p>
+          {laporan.ttd_kurir_url ? (
+            <img src={laporan.ttd_kurir_url} alt="Tanda tangan" style={{ height: 80, objectFit: "contain", margin: "0 auto" }} />
+          ) : (
+            <div style={{ height: 80 }} />
+          )}
+          <p style={{ fontSize: 13, margin: "6px 0 0", borderTop: "1px solid #24272B", paddingTop: 6 }}>{laporan.nama_kurir}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function LaporanKurirPage({ token }) {
   const [activeTab, setActiveTab] = useState("baraka"); // "baraka" | "toko"
+  const [loading, setLoading] = useState(true);
+  const [laporanList, setLaporanList] = useState([]);
+  const [error, setError] = useState("");
+  const [viewingLaporan, setViewingLaporan] = useState(null); // { laporan, items } | null
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, `laporan_kurir?select=*&jenis_kurir=eq.${activeTab}&order=created_at.desc`);
+      setLaporanList(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [activeTab]);
+
+  async function bukaDokumen(laporan) {
+    try {
+      const items = await supabaseFetch(token, `laporan_kurir_items?select=*&laporan_kurir_id=eq.${laporan.id}&order=created_at.asc`);
+      setViewingLaporan({ laporan, items });
+    } catch (e) {
+      alert("Gagal muat detail: " + e.message);
+    }
+  }
 
   return (
     <div>
@@ -10024,13 +10098,377 @@ function LaporanKurirPage({ token }) {
         </button>
       </div>
 
-      <Card style={{ textAlign: "center", padding: 40 }}>
-        <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>
-          Laporan {activeTab === "baraka" ? "Kurir Baraka" : "Kurir Toko"}
-        </p>
-        <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: 0 }}>
-          Belum ada data terhubung untuk laporan ini. Kabari kalau sudah siap dihubungkan ke sumber datanya.
-        </p>
+      {loading ? (
+        <LoadingState />
+      ) : error ? (
+        <ErrorBox error={error} onRetry={load} />
+      ) : laporanList.length === 0 ? (
+        <EmptyState text="Belum ada laporan untuk kategori ini." />
+      ) : (
+        laporanList.map((l) => (
+          <Card key={l.id} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+              <div>
+                <p style={{ fontSize: 14.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{l.nama_kurir}</p>
+                <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{l.jumlah_koli} koli - {new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}</p>
+              </div>
+              <button
+                onClick={() => bukaDokumen(l)}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+              >
+                <FileEdit size={14} /> Lihat / Cetak
+              </button>
+            </div>
+          </Card>
+        ))
+      )}
+
+      {viewingLaporan && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 14, width: "100%", maxWidth: 620, maxHeight: "88vh", overflowY: "auto", padding: 0 }}>
+            <LaporanKurirDocContent laporan={viewingLaporan.laporan} items={viewingLaporan.items} />
+            <div style={{ display: "flex", gap: 10, padding: "16px 36px 24px" }}>
+              <button onClick={() => setViewingLaporan(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
+                Tutup
+              </button>
+              <button
+                onClick={() => bukaTabPreviewCetak(<LaporanKurirDocContent laporan={viewingLaporan.laporan} items={viewingLaporan.items} />, "Bukti Serah Terima Paket", "8.5in 11in")}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+              >
+                <Printer size={15} /> Print
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// BUAT LAPORAN KURIR - pilih kurir -> scan paket -> isi form -> konfirmasi
+// ============================================================
+function BuatLaporanKurirPage({ token }) {
+  const [step, setStep] = useState("pilih_kurir"); // "pilih_kurir" | "scan" | "form"
+  const [jenisKurir, setJenisKurir] = useState(null); // "baraka" | "toko"
+  const [scannedList, setScannedList] = useState([]); // [{ no_nota, order_id }]
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const [scanMsg, setScanMsg] = useState(null);
+  const html5QrRef = useRef(null);
+
+  const [namaKurir, setNamaKurir] = useState("");
+  const [noHpKurir, setNoHpKurir] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [berhasilData, setBerhasilData] = useState(null); // laporan yang baru dibuat, buat konfirmasi sukses
+
+  const canvasRef = useRef(null);
+  const isDrawingRef = useRef(false);
+  const lastPosRef = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    return () => {
+      if (html5QrRef.current) html5QrRef.current.stop().catch(() => {});
+    };
+  }, []);
+
+  function pilihKurir(jenis) {
+    setJenisKurir(jenis);
+    setScannedList([]);
+    setStep("scan");
+  }
+
+  function tutupKamera() {
+    if (html5QrRef.current) {
+      html5QrRef.current.stop().catch(() => {}).finally(() => {
+        html5QrRef.current = null;
+      });
+    }
+    setShowCamera(false);
+  }
+
+  async function mulaiScanKamera() {
+    setCameraError("");
+    setShowCamera(true);
+    try {
+      await loadHtml5Qrcode();
+      setTimeout(async () => {
+        try {
+          const html5Qr = new window.Html5Qrcode("reader-kamera-laporan-kurir");
+          html5QrRef.current = html5Qr;
+          await html5Qr.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 260, height: 140 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
+            (decodedText) => {
+              tambahScan(decodedText);
+            },
+            () => { /* frame tanpa barcode terdeteksi - normal, diamkan */ }
+          );
+        } catch (e) {
+          setCameraError("Gagal buka kamera: " + e.message + " (pastikan izinkan akses kamera di browser)");
+        }
+      }, 200);
+    } catch (e) {
+      setCameraError("Gagal muat library scanner: " + e.message);
+    }
+  }
+
+  async function tambahScan(decodedText) {
+    const kode = decodedText.trim();
+    if (scannedList.some((s) => s.no_nota === kode)) {
+      setScanMsg({ type: "error", text: `${kode} sudah discan sebelumnya.` });
+      return;
+    }
+    try {
+      const rows = await supabaseFetch(token, `orders?select=id,no_nota&no_nota=eq.${kode}`);
+      if (!rows || rows.length === 0) {
+        setScanMsg({ type: "error", text: `Nomor "${kode}" tidak ditemukan.` });
+        return;
+      }
+      setScannedList((prev) => [...prev, { no_nota: rows[0].no_nota, order_id: rows[0].id }]);
+      setScanMsg({ type: "ok", text: `${rows[0].no_nota} berhasil ditambahkan.` });
+    } catch (e) {
+      setScanMsg({ type: "error", text: "Gagal cek nomor: " + e.message });
+    }
+  }
+
+  function hapusScan(no_nota) {
+    setScannedList((prev) => prev.filter((s) => s.no_nota !== no_nota));
+  }
+
+  // ---------- CANVAS TANDA TANGAN ----------
+  function getPos(e) {
+    const rect = canvasRef.current.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    return { x: clientX - rect.left, y: clientY - rect.top };
+  }
+  function mulaiGambar(e) {
+    isDrawingRef.current = true;
+    lastPosRef.current = getPos(e);
+  }
+  function gambar(e) {
+    if (!isDrawingRef.current) return;
+    e.preventDefault();
+    const ctx = canvasRef.current.getContext("2d");
+    const pos = getPos(e);
+    ctx.strokeStyle = "#24272B";
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(lastPosRef.current.x, lastPosRef.current.y);
+    ctx.lineTo(pos.x, pos.y);
+    ctx.stroke();
+    lastPosRef.current = pos;
+  }
+  function selesaiGambar() {
+    isDrawingRef.current = false;
+  }
+  function bersihkanTtd() {
+    const ctx = canvasRef.current.getContext("2d");
+    ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+  }
+
+  async function submitLaporan() {
+    if (!namaKurir.trim()) {
+      alert("Isi dulu nama kurir.");
+      return;
+    }
+    if (scannedList.length === 0) {
+      alert("Belum ada paket yang discan.");
+      return;
+    }
+    setSaving(true);
+    try {
+      // Upload tanda tangan sebagai gambar
+      const canvas = canvasRef.current;
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      let ttdUrl = null;
+      if (blob) {
+        const filePath = `ttd-kurir-${Date.now()}.png`;
+        const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+          method: "POST",
+          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "image/png" },
+          body: blob,
+        });
+        if (res.ok) ttdUrl = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+      }
+
+      const [laporan] = await supabaseFetch(token, "laporan_kurir", {
+        method: "POST",
+        body: JSON.stringify({
+          jenis_kurir: jenisKurir, nama_kurir: namaKurir.trim(), no_hp_kurir: noHpKurir.trim() || null,
+          ttd_kurir_url: ttdUrl, jumlah_koli: scannedList.length,
+        }),
+      });
+
+      await supabaseFetch(token, "laporan_kurir_items", {
+        method: "POST",
+        body: JSON.stringify(scannedList.map((s) => ({ laporan_kurir_id: laporan.id, order_id: s.order_id, no_nota: s.no_nota }))),
+      });
+
+      setBerhasilData(laporan);
+    } catch (e) {
+      alert("Gagal simpan laporan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  function mulaiLagi() {
+    setStep("pilih_kurir");
+    setJenisKurir(null);
+    setScannedList([]);
+    setNamaKurir("");
+    setNoHpKurir("");
+    setBerhasilData(null);
+    setScanMsg(null);
+  }
+
+  // ---------- TAMPILAN SUKSES ----------
+  if (berhasilData) {
+    return (
+      <div>
+        <Card style={{ textAlign: "center", padding: 40, maxWidth: 440, margin: "0 auto" }}>
+          <div style={{ width: 60, height: 60, borderRadius: "50%", background: "#D8E9E6", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px" }}>
+            <Check size={28} color="#28685D" />
+          </div>
+          <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>Laporan Berhasil Dibuat</p>
+          <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 24px" }}>
+            {scannedList.length} koli tercatat untuk {jenisKurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"} - {namaKurir}
+          </p>
+          <button onClick={mulaiLagi} style={{ padding: "12px 28px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+            Buat Laporan Baru
+          </button>
+        </Card>
+      </div>
+    );
+  }
+
+  // ---------- STEP 1: PILIH KURIR ----------
+  if (step === "pilih_kurir") {
+    return (
+      <div>
+        <PageHeader title="Buat Laporan Kurir" subtitle="Pilih jenis kurir untuk mulai serah terima paket" />
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
+          <div onClick={() => pilihKurir("baraka")} style={{ cursor: "pointer" }}>
+            <Card style={{ width: 220, textAlign: "center", padding: 28 }}>
+              <Truck size={30} color="#8A6A1A" style={{ marginBottom: 10 }} />
+              <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>Kurir Baraka</p>
+            </Card>
+          </div>
+          <div onClick={() => pilihKurir("toko")} style={{ cursor: "pointer" }}>
+            <Card style={{ width: 220, textAlign: "center", padding: 28 }}>
+              <Truck size={30} color="#28685D" style={{ marginBottom: 10 }} />
+              <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>Kurir Toko</p>
+            </Card>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- STEP 2: SCAN PAKET ----------
+  if (step === "scan") {
+    return (
+      <div>
+        <button onClick={() => setStep("pilih_kurir")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+          <ChevronLeft size={16} /> Ganti Kurir
+        </button>
+        <PageHeader title={`Scan Paket - ${jenisKurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"}`} subtitle="Scan barcode/QR tiap paket yang diserahkan" />
+
+        <Card style={{ marginBottom: 16 }}>
+          <button
+            onClick={mulaiScanKamera}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: 13, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14 }}
+          >
+            <Camera size={17} /> Scan Paket
+          </button>
+          {scanMsg && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: 10, borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600 }}>
+              {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
+            </div>
+          )}
+        </Card>
+
+        <Card style={{ marginBottom: 20 }}>
+          <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Jumlah Koli</p>
+          <p className="disp" style={{ fontSize: 32, fontWeight: 700, color: "#24272B", margin: 0 }}>{scannedList.length}</p>
+        </Card>
+
+        {scannedList.length > 0 && (
+          <Card style={{ marginBottom: 20, padding: 0, overflow: "hidden" }}>
+            {scannedList.map((s, i) => (
+              <div key={s.no_nota} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderTop: i > 0 ? "1px solid #EDEAE3" : "none" }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: "#24272B" }}>{s.no_nota}</span>
+                <button onClick={() => hapusScan(s.no_nota)} style={{ background: "none", border: "none", color: "#C0392B", fontSize: 11.5, fontWeight: 700 }}>Hapus</button>
+              </div>
+            ))}
+          </Card>
+        )}
+
+        <button
+          onClick={() => setStep("form")}
+          disabled={scannedList.length === 0}
+          style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: scannedList.length === 0 ? "#E4E1DA" : "#28685D", color: scannedList.length === 0 ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 14 }}
+        >
+          Lanjut Isi Form ({scannedList.length} koli)
+        </button>
+
+        {showCamera && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+            <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode/QR paket</p>
+            <div id="reader-kamera-laporan-kurir" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
+            {cameraError && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraError}</p>}
+            <button onClick={tutupKamera} style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
+              Tutup Kamera
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---------- STEP 3: FORM KURIR + TTD ----------
+  const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  return (
+    <div>
+      <button onClick={() => setStep("scan")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+        <ChevronLeft size={16} /> Kembali ke Scan
+      </button>
+      <PageHeader title="Data Kurir & Tanda Tangan" subtitle={`${scannedList.length} koli - ${jenisKurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"}`} />
+
+      <Card style={{ maxWidth: 460 }}>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Nama Kurir</label>
+          <input value={namaKurir} onChange={(e) => setNamaKurir(e.target.value)} style={fieldStyle} />
+        </div>
+        <div style={{ marginBottom: 18 }}>
+          <label style={labelStyle}>No. HP Kurir</label>
+          <input value={noHpKurir} onChange={(e) => setNoHpKurir(e.target.value)} style={fieldStyle} />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <label style={labelStyle}>Tanda Tangan Kurir</label>
+        </div>
+        <canvas
+          ref={canvasRef}
+          width={400} height={160}
+          style={{ width: "100%", height: 160, border: "1.5px dashed #E4E1DA", borderRadius: 9, background: "#FAFAF8", touchAction: "none" }}
+          onMouseDown={mulaiGambar} onMouseMove={gambar} onMouseUp={selesaiGambar} onMouseLeave={selesaiGambar}
+          onTouchStart={mulaiGambar} onTouchMove={gambar} onTouchEnd={selesaiGambar}
+        />
+        <button onClick={bersihkanTtd} style={{ marginTop: 8, padding: "6px 12px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11.5, fontWeight: 600 }}>
+          Hapus Tanda Tangan
+        </button>
+
+        <button
+          onClick={submitLaporan}
+          disabled={saving}
+          style={{ width: "100%", marginTop: 20, padding: 13, borderRadius: 10, border: "none", background: saving ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14 }}
+        >
+          {saving ? "Menyimpan..." : "Konfirmasi Laporan"}
+        </button>
       </Card>
     </div>
   );
