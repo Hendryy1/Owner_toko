@@ -142,7 +142,7 @@ function bukaTabPreviewBarcode(orders) {
               if (d.isPekanbaru) {
                 new QRCode(document.getElementById("qr-" + d.idx), { text: d.noNota, width: 160, height: 160 });
               } else {
-                JsBarcode("#barcode-" + d.idx, d.noNota, { format: "CODE39", width: 3, height: 80, displayValue: true, fontSize: 14, margin: 6 });
+                JsBarcode("#barcode-" + d.idx, d.noNota, { format: "CODE128", width: 3, height: 80, displayValue: true, fontSize: 14, margin: 6 });
               }
             });
           };
@@ -608,7 +608,7 @@ function LoadingState() {
 }
 
 // ============================================================
-// BARCODE LABEL - render barcode CODE39 pakai library JsBarcode
+// BARCODE LABEL - render barcode CODE128 pakai library JsBarcode
 // (dimuat dari CDN, bukan bikin sendiri - supaya dijamin bisa di-scan)
 // ============================================================
 let jsBarcodeLoadPromise = null;
@@ -639,9 +639,9 @@ function BarcodeLabel({ value, width = 3, height = 80 }) {
     if (ready && svgRef.current && value) {
       try {
         window.JsBarcode(svgRef.current, value, {
-          format: "CODE39", width, height, displayValue: true, fontSize: 14, margin: 6,
+          format: "CODE128", width, height, displayValue: true, fontSize: 14, margin: 6,
         });
-      } catch (e) { /* value tidak valid buat CODE39 (karakter tidak didukung) */ }
+      } catch (e) { /* value tidak valid buat CODE128 (karakter tidak didukung) */ }
     }
   }, [ready, value, width, height]);
 
@@ -8193,7 +8193,7 @@ function OutboundPage({ token }) {
           html5QrRef.current = html5Qr;
           await html5Qr.start(
             { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 300, height: 150 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
+            { fps: 10, qrbox: { width: 300, height: 150 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_128, window.Html5QrcodeSupportedFormats.QR_CODE] },
             (decodedText) => {
               setInputScan(decodedText);
               cariPesanan(decodedText);
@@ -9880,7 +9880,7 @@ function SiapDikirimBaruPage({ token, role }) {
           html5QrRef.current = html5Qr;
           await html5Qr.start(
             { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 300, height: 150 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
+            { fps: 10, qrbox: { width: 300, height: 150 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_128, window.Html5QrcodeSupportedFormats.QR_CODE] },
             (decodedText) => {
               tutupKamera();
               tanganiHasilScan(decodedText);
@@ -10203,7 +10203,7 @@ function BuatLaporanKurirPage({ token }) {
             { facingMode: "environment" },
             {
               fps: 10, qrbox: { width: 300, height: 150 },
-              formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE],
+              formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_128, window.Html5QrcodeSupportedFormats.QR_CODE],
             },
             (decodedText) => {
               tambahScan(decodedText);
@@ -10417,7 +10417,7 @@ function BuatLaporanKurirPage({ token }) {
             />
           </div>
           <p style={{ fontSize: 11, color: "#9CA0A6", margin: "8px 0 0", textAlign: "center" }}>
-            Kompatibel dengan alat scanner barcode USB/Bluetooth (bekerja seperti keyboard) - lebih akurat untuk barcode CODE39 dibanding kamera HP.
+            Kompatibel dengan alat scanner barcode USB/Bluetooth (bekerja seperti keyboard) - lebih akurat untuk barcode CODE128 dibanding kamera HP.
           </p>
 
           {scanMsg && (
