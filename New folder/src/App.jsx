@@ -9794,12 +9794,7 @@ function SiapDikirimBaruPage({ token, role }) {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
-  const [processingId, setProcessingId] = useState(null);
-  const [showCamera, setShowCamera] = useState(false);
-  const [cameraError, setCameraError] = useState("");
-  const [scanMsg, setScanMsg] = useState(null); // { type: "ok"|"error", text }
-  const [confirmingOrder, setConfirmingOrder] = useState(null); // order hasil scan, nunggu konfirmasi
-  const html5QrRef = useRef(null);
+  const [activeTab, setActiveTab] = useState("toko"); // "toko" | "baraka"
 
   async function load() {
     setLoading(true);
@@ -9819,119 +9814,49 @@ function SiapDikirimBaruPage({ token, role }) {
   }
   useEffect(() => { load(); }, []);
 
-  useEffect(() => {
-    return () => {
-      if (html5QrRef.current) html5QrRef.current.stop().catch(() => {});
-    };
-  }, []);
-
-  async function mulaiKirim(order) {
-    setProcessingId(order.id);
-    try {
-      const now = new Date().toISOString();
-      await supabaseFetch(token, `orders?id=eq.${order.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status: "proses_dikirim", tanggal_dikirim: now }),
-      });
-      setOrders((prev) => prev.filter((o) => o.id !== order.id));
-      setScanMsg({ type: "ok", text: `${order.no_nota} berhasil dikonfirmasi mulai dikirim.` });
-      setConfirmingOrder(null);
-    } catch (e) {
-      setScanMsg({ type: "error", text: "Gagal update: " + e.message });
-    }
-    setProcessingId(null);
-  }
-
-  function tutupKamera() {
-    if (html5QrRef.current) {
-      html5QrRef.current.stop().catch(() => {}).finally(() => {
-        html5QrRef.current = null;
-      });
-    }
-    setShowCamera(false);
-  }
-
-  // Kalau nomor yang discan tidak ada di daftar Siap Dikirim (kemungkinan
-  // sudah pernah discan sebelumnya) - cek langsung ke database supaya bisa
-  // kasih pesan yang tepat, bukan cuma "tidak ditemukan".
-  async function tanganiHasilScan(decodedText) {
-    const kode = decodedText.trim();
-    const cocok = orders.find((o) => o.no_nota === kode);
-    if (cocok) {
-      setScanMsg(null);
-      setConfirmingOrder(cocok);
-      return;
-    }
-    try {
-      const rows = await supabaseFetch(token, `orders?select=no_nota,status&no_nota=eq.${kode}`);
-      if (!rows || rows.length === 0) {
-        setScanMsg({ type: "error", text: `Nomor "${kode}" tidak ditemukan.` });
-      } else if (["proses_dikirim", "selesai"].includes(rows[0].status)) {
-        setScanMsg({ type: "error", text: `Pesanan ${rows[0].no_nota} sudah dalam proses pengiriman.` });
-      } else {
-        setScanMsg({ type: "error", text: `Pesanan ${rows[0].no_nota} belum siap discan di sini (statusnya masih "${rows[0].status}").` });
-      }
-    } catch (e) {
-      setScanMsg({ type: "error", text: "Gagal cek nomor: " + e.message });
-    }
-  }
-
-  async function mulaiScanKamera() {
-    setCameraError("");
-    setScanMsg(null);
-    setShowCamera(true);
-    try {
-      await loadHtml5Qrcode();
-      setTimeout(async () => {
-        try {
-          const html5Qr = new window.Html5Qrcode("reader-kamera-siap-kirim");
-          html5QrRef.current = html5Qr;
-          await html5Qr.start(
-            { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 300, height: 150 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_128, window.Html5QrcodeSupportedFormats.QR_CODE] },
-            (decodedText) => {
-              tutupKamera();
-              tanganiHasilScan(decodedText);
-            },
-            () => { /* frame tanpa barcode terdeteksi - normal, diamkan */ }
-          );
-        } catch (e) {
-          setCameraError("Gagal buka kamera: " + e.message + " (pastikan izinkan akses kamera di browser)");
-        }
-      }, 200);
-    } catch (e) {
-      setCameraError("Gagal muat library scanner: " + e.message);
-    }
-  }
-
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
+  // Kurir Toko = tujuan Pekanbaru (diantar sendiri), Baraka = luar kota
+  // (dikirim lewat jasa kurir eksternal Baraka)
+  function isPekanbaruOrder(o) {
+    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+    return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+  }
+  const orderToko = orders.filter((o) => isPekanbaruOrder(o));
+  const orderBaraka = orders.filter((o) => !isPekanbaruOrder(o));
+  const orderTampil = activeTab === "baraka" ? orderBaraka : orderToko;
+
   return (
     <div>
-      <PageHeader title="Siap Dikirim" subtitle={`${orders.length} pesanan sudah discan outbound, siap dibawa kurir`} />
+      <PageHeader title="Siap Dikirim" subtitle={`${orders.length} pesanan sudah discan outbound, menunggu diserahkan ke kurir`} />
 
-      <Card style={{ marginBottom: 20 }}>
-        <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 12px" }}>
-          Pesanan cuma bisa dikonfirmasi "Mulai Kirim" dengan <strong>scan barcode/QR</strong> pakai kamera HP - tombol tekan langsung sengaja dinonaktifkan.
-        </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button
-          onClick={mulaiScanKamera}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: 13, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14 }}
+          onClick={() => setActiveTab("toko")}
+          style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "toko" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "toko" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
         >
-          <Camera size={17} /> Scan untuk Mulai Kirim
+          Kurir Toko ({orderToko.length})
         </button>
-        {scanMsg && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: 10, borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600 }}>
-            {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
-          </div>
-        )}
-      </Card>
+        <button
+          onClick={() => setActiveTab("baraka")}
+          style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "baraka" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "baraka" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+        >
+          Baraka ({orderBaraka.length})
+        </button>
+      </div>
 
-      {orders.length === 0 ? (
-        <EmptyState text="Tidak ada pesanan yang siap dikirim saat ini." />
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBF0D9", borderRadius: 10, padding: 12, marginBottom: 20 }}>
+        <AlertCircle size={15} color="#8A6A1A" style={{ flexShrink: 0, marginTop: 1 }} />
+        <p style={{ fontSize: 12, color: "#8A6A1A", margin: 0, lineHeight: 1.5 }}>
+          Ini cuma tampilan info - pesanan di sini otomatis pindah ke "Proses Pengiriman" begitu diserahkan ke kurir lewat menu <strong>"Buat Laporan Kurir"</strong>.
+        </p>
+      </div>
+
+      {orderTampil.length === 0 ? (
+        <EmptyState text="Tidak ada pesanan yang siap dikirim di kategori ini." />
       ) : (
-        orders.map((o) => (
+        orderTampil.map((o) => (
           <Card key={o.id} style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
               <div>
@@ -9944,74 +9869,17 @@ function SiapDikirimBaruPage({ token, role }) {
                 <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
                 <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>{o.tujuan_alamat || o.clients?.alamat}</p>
               </div>
-              <span
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "11px 20px", borderRadius: 10, background: "#F7F5F1", color: "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}
-                title="Cuma bisa dikonfirmasi lewat scan kamera, bukan tombol"
-              >
-                {processingId === o.id ? "Memproses..." : <><ScanLine size={16} /> Menunggu Scan</>}
+              <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "11px 20px", borderRadius: 10, background: "#F7F5F1", color: "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}>
+                <ScanLine size={16} /> Menunggu Scan
               </span>
             </div>
           </Card>
         ))
       )}
-
-      {showCamera && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode/QR pesanan</p>
-          <div id="reader-kamera-siap-kirim" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
-          {cameraError && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraError}</p>}
-          <button
-            onClick={tutupKamera}
-            style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
-          >
-            Tutup Kamera
-          </button>
-        </div>
-      )}
-
-      {/* POPUP KONFIRMASI SETELAH SCAN BERHASIL COCOK */}
-      {confirmingOrder && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400, padding: 20 }}>
-          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, padding: 26 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
-              <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#D8E9E6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                <ScanLine size={20} color="#28685D" />
-              </div>
-              <div>
-                <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0, fontWeight: 700, textTransform: "uppercase" }}>Scan Berhasil</p>
-                <p className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: 0 }}>{confirmingOrder.no_nota}</p>
-              </div>
-            </div>
-            <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 4px" }}>{confirmingOrder.clients?.nama} ({confirmingOrder.clients?.kode})</p>
-            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 20px" }}>{confirmingOrder.tujuan_alamat || confirmingOrder.clients?.alamat}</p>
-            <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 18px" }}>Konfirmasi pesanan ini mulai dikirim?</p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button
-                onClick={() => setConfirmingOrder(null)}
-                disabled={processingId === confirmingOrder.id}
-                style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}
-              >
-                Batalkan
-              </button>
-              <button
-                onClick={() => mulaiKirim(confirmingOrder)}
-                disabled={processingId === confirmingOrder.id}
-                style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: processingId === confirmingOrder.id ? "#E4E1DA" : "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
-              >
-                {processingId === confirmingOrder.id ? "Menyimpan..." : "Konfirmasi Pengiriman"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
-// ============================================================
-// LAPORAN KURIR - kerangka awal, 2 tab (Kurir Baraka & Kurir Toko),
-// masing-masing siap dihubungkan ke sumber data/laporannya nanti.
-// ============================================================
 function LaporanKurirDocContent({ laporan, items }) {
   return (
     <div className="nota-print-area" style={{ padding: "36px 44px", fontFamily: "'Times New Roman', serif" }}>
@@ -10332,6 +10200,16 @@ function BuatLaporanKurirPage({ token }) {
       await supabaseFetch(token, "laporan_kurir_items", {
         method: "POST",
         body: JSON.stringify(scannedList.map((s) => ({ laporan_kurir_id: laporan.id, order_id: s.order_id, no_nota: s.no_nota }))),
+      });
+
+      // Bikin laporan kurir = serah terima paket ke kurir - jadi semua order
+      // yang tercantum di laporan ini ikut dipindah statusnya ke
+      // "Proses Pengiriman" (sama seperti tombol "Mulai Kirim" biasa).
+      const now = new Date().toISOString();
+      const orderIds = scannedList.map((s) => s.order_id);
+      await supabaseFetch(token, `orders?id=in.(${orderIds.join(",")})`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "proses_dikirim", tanggal_dikirim: now }),
       });
 
       setBerhasilData(laporan);
