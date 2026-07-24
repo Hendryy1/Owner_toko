@@ -250,7 +250,7 @@ export default function OwnerDashboard() {
     // Kurir cuma bisa akses Proses Pengiriman - langsung arahkan ke situ,
     // karena halaman default (Ringkasan) tidak bisa diakses kurir.
     if (profRows[0].role === "kurir") setPage("proses_kirim");
-    if (profRows[0].role === "staff_gudang") setPage("siap_dikirim");
+    if (profRows[0].role === "staff_gudang") setPage("pesanan_siap");
     // admin_transaksi tidak lagi bisa akses Ringkasan (halaman default) -
     // arahkan ke Approve Pesanan sebagai gantinya.
     if (profRows[0].role === "admin_transaksi") setPage("orders");
@@ -379,7 +379,8 @@ export default function OwnerDashboard() {
         {page === "rekap_absen" && <RekapAbsenPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
-        {page === "siap_dikirim" && <SiapDikirimPage token={token} role={profile?.role} />}
+        {page === "pesanan_siap" && <SiapDikirimPage token={token} role={profile?.role} />}
+        {page === "siap_dikirim_baru" && <SiapDikirimBaruPage token={token} role={profile?.role} />}
         {page === "proses_kirim" && <ProsesPengirimanPage token={token} />}
         {page === "outbound" && <OutboundPage token={token} />}
         {page === "riwayat" && <RiwayatOrderPage token={token} />}
@@ -474,7 +475,8 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
-    { key: "siap_dikirim", label: "Siap Dikirim", icon: PackagePlus, roles: ["owner", "admin_transaksi", "staff_gudang"] },
+    { key: "pesanan_siap", label: "Pesanan", icon: PackagePlus, roles: ["owner", "admin_transaksi", "staff_gudang"] },
+    { key: "siap_dikirim_baru", label: "Siap Dikirim", icon: Truck, roles: ["owner", "admin_transaksi", "kurir", "staff_gudang"] },
     { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "kurir"] },
     { key: "outbound", label: "Outbound", icon: ScanLine, roles: ["owner", "staff_gudang"] },
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
@@ -3535,7 +3537,7 @@ function SiapDikirimPage({ token, role }) {
 
   return (
     <div>
-      <PageHeader title="Siap Dikirim" subtitle={`${orders.length} pesanan siap dikirim - cetak barcode untuk masing-masing`} />
+      <PageHeader title="Pesanan" subtitle={`${orders.length} pesanan siap diproses - cetak barcode untuk masing-masing`} />
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button
@@ -8248,14 +8250,14 @@ function OutboundPage({ token }) {
     setConfirming(true);
     try {
       const now = new Date().toISOString();
-      // Konfirmasi scan outbound INI yang jadi pemicu order pindah dari "Siap
-      // Dikirim" ke "Proses Pengiriman" - status diubah jadi proses_dikirim
-      // sekaligus dicatat tanggal_dikirim & outbound_verified_at-nya.
+      // Konfirmasi scan outbound INI yang jadi pemicu order pindah dari
+      // "Pesanan" ke "Siap Dikirim" (BUKAN langsung ke Proses Pengiriman
+      // lagi) - kurir/staff masih perlu mulai kirim dari menu Siap Dikirim.
       await supabaseFetch(token, `orders?id=eq.${order.id}`, {
         method: "PATCH",
-        body: JSON.stringify({ outbound_verified_at: now, status: "proses_dikirim", tanggal_dikirim: now }),
+        body: JSON.stringify({ outbound_verified_at: now, status: "siap_dikirim" }),
       });
-      setOrder((prev) => ({ ...prev, outbound_verified_at: now, status: "proses_dikirim", tanggal_dikirim: now }));
+      setOrder((prev) => ({ ...prev, outbound_verified_at: now, status: "siap_dikirim" }));
       loadRiwayat();
     } catch (e) {
       alert("Gagal konfirmasi: " + e.message);
@@ -8349,7 +8351,7 @@ function OutboundPage({ token }) {
             <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", borderRadius: 10, padding: 12 }}>
               <Check size={18} color="#28685D" />
               <p style={{ fontSize: 13, color: "#28685D", fontWeight: 700, margin: 0 }}>
-                Sudah diverifikasi outbound & dipindahkan ke Proses Pengiriman - {new Date(order.outbound_verified_at).toLocaleString("id-ID")}
+                Sudah diverifikasi outbound & dipindahkan ke Siap Dikirim - {new Date(order.outbound_verified_at).toLocaleString("id-ID")}
               </p>
             </div>
           ) : (
@@ -9759,6 +9761,164 @@ function LaporanPeriodikSalesOwnerPage({ token }) {
             </p>
           </Card>
         ))
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// SIAP DIKIRIM (BARU) - order sudah discan Outbound, tunggu kurir mulai
+// bawa jalan. Tahap ini terpisah dari "Pesanan" (sebelum outbound) dan
+// "Proses Pengiriman" (setelah kurir benar-benar mulai jalan).
+// ============================================================
+function SiapDikirimBaruPage({ token, role }) {
+  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState([]);
+  const [error, setError] = useState("");
+  const [processingId, setProcessingId] = useState(null);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const [scanMsg, setScanMsg] = useState(null); // { type: "ok"|"error", text }
+  const html5QrRef = useRef(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,kota)&status=eq.siap_dikirim&order=outbound_verified_at.asc");
+      setOrders(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  useEffect(() => {
+    return () => {
+      if (html5QrRef.current) html5QrRef.current.stop().catch(() => {});
+    };
+  }, []);
+
+  async function mulaiKirim(order) {
+    setProcessingId(order.id);
+    try {
+      const now = new Date().toISOString();
+      await supabaseFetch(token, `orders?id=eq.${order.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "proses_dikirim", tanggal_dikirim: now }),
+      });
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+      setScanMsg({ type: "ok", text: `${order.no_nota} berhasil dikonfirmasi mulai dikirim.` });
+    } catch (e) {
+      setScanMsg({ type: "error", text: "Gagal update: " + e.message });
+    }
+    setProcessingId(null);
+  }
+
+  function tutupKamera() {
+    if (html5QrRef.current) {
+      html5QrRef.current.stop().catch(() => {}).finally(() => {
+        html5QrRef.current = null;
+      });
+    }
+    setShowCamera(false);
+  }
+
+  async function mulaiScanKamera() {
+    setCameraError("");
+    setScanMsg(null);
+    setShowCamera(true);
+    try {
+      await loadHtml5Qrcode();
+      setTimeout(async () => {
+        try {
+          const html5Qr = new window.Html5Qrcode("reader-kamera-siap-kirim");
+          html5QrRef.current = html5Qr;
+          await html5Qr.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 260, height: 140 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
+            (decodedText) => {
+              const cocok = orders.find((o) => o.no_nota === decodedText.trim());
+              tutupKamera();
+              if (cocok) {
+                mulaiKirim(cocok);
+              } else {
+                setScanMsg({ type: "error", text: `Nomor "${decodedText}" tidak ditemukan di daftar Siap Dikirim.` });
+              }
+            },
+            () => { /* frame tanpa barcode terdeteksi - normal, diamkan */ }
+          );
+        } catch (e) {
+          setCameraError("Gagal buka kamera: " + e.message + " (pastikan izinkan akses kamera di browser)");
+        }
+      }, 200);
+    } catch (e) {
+      setCameraError("Gagal muat library scanner: " + e.message);
+    }
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  return (
+    <div>
+      <PageHeader title="Siap Dikirim" subtitle={`${orders.length} pesanan sudah discan outbound, siap dibawa kurir`} />
+
+      <Card style={{ marginBottom: 20 }}>
+        <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 12px" }}>
+          Pesanan cuma bisa dikonfirmasi "Mulai Kirim" dengan <strong>scan barcode/QR</strong> pakai kamera HP - tombol tekan langsung sengaja dinonaktifkan.
+        </p>
+        <button
+          onClick={mulaiScanKamera}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: 13, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14 }}
+        >
+          <Camera size={17} /> Scan untuk Mulai Kirim
+        </button>
+        {scanMsg && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: 10, borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600 }}>
+            {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
+          </div>
+        )}
+      </Card>
+
+      {orders.length === 0 ? (
+        <EmptyState text="Tidak ada pesanan yang siap dikirim saat ini." />
+      ) : (
+        orders.map((o) => (
+          <Card key={o.id} style={{ marginBottom: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+              <div>
+                <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
+                  {o.no_nota}
+                  {o.metode_bayar === "cod" && (
+                    <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                  )}
+                </p>
+                <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>{o.clients?.alamat}</p>
+              </div>
+              <span
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "11px 20px", borderRadius: 10, background: "#F7F5F1", color: "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}
+                title="Cuma bisa dikonfirmasi lewat scan kamera, bukan tombol"
+              >
+                {processingId === o.id ? "Memproses..." : <><ScanLine size={16} /> Menunggu Scan</>}
+              </span>
+            </div>
+          </Card>
+        ))
+      )}
+
+      {showCamera && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode/QR pesanan</p>
+          <div id="reader-kamera-siap-kirim" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
+          {cameraError && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraError}</p>}
+          <button
+            onClick={tutupKamera}
+            style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+          >
+            Tutup Kamera
+          </button>
+        </div>
       )}
     </div>
   );
