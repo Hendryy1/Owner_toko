@@ -10156,6 +10156,8 @@ function BuatLaporanKurirPage({ token }) {
   const [cameraError, setCameraError] = useState("");
   const [scanMsg, setScanMsg] = useState(null);
   const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan, nunggu konfirmasi tambah
+  const [inputManual, setInputManual] = useState("");
+  const manualInputRef = useRef(null);
   const html5QrRef = useRef(null);
 
   const [namaKurir, setNamaKurir] = useState("");
@@ -10396,10 +10398,28 @@ function BuatLaporanKurirPage({ token }) {
         <Card style={{ marginBottom: 16 }}>
           <button
             onClick={mulaiScanKamera}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: 13, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14 }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: 13, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14, marginBottom: 14 }}
           >
-            <Camera size={17} /> Scan Paket
+            <Camera size={17} /> Scan Pakai Kamera HP
           </button>
+
+          <p style={{ fontSize: 11, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 8px", textAlign: "center" }}>atau</p>
+
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#F7F5F1", borderRadius: 10, padding: "10px 14px" }}>
+            <ScanLine size={20} color="#8A6A1A" />
+            <input
+              ref={manualInputRef}
+              value={inputManual}
+              onChange={(e) => setInputManual(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && inputManual.trim()) { tambahScan(inputManual); setInputManual(""); } }}
+              placeholder="Scan pakai alat scanner fisik, atau ketik manual lalu Enter..."
+              style={{ flex: 1, background: "none", border: "none", outline: "none", fontSize: 14, fontWeight: 600, color: "#24272B" }}
+            />
+          </div>
+          <p style={{ fontSize: 11, color: "#9CA0A6", margin: "8px 0 0", textAlign: "center" }}>
+            Kompatibel dengan alat scanner barcode USB/Bluetooth (bekerja seperti keyboard) - lebih akurat untuk barcode CODE39 dibanding kamera HP.
+          </p>
+
           {scanMsg && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: 10, borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600 }}>
               {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
