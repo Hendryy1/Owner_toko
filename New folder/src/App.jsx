@@ -8193,7 +8193,7 @@ function OutboundPage({ token }) {
           html5QrRef.current = html5Qr;
           await html5Qr.start(
             { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 260, height: 140 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
+            { fps: 10, qrbox: { width: 280, height: 120 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE], experimentalFeatures: { useBarCodeDetectorIfSupported: true } },
             (decodedText) => {
               setInputScan(decodedText);
               cariPesanan(decodedText);
@@ -9880,7 +9880,7 @@ function SiapDikirimBaruPage({ token, role }) {
           html5QrRef.current = html5Qr;
           await html5Qr.start(
             { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 260, height: 140 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
+            { fps: 10, qrbox: { width: 280, height: 120 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE], experimentalFeatures: { useBarCodeDetectorIfSupported: true } },
             (decodedText) => {
               tutupKamera();
               tanganiHasilScan(decodedText);
@@ -10155,6 +10155,7 @@ function BuatLaporanKurirPage({ token }) {
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [scanMsg, setScanMsg] = useState(null);
+  const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan, nunggu konfirmasi tambah
   const html5QrRef = useRef(null);
 
   const [namaKurir, setNamaKurir] = useState("");
@@ -10198,7 +10199,11 @@ function BuatLaporanKurirPage({ token }) {
           html5QrRef.current = html5Qr;
           await html5Qr.start(
             { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 260, height: 140 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
+            {
+              fps: 10, qrbox: { width: 280, height: 120 },
+              formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE],
+              experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+            },
             (decodedText) => {
               tambahScan(decodedText);
             },
@@ -10220,16 +10225,29 @@ function BuatLaporanKurirPage({ token }) {
       return;
     }
     try {
-      const rows = await supabaseFetch(token, `orders?select=id,no_nota&no_nota=eq.${kode}`);
+      // Cuma boleh pesanan yang statusnya "Siap Dikirim" (sudah di-scan
+      // outbound, tapi belum "Mulai Kirim") yang bisa diserahkan ke kurir.
+      const rows = await supabaseFetch(token, `orders?select=id,no_nota,status,clients(nama)&no_nota=eq.${kode}`);
       if (!rows || rows.length === 0) {
         setScanMsg({ type: "error", text: `Nomor "${kode}" tidak ditemukan.` });
         return;
       }
-      setScannedList((prev) => [...prev, { no_nota: rows[0].no_nota, order_id: rows[0].id }]);
-      setScanMsg({ type: "ok", text: `${rows[0].no_nota} berhasil ditambahkan.` });
+      if (rows[0].status !== "siap_dikirim") {
+        setScanMsg({ type: "error", text: `${rows[0].no_nota} bukan pesanan di menu Siap Dikirim (statusnya "${rows[0].status}").` });
+        return;
+      }
+      setScanMsg(null);
+      setConfirmingScan(rows[0]);
     } catch (e) {
       setScanMsg({ type: "error", text: "Gagal cek nomor: " + e.message });
     }
+  }
+
+  function konfirmasiTambahScan() {
+    if (!confirmingScan) return;
+    setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id }]);
+    setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} berhasil ditambahkan.` });
+    setConfirmingScan(null);
   }
 
   function hapusScan(no_nota) {
@@ -10422,6 +10440,33 @@ function BuatLaporanKurirPage({ token }) {
             <button onClick={tutupKamera} style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
               Tutup Kamera
             </button>
+          </div>
+        )}
+
+        {/* POPUP KONFIRMASI SETELAH SCAN COCOK */}
+        {confirmingScan && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400, padding: 20 }}>
+            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, padding: 26 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+                <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#D8E9E6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <ScanLine size={20} color="#28685D" />
+                </div>
+                <div>
+                  <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0, fontWeight: 700, textTransform: "uppercase" }}>Scan Berhasil</p>
+                  <p className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: 0 }}>{confirmingScan.no_nota}</p>
+                </div>
+              </div>
+              <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 20px" }}>{confirmingScan.clients?.nama}</p>
+              <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 18px" }}>Tambahkan paket ini ke daftar serah terima?</p>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setConfirmingScan(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                  Batalkan
+                </button>
+                <button onClick={konfirmasiTambahScan} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
+                  Tambahkan
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
