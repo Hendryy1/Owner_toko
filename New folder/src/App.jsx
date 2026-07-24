@@ -407,6 +407,7 @@ export default function OwnerDashboard() {
         {page === "verifikasi_sales" && <VerifikasiSalesPage token={token} />}
         {page === "laporan_kunjungan_owner" && <LaporanKunjunganOwnerPage token={token} />}
         {page === "laporan_periodik_sales" && <LaporanPeriodikSalesOwnerPage token={token} />}
+        {page === "laporan_kurir" && <LaporanKurirPage token={token} />}
         {page === "banner_promo" && <BannerPromoPage token={token} />}
           </>
         )}
@@ -503,6 +504,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "verifikasi_sales", label: "Verifikasi Sales", icon: Eye, roles: ["owner"] },
     { key: "laporan_kunjungan_owner", label: "Laporan Kunjungan Sales", icon: MapPin, roles: ["owner"] },
     { key: "laporan_periodik_sales", label: "Laporan Mingguan/Bulanan", icon: FileEdit, roles: ["owner"] },
+    { key: "laporan_kurir", label: "Laporan Kurir", icon: Truck, roles: ["owner", "admin_transaksi"] },
     { key: "banner_promo", label: "Banner Promo", icon: ImageIcon, roles: ["owner"] },
   ];
   const items = allItems
@@ -9992,6 +9994,44 @@ function SiapDikirimBaruPage({ token, role }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// LAPORAN KURIR - kerangka awal, 2 tab (Kurir Baraka & Kurir Toko),
+// masing-masing siap dihubungkan ke sumber data/laporannya nanti.
+// ============================================================
+function LaporanKurirPage({ token }) {
+  const [activeTab, setActiveTab] = useState("baraka"); // "baraka" | "toko"
+
+  return (
+    <div>
+      <PageHeader title="Laporan Kurir" subtitle="Laporan pengiriman per jenis kurir" />
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <button
+          onClick={() => setActiveTab("baraka")}
+          style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "baraka" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "baraka" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+        >
+          Kurir Baraka
+        </button>
+        <button
+          onClick={() => setActiveTab("toko")}
+          style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "toko" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "toko" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+        >
+          Kurir Toko
+        </button>
+      </div>
+
+      <Card style={{ textAlign: "center", padding: 40 }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>
+          Laporan {activeTab === "baraka" ? "Kurir Baraka" : "Kurir Toko"}
+        </p>
+        <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: 0 }}>
+          Belum ada data terhubung untuk laporan ini. Kabari kalau sudah siap dihubungkan ke sumber datanya.
+        </p>
+      </Card>
     </div>
   );
 }
