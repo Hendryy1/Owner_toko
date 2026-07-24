@@ -9779,6 +9779,7 @@ function SiapDikirimBaruPage({ token, role }) {
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [scanMsg, setScanMsg] = useState(null); // { type: "ok"|"error", text }
+  const [confirmingOrder, setConfirmingOrder] = useState(null); // order hasil scan, nunggu konfirmasi
   const html5QrRef = useRef(null);
 
   async function load() {
@@ -9808,6 +9809,7 @@ function SiapDikirimBaruPage({ token, role }) {
       });
       setOrders((prev) => prev.filter((o) => o.id !== order.id));
       setScanMsg({ type: "ok", text: `${order.no_nota} berhasil dikonfirmasi mulai dikirim.` });
+      setConfirmingOrder(null);
     } catch (e) {
       setScanMsg({ type: "error", text: "Gagal update: " + e.message });
     }
@@ -9821,6 +9823,31 @@ function SiapDikirimBaruPage({ token, role }) {
       });
     }
     setShowCamera(false);
+  }
+
+  // Kalau nomor yang discan tidak ada di daftar Siap Dikirim (kemungkinan
+  // sudah pernah discan sebelumnya) - cek langsung ke database supaya bisa
+  // kasih pesan yang tepat, bukan cuma "tidak ditemukan".
+  async function tanganiHasilScan(decodedText) {
+    const kode = decodedText.trim();
+    const cocok = orders.find((o) => o.no_nota === kode);
+    if (cocok) {
+      setScanMsg(null);
+      setConfirmingOrder(cocok);
+      return;
+    }
+    try {
+      const rows = await supabaseFetch(token, `orders?select=no_nota,status&no_nota=eq.${kode}`);
+      if (!rows || rows.length === 0) {
+        setScanMsg({ type: "error", text: `Nomor "${kode}" tidak ditemukan.` });
+      } else if (["proses_dikirim", "selesai"].includes(rows[0].status)) {
+        setScanMsg({ type: "error", text: `Pesanan ${rows[0].no_nota} sudah dalam proses pengiriman.` });
+      } else {
+        setScanMsg({ type: "error", text: `Pesanan ${rows[0].no_nota} belum siap discan di sini (statusnya masih "${rows[0].status}").` });
+      }
+    } catch (e) {
+      setScanMsg({ type: "error", text: "Gagal cek nomor: " + e.message });
+    }
   }
 
   async function mulaiScanKamera() {
@@ -9837,13 +9864,8 @@ function SiapDikirimBaruPage({ token, role }) {
             { facingMode: "environment" },
             { fps: 10, qrbox: { width: 260, height: 140 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
             (decodedText) => {
-              const cocok = orders.find((o) => o.no_nota === decodedText.trim());
               tutupKamera();
-              if (cocok) {
-                mulaiKirim(cocok);
-              } else {
-                setScanMsg({ type: "error", text: `Nomor "${decodedText}" tidak ditemukan di daftar Siap Dikirim.` });
-              }
+              tanganiHasilScan(decodedText);
             },
             () => { /* frame tanpa barcode terdeteksi - normal, diamkan */ }
           );
@@ -9918,6 +9940,42 @@ function SiapDikirimBaruPage({ token, role }) {
           >
             Tutup Kamera
           </button>
+        </div>
+      )}
+
+      {/* POPUP KONFIRMASI SETELAH SCAN BERHASIL COCOK */}
+      {confirmingOrder && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, padding: 26 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#D8E9E6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <ScanLine size={20} color="#28685D" />
+              </div>
+              <div>
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0, fontWeight: 700, textTransform: "uppercase" }}>Scan Berhasil</p>
+                <p className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: 0 }}>{confirmingOrder.no_nota}</p>
+              </div>
+            </div>
+            <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 4px" }}>{confirmingOrder.clients?.nama} ({confirmingOrder.clients?.kode})</p>
+            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 20px" }}>{confirmingOrder.clients?.alamat}</p>
+            <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 18px" }}>Konfirmasi pesanan ini mulai dikirim?</p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => setConfirmingOrder(null)}
+                disabled={processingId === confirmingOrder.id}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}
+              >
+                Batalkan
+              </button>
+              <button
+                onClick={() => mulaiKirim(confirmingOrder)}
+                disabled={processingId === confirmingOrder.id}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: processingId === confirmingOrder.id ? "#E4E1DA" : "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+              >
+                {processingId === confirmingOrder.id ? "Menyimpan..." : "Konfirmasi Pengiriman"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
