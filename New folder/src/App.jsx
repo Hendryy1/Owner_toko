@@ -83,10 +83,10 @@ function bukaTabPreviewBarcode(orders) {
         <p style="font-size:12.5px;color:#6B6F75;margin:0 0 2px">No HP: ${teleponPenerima || "-"}</p>
         <p style="font-size:11.5px;color:#6B6F75;margin:0 0 10px;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>
         <p style="font-size:12.5px;color:#6B6F75;margin:0 0 16px">${jumlahBarang} barang dipesan</p>
-        <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:16px">
+        <div style="display:flex;justify-content:center;align-items:flex-end;gap:20px;margin-bottom:16px">
           ${isPekanbaru
-            ? `<div id="qr-${i}"></div><p style="font-size:12px;font-weight:700;color:#24272B;margin-top:6px;font-family:monospace">${o.no_nota}</p>`
-            : `<svg id="barcode-${i}"></svg>`}
+            ? `<div style="display:flex;flex-direction:column;align-items:center"><div id="qr-${i}"></div><p style="font-size:12px;font-weight:700;color:#24272B;margin-top:6px;font-family:monospace">${o.no_nota}</p></div>`
+            : `<svg id="barcode-${i}"></svg><div style="display:flex;flex-direction:column;align-items:center"><div id="qr-kecil-${i}"></div></div>`}
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:left">
           <thead>
@@ -143,6 +143,7 @@ function bukaTabPreviewBarcode(orders) {
                 new QRCode(document.getElementById("qr-" + d.idx), { text: d.noNota, width: 160, height: 160 });
               } else {
                 JsBarcode("#barcode-" + d.idx, d.noNota, { format: "CODE128", width: 3, height: 80, displayValue: true, fontSize: 14, margin: 6 });
+                new QRCode(document.getElementById("qr-kecil-" + d.idx), { text: d.noNota, width: 80, height: 80 });
               }
             });
           };
@@ -710,8 +711,15 @@ function BarcodeLabelContent({ order: o }) {
       <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>No HP: {teleponPenerima || "-"}</p>
       <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
       <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 16 }}>
-        {isPekanbaru ? <QRCodeLabel value={o.no_nota} /> : <BarcodeLabel value={o.no_nota} />}
+      <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 20, marginBottom: 16 }}>
+        {isPekanbaru ? (
+          <QRCodeLabel value={o.no_nota} />
+        ) : (
+          <>
+            <BarcodeLabel value={o.no_nota} />
+            <QRCodeLabel value={o.no_nota} size={80} />
+          </>
+        )}
       </div>
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, textAlign: "left" }}>
