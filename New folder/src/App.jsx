@@ -381,7 +381,7 @@ export default function OwnerDashboard() {
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "pesanan_siap" && <SiapDikirimPage token={token} role={profile?.role} />}
         {page === "siap_dikirim_baru" && <SiapDikirimBaruPage token={token} role={profile?.role} />}
-        {page === "proses_kirim" && <ProsesPengirimanPage token={token} />}
+        {page === "proses_kirim" && <ProsesPengirimanPage token={token} role={profile?.role} />}
         {page === "outbound" && <OutboundPage token={token} />}
         {page === "riwayat" && <RiwayatOrderPage token={token} />}
         {page === "transaksi" && <TransaksiPage token={token} />}
@@ -3740,7 +3740,7 @@ function SiapDikirimPage({ token, role }) {
 // ============================================================
 // PROSES PENGIRIMAN - order proses_dikirim (kurir sudah bawa jalan)
 // ============================================================
-function ProsesPengirimanPage({ token }) {
+function ProsesPengirimanPage({ token, role }) {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
@@ -3760,11 +3760,18 @@ function ProsesPengirimanPage({ token }) {
     setError("");
     try {
       const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,kota),order_items(qty,products(kode,nama))&status=eq.proses_dikirim&order=created_at.asc");
-      setOrders(rows);
+      // Kurir cuma boleh lihat order tujuan Pekanbaru saja
+      const rowsFiltered = role === "kurir"
+        ? rows.filter((o) => {
+            const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+            return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+          })
+        : rows;
+      setOrders(rowsFiltered);
 
       // Cek toko mana saja yang PUNYA titik GPS tersimpan dari kunjungan
       // sales - dipakai buat nyala/matiin tombol Rute per order
-      const clientIds = [...new Set(rows.map((o) => o.client_id))];
+      const clientIds = [...new Set(rowsFiltered.map((o) => o.client_id))];
       if (clientIds.length > 0) {
         const kunjunganRows = await supabaseFetch(
           token,
@@ -9787,7 +9794,14 @@ function SiapDikirimBaruPage({ token, role }) {
     setError("");
     try {
       const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,kota)&status=eq.siap_dikirim&order=outbound_verified_at.asc");
-      setOrders(rows);
+      // Kurir cuma boleh lihat order tujuan Pekanbaru saja
+      const rowsFiltered = role === "kurir"
+        ? rows.filter((o) => {
+            const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+            return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+          })
+        : rows;
+      setOrders(rowsFiltered);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
