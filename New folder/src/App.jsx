@@ -9942,7 +9942,7 @@ function SiapDikirimBaruPage({ token, role }) {
                   )}
                 </p>
                 <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
-                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>{o.clients?.alamat}</p>
+                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>{o.tujuan_alamat || o.clients?.alamat}</p>
               </div>
               <span
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "11px 20px", borderRadius: 10, background: "#F7F5F1", color: "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}
@@ -9983,7 +9983,7 @@ function SiapDikirimBaruPage({ token, role }) {
               </div>
             </div>
             <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 4px" }}>{confirmingOrder.clients?.nama} ({confirmingOrder.clients?.kode})</p>
-            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 20px" }}>{confirmingOrder.clients?.alamat}</p>
+            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 20px" }}>{confirmingOrder.tujuan_alamat || confirmingOrder.clients?.alamat}</p>
             <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 18px" }}>Konfirmasi pesanan ini mulai dikirim?</p>
             <div style={{ display: "flex", gap: 10 }}>
               <button
