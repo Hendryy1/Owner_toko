@@ -142,7 +142,7 @@ function bukaTabPreviewBarcode(orders) {
               if (d.isPekanbaru) {
                 new QRCode(document.getElementById("qr-" + d.idx), { text: d.noNota, width: 160, height: 160 });
               } else {
-                JsBarcode("#barcode-" + d.idx, d.noNota, { format: "CODE39", width: 2, height: 60, displayValue: true, fontSize: 14, margin: 6 });
+                JsBarcode("#barcode-" + d.idx, d.noNota, { format: "CODE39", width: 3, height: 80, displayValue: true, fontSize: 14, margin: 6 });
               }
             });
           };
@@ -625,7 +625,7 @@ function loadJsBarcode() {
   return jsBarcodeLoadPromise;
 }
 
-function BarcodeLabel({ value, width = 2, height = 60 }) {
+function BarcodeLabel({ value, width = 3, height = 80 }) {
   const svgRef = useRef(null);
   const [ready, setReady] = useState(false);
 
@@ -8193,7 +8193,7 @@ function OutboundPage({ token }) {
           html5QrRef.current = html5Qr;
           await html5Qr.start(
             { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 280, height: 120 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE], experimentalFeatures: { useBarCodeDetectorIfSupported: true } },
+            { fps: 10, qrbox: { width: 300, height: 150 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
             (decodedText) => {
               setInputScan(decodedText);
               cariPesanan(decodedText);
@@ -9880,7 +9880,7 @@ function SiapDikirimBaruPage({ token, role }) {
           html5QrRef.current = html5Qr;
           await html5Qr.start(
             { facingMode: "environment" },
-            { fps: 10, qrbox: { width: 280, height: 120 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE], experimentalFeatures: { useBarCodeDetectorIfSupported: true } },
+            { fps: 10, qrbox: { width: 300, height: 150 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
             (decodedText) => {
               tutupKamera();
               tanganiHasilScan(decodedText);
@@ -10200,9 +10200,8 @@ function BuatLaporanKurirPage({ token }) {
           await html5Qr.start(
             { facingMode: "environment" },
             {
-              fps: 10, qrbox: { width: 280, height: 120 },
+              fps: 10, qrbox: { width: 300, height: 150 },
               formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE],
-              experimentalFeatures: { useBarCodeDetectorIfSupported: true },
             },
             (decodedText) => {
               tambahScan(decodedText);
@@ -10436,6 +10435,11 @@ function BuatLaporanKurirPage({ token }) {
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
             <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode/QR paket</p>
             <div id="reader-kamera-laporan-kurir" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
+            {scanMsg && !confirmingScan && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, padding: "10px 14px", borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600, maxWidth: 400, textAlign: "center" }}>
+                {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
+              </div>
+            )}
             {cameraError && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraError}</p>}
             <button onClick={tutupKamera} style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
               Tutup Kamera
