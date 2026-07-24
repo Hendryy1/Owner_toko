@@ -507,7 +507,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "laporan_kunjungan_owner", label: "Laporan Kunjungan Sales", icon: MapPin, roles: ["owner"] },
     { key: "laporan_periodik_sales", label: "Laporan Mingguan/Bulanan", icon: FileEdit, roles: ["owner"] },
     { key: "laporan_kurir", label: "Laporan Kurir", icon: Truck, roles: ["owner", "admin_transaksi"] },
-    { key: "buat_laporan_kurir", label: "Buat Laporan Kurir", icon: ScanLine, roles: ["owner", "admin_transaksi"] },
+    { key: "buat_laporan_kurir", label: "Buat Laporan Kurir", icon: ScanLine, roles: ["owner", "admin_transaksi", "kurir"] },
     { key: "banner_promo", label: "Banner Promo", icon: ImageIcon, roles: ["owner"] },
   ];
   const items = allItems
@@ -3545,13 +3545,19 @@ function SiapDikirimPage({ token, role }) {
 
   const orderBaru = ordersUrut.filter((o) => !cekTerlambatPengemasan(o));
   const orderTerlambat = ordersUrut.filter((o) => cekTerlambatPengemasan(o));
-  const orderTampil = activeTab === "terlambat" ? orderTerlambat : orderBaru;
+  const orderTampil = activeTab === "terlambat" ? orderTerlambat : activeTab === "baru" ? orderBaru : ordersUrut;
 
   return (
     <div>
       <PageHeader title="Pesanan" subtitle={`${orders.length} pesanan siap diproses - cetak barcode untuk masing-masing`} />
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button
+          onClick={() => setActiveTab("semua")}
+          style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "semua" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "semua" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+        >
+          Semua ({orders.length})
+        </button>
         <button
           onClick={() => setActiveTab("baru")}
           style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "baru" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "baru" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
@@ -9794,7 +9800,7 @@ function SiapDikirimBaruPage({ token, role }) {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("toko"); // "toko" | "baraka"
+  const [activeTab, setActiveTab] = useState("semua"); // "semua" | "toko" | "baraka"
 
   async function load() {
     setLoading(true);
@@ -9825,13 +9831,19 @@ function SiapDikirimBaruPage({ token, role }) {
   }
   const orderToko = orders.filter((o) => isPekanbaruOrder(o));
   const orderBaraka = orders.filter((o) => !isPekanbaruOrder(o));
-  const orderTampil = activeTab === "baraka" ? orderBaraka : orderToko;
+  const orderTampil = activeTab === "baraka" ? orderBaraka : activeTab === "toko" ? orderToko : orders;
 
   return (
     <div>
       <PageHeader title="Siap Dikirim" subtitle={`${orders.length} pesanan sudah discan outbound, menunggu diserahkan ke kurir`} />
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button
+          onClick={() => setActiveTab("semua")}
+          style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "semua" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "semua" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+        >
+          Semua ({orders.length})
+        </button>
         <button
           onClick={() => setActiveTab("toko")}
           style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "toko" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "toko" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
