@@ -3154,6 +3154,7 @@ function KonfirmasiPembayaranPage({ token }) {
   const [error, setError] = useState("");
   const [processingId, setProcessingId] = useState(null);
   const [reviewingCod, setReviewingCod] = useState(null); // order id yang lagi direview
+  const [infoKurirOrder, setInfoKurirOrder] = useState(null); // { nama_kurir, jenis_kurir } | null | "loading"
   const [returReviewList, setReturReviewList] = useState([]);
   const [viewingRetur, setViewingRetur] = useState(null);
   const [processingReturId, setProcessingReturId] = useState(null);
@@ -3184,6 +3185,21 @@ function KonfirmasiPembayaranPage({ token }) {
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  async function bukaReview(orderId) {
+    setReviewingCod(orderId);
+    setInfoKurirOrder("loading");
+    try {
+      const itemRows = await supabaseFetch(token, `laporan_kurir_items?select=laporan_kurir(nama_kurir,jenis_kurir,jenis_laporan)&order_id=eq.${orderId}&order=created_at.desc&limit=1`);
+      if (itemRows && itemRows.length > 0 && itemRows[0].laporan_kurir) {
+        setInfoKurirOrder(itemRows[0].laporan_kurir);
+      } else {
+        setInfoKurirOrder(null);
+      }
+    } catch (e) {
+      setInfoKurirOrder(null);
+    }
+  }
 
   async function selesaikanRetur(orderId) {
     setProcessingReturId(orderId);
@@ -3347,7 +3363,7 @@ function KonfirmasiPembayaranPage({ token }) {
                     <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "4px 0 0" }}>{rupiah(total)}</p>
                   </div>
                   <button
-                    onClick={() => setReviewingCod(o.id)}
+                    onClick={() => bukaReview(o.id)}
                     style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
                   >
                     Review Pesanan
@@ -3393,7 +3409,18 @@ function KonfirmasiPembayaranPage({ token }) {
             <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 520, maxHeight: "88vh", overflowY: "auto", padding: 26 }}>
               <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Review Pesanan {isCodOrder ? "COD" : "Transfer"}</h2>
               <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 4px" }}>{o.no_nota} · {o.clients?.nama} ({o.clients?.kode})</p>
-              <p className="disp" style={{ fontSize: 20, fontWeight: 700, color: "#24272B", margin: "0 0 20px" }}>{rupiah(total)}</p>
+              <p className="disp" style={{ fontSize: 20, fontWeight: 700, color: "#24272B", margin: "0 0 16px" }}>{rupiah(total)}</p>
+
+              {infoKurirOrder === "loading" ? (
+                <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 16px" }}>Memuat info kurir...</p>
+              ) : infoKurirOrder ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#F7F5F1", borderRadius: 9, padding: 10, marginBottom: 16 }}>
+                  <Truck size={15} color="#8A6A1A" style={{ flexShrink: 0 }} />
+                  <p style={{ fontSize: 12.5, color: "#24272B", margin: 0 }}>
+                    Ditangani: <strong>{infoKurirOrder.nama_kurir}</strong> ({infoKurirOrder.jenis_kurir === "toko" ? "Kurir Toko" : "Kurir Baraka"})
+                  </p>
+                </div>
+              ) : null}
 
               <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 10px" }}>Dokumen & Bukti</p>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
@@ -3421,7 +3448,7 @@ function KonfirmasiPembayaranPage({ token }) {
               )}
 
               <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => setReviewingCod(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                <button onClick={() => { setReviewingCod(null); setInfoKurirOrder(null); }} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
                   Tutup
                 </button>
                 <button
