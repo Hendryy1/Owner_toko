@@ -10421,7 +10421,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           await html5Qr.start(
             { facingMode: "environment" },
             {
-              fps: 10, qrbox: { width: 300, height: 150 },
+              fps: 5, qrbox: { width: 300, height: 150 },
               formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_128, window.Html5QrcodeSupportedFormats.QR_CODE],
             },
             (decodedText) => {
@@ -10793,7 +10793,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         {showCamera && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 20px 0" }}>
             <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode/QR paket</p>
-            <div id="reader-kamera-laporan-kurir" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden", flexShrink: 0 }} />
+            <div id="reader-kamera-laporan-kurir" style={{ width: "100%", maxWidth: 400, height: "50vh", borderRadius: 12, overflow: "hidden", flexShrink: 0 }} />
 
             {scanMsg && !confirmingScan && !packingOrder && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, padding: "10px 14px", borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600, maxWidth: 400, textAlign: "center" }}>
