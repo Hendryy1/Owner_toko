@@ -10364,6 +10364,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const [scanMsg, setScanMsg] = useState(null);
   const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan, nunggu konfirmasi tambah
   const [packingOrder, setPackingOrder] = useState(null); // { id, no_nota, nama, totalBox, checkedCount } - khusus Kurir Toko + Pekanbaru
+  const [cameraPaused, setCameraPaused] = useState(false);
   const [catatanPacking, setCatatanPacking] = useState("");
   const [inputManual, setInputManual] = useState("");
   const manualInputRef = useRef(null);
@@ -10398,10 +10399,12 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
       });
     }
     setShowCamera(false);
+    setCameraPaused(false);
   }
 
   async function mulaiScanKamera() {
     setCameraError("");
+    setCameraPaused(false);
     setShowCamera(true);
     try {
       await loadHtml5Qrcode();
@@ -10433,15 +10436,24 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     const kode = decodedText.trim();
 
     // Kalau lagi packing order tertentu dan scan yang sama datang lagi -
-    // ini artinya kurir scan box berikutnya dari order yang sama, langsung
-    // tambah centang tanpa perlu cek ulang ke server.
+    // ini artinya kurir scan box berikutnya dari order yang sama. Kamera
+    // di-stop sejenak (supaya sesi scan-nya benar-benar baru lagi saat
+    // dilanjutkan - library kamera kadang menolak kode identik yang
+    // "baru saja" terdeteksi, padahal itu box FISIK yang berbeda).
     if (packingOrder && packingOrder.no_nota === kode) {
       if (packingOrder.checkedCount >= packingOrder.totalBox) {
         setScanMsg({ type: "error", text: `Semua ${packingOrder.totalBox} box sudah tercentang.` });
         return;
       }
-      setPackingOrder((prev) => ({ ...prev, checkedCount: prev.checkedCount + 1 }));
-      setScanMsg({ type: "ok", text: `Box ${packingOrder.checkedCount + 1}/${packingOrder.totalBox} tercentang.` });
+      const jumlahBaru = packingOrder.checkedCount + 1;
+      setPackingOrder((prev) => ({ ...prev, checkedCount: jumlahBaru }));
+      setScanMsg({ type: "ok", text: `Box ${jumlahBaru}/${packingOrder.totalBox} tercentang.` });
+      if (jumlahBaru < packingOrder.totalBox) {
+        if (html5QrRef.current) {
+          html5QrRef.current.pause(true);
+        }
+        setCameraPaused(true);
+      }
       return;
     }
 
@@ -10486,6 +10498,14 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     setScanMsg({ type: "ok", text: `${packingOrder.no_nota} berhasil ditambahkan (${packingOrder.totalBox} box).` });
     setPackingOrder(null);
     setCatatanPacking("");
+  }
+
+  function lanjutkanScan() {
+    if (html5QrRef.current) {
+      html5QrRef.current.resume();
+    }
+    setCameraPaused(false);
+    setScanMsg(null);
   }
 
   function batalkanPacking() {
@@ -10814,6 +10834,14 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
                     );
                   })}
                 </div>
+                {cameraPaused && packingOrder.checkedCount < packingOrder.totalBox && (
+                  <button
+                    onClick={lanjutkanScan}
+                    style={{ width: "100%", padding: 11, borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13 }}
+                  >
+                    Lanjut Scan Box Berikutnya
+                  </button>
+                )}
                 {packingOrder.checkedCount >= packingOrder.totalBox && (
                   <button
                     onClick={() => { tutupKamera(); }}
