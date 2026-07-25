@@ -10365,6 +10365,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const [scanMsg, setScanMsg] = useState(null);
   const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan (+ info box kalau relevan), nunggu konfirmasi tambah
   const [boxProgress, setBoxProgress] = useState({}); // { [order_id]: [nomor box yang sudah dikonfirmasi, ...] } - khusus Kurir Toko + Pekanbaru
+  const [viewingBoxDetail, setViewingBoxDetail] = useState(null); // { orderId, noNota, totalBox } | null
   const [inputManual, setInputManual] = useState("");
   const manualInputRef = useRef(null);
   const html5QrRef = useRef(null);
@@ -10514,7 +10515,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id }]);
         setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} lengkap (${confirmingScan.totalBox} box) - ditambahkan ke daftar.` });
       } else {
-        setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} - box ${confirmingScan.noBox}/${confirmingScan.totalBox} tercatat (${daftarBoxBaru.length}/${confirmingScan.totalBox} total). Scan box lain.` });
+        setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} - box ${confirmingScan.noBox}/${confirmingScan.totalBox} tercatat (${daftarBoxBaru.length}/${confirmingScan.totalBox} total). Scan box lain.`, orderId: confirmingScan.id, noNota: confirmingScan.no_nota, totalBox: confirmingScan.totalBox });
       }
     } else {
       setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id }]);
@@ -10766,8 +10767,18 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           </p>
 
           {scanMsg && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: 10, borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600 }}>
-              {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 12, padding: 10, borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600 }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
+              </span>
+              {scanMsg.totalBox && (
+                <button
+                  onClick={() => setViewingBoxDetail({ orderId: scanMsg.orderId, noNota: scanMsg.noNota, totalBox: scanMsg.totalBox })}
+                  style={{ background: "none", border: "none", color: "#28685D", fontSize: 11.5, fontWeight: 700, textDecoration: "underline", flexShrink: 0, padding: 0 }}
+                >
+                  Lihat Detail
+                </button>
+              )}
             </div>
           )}
         </Card>
@@ -10849,6 +10860,40 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
                   {confirmingScan.totalBox ? "Konfirmasi" : "Tambahkan"}
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL DETAIL BOX - lihat mana yang sudah/belum discan */}
+        {viewingBoxDetail && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400, padding: 20 }}>
+            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, maxHeight: "80vh", overflowY: "auto", padding: 26 }}>
+              <p className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{viewingBoxDetail.noNota}</p>
+              <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>
+                {(boxProgress[viewingBoxDetail.orderId] || []).length} / {viewingBoxDetail.totalBox} box sudah discan
+              </p>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, marginBottom: 20 }}>
+                {Array.from({ length: viewingBoxDetail.totalBox }, (_, i) => i + 1).map((noBox) => {
+                  const sudahDiscan = (boxProgress[viewingBoxDetail.orderId] || []).includes(noBox);
+                  return (
+                    <div
+                      key={noBox}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 3,
+                        padding: "9px 4px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                        background: sudahDiscan ? "#D8E9E6" : "#FBEAEA",
+                        color: sudahDiscan ? "#28685D" : "#C0392B",
+                        border: sudahDiscan ? "1.5px solid #28685D" : "1.5px solid #F5B7B1",
+                      }}
+                    >
+                      {sudahDiscan ? <Check size={12} /> : <X size={12} />} {noBox}
+                    </div>
+                  );
+                })}
+              </div>
+              <button onClick={() => setViewingBoxDetail(null)} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                Tutup
+              </button>
             </div>
           </div>
         )}
