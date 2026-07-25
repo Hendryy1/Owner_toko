@@ -10362,9 +10362,8 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [scanMsg, setScanMsg] = useState(null);
-  const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan, nunggu konfirmasi tambah
-  const [packingOrder, setPackingOrder] = useState(null); // { id, no_nota, nama, totalBox, checkedBoxes: [], selectedBox } - khusus Kurir Toko + Pekanbaru
-  const [catatanPacking, setCatatanPacking] = useState("");
+  const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan (+ info box kalau relevan), nunggu konfirmasi tambah
+  const [boxProgress, setBoxProgress] = useState({}); // { [order_id]: jumlah box yang sudah dikonfirmasi } - khusus Kurir Toko + Pekanbaru
   const [inputManual, setInputManual] = useState("");
   const manualInputRef = useRef(null);
   const html5QrRef = useRef(null);
@@ -10383,9 +10382,9 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   // dibuka, jadi kalau baca state React langsung, ia akan pegang versi LAMA
   // terus (stale closure) - makanya baca dari ref ini yang selalu disinkron
   // ke nilai TERBARU lewat useEffect di bawah.
-  const packingOrderRef = useRef(packingOrder);
+  const boxProgressRef = useRef(boxProgress);
   const scannedListRef = useRef(scannedList);
-  useEffect(() => { packingOrderRef.current = packingOrder; }, [packingOrder]);
+  useEffect(() => { boxProgressRef.current = boxProgress; }, [boxProgress]);
   useEffect(() => { scannedListRef.current = scannedList; }, [scannedList]);
 
   useEffect(() => {
@@ -10440,24 +10439,11 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
 
   async function tambahScan(decodedText) {
     const kode = decodedText.trim();
-    const packingSekarang = packingOrderRef.current;
 
-    // Kalau lagi packing order tertentu dan scan yang sama datang lagi -
-    // ini artinya kurir scan box berikutnya dari order yang sama.
-    if (packingSekarang && packingSekarang.no_nota === kode) {
-      if (!packingSekarang.selectedBox) {
-        setScanMsg({ type: "error", text: "Tekan dulu nomor box yang mau dicentang, baru scan." });
-        return;
-      }
-      if (packingSekarang.checkedBoxes.includes(packingSekarang.selectedBox)) {
-        setScanMsg({ type: "error", text: `Box ${packingSekarang.selectedBox} sudah tercentang.` });
-        return;
-      }
-      const boxYangDicentang = packingSekarang.selectedBox;
-      setPackingOrder((prev) => ({ ...prev, checkedBoxes: [...prev.checkedBoxes, boxYangDicentang], selectedBox: null }));
-      setScanMsg({ type: "ok", text: `Box ${boxYangDicentang}/${packingSekarang.totalBox} tercentang.` });
-      return;
-    }
+    // Tutup kamera dulu setiap kali berhasil scan (sama seperti alur
+    // konfirmasi biasa) - supaya video kamera tidak macet/freeze karena
+    // terus aktif berbarengan sama perubahan tampilan lain.
+    tutupKamera();
 
     if (scannedListRef.current.some((s) => s.no_nota === kode)) {
       setScanMsg({ type: "error", text: `${kode} sudah discan sebelumnya.` });
@@ -10479,12 +10465,16 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
       const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
 
       if (jenisKurir === "toko" && isPekanbaru) {
-        // Order Pekanbaru + Kurir Toko - pakai alur packing list (1 box = 1
-        // scan, harus dicentang semua dulu baru bisa konfirmasi)
+        // Order Pekanbaru + Kurir Toko - hitung box: tiap scan barcode yang
+        // sama = 1 box baru. Tampilkan konfirmasi "No Box: X/Total".
         const totalBox = (rows[0].order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) || 1;
+        const sudahDikonfirmasi = boxProgressRef.current[rows[0].id] || 0;
+        if (sudahDikonfirmasi >= totalBox) {
+          setScanMsg({ type: "error", text: `${rows[0].no_nota} semua ${totalBox} box sudah dikonfirmasi.` });
+          return;
+        }
         setScanMsg(null);
-        setCatatanPacking("");
-        setPackingOrder({ id: rows[0].id, no_nota: rows[0].no_nota, nama: rows[0].clients?.nama, totalBox, checkedBoxes: [1], selectedBox: null });
+        setConfirmingScan({ ...rows[0], noBox: sudahDikonfirmasi + 1, totalBox });
       } else {
         setScanMsg(null);
         setConfirmingScan(rows[0]);
@@ -10494,23 +10484,24 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     }
   }
 
-  function konfirmasiPacking() {
-    if (!packingOrder || packingOrder.checkedBoxes.length < packingOrder.totalBox) return;
-    setScannedList((prev) => [...prev, { no_nota: packingOrder.no_nota, order_id: packingOrder.id, catatan: catatanPacking.trim() || null }]);
-    setScanMsg({ type: "ok", text: `${packingOrder.no_nota} berhasil ditambahkan (${packingOrder.totalBox} box).` });
-    setPackingOrder(null);
-    setCatatanPacking("");
-  }
-
-  function batalkanPacking() {
-    setPackingOrder(null);
-    setCatatanPacking("");
-  }
-
   function konfirmasiTambahScan() {
     if (!confirmingScan) return;
-    setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id }]);
-    setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} berhasil ditambahkan.` });
+    if (confirmingScan.totalBox) {
+      // Order Pekanbaru + Kurir Toko - update progress box-nya dulu
+      const progresBaru = confirmingScan.noBox;
+      setBoxProgress((prev) => ({ ...prev, [confirmingScan.id]: progresBaru }));
+      if (progresBaru >= confirmingScan.totalBox) {
+        // Semua box sudah dikonfirmasi - baru order-nya benar-benar
+        // ditambahkan ke daftar serah terima
+        setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id }]);
+        setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} lengkap (${confirmingScan.totalBox} box) - ditambahkan ke daftar.` });
+      } else {
+        setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} - box ${progresBaru}/${confirmingScan.totalBox} tercatat. Scan lagi buat box berikutnya.` });
+      }
+    } else {
+      setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id }]);
+      setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} berhasil ditambahkan.` });
+    }
     setConfirmingScan(null);
   }
 
@@ -10791,66 +10782,18 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         </button>
 
         {showCamera && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 20px 0" }}>
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
             <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode/QR paket</p>
-            <div id="reader-kamera-laporan-kurir" style={{ width: "100%", maxWidth: 400, height: "50vh", borderRadius: 12, overflow: "hidden", flexShrink: 0 }} />
-
-            {scanMsg && !confirmingScan && !packingOrder && (
+            <div id="reader-kamera-laporan-kurir" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
+            {scanMsg && !confirmingScan && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, padding: "10px 14px", borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600, maxWidth: 400, textAlign: "center" }}>
                 {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
               </div>
             )}
             {cameraError && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraError}</p>}
-
-            <button onClick={() => { tutupKamera(); setPackingOrder(null); setCatatanPacking(""); }} style={{ marginTop: 20, padding: "10px 20px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+            <button onClick={tutupKamera} style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
               Tutup Kamera
             </button>
-
-            {/* Panel packing list - posisi TETAP di bawah layar, TIDAK
-                ikut mendorong/menggeser tampilan kamera di atasnya */}
-            {packingOrder && (
-              <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "#fff", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, maxHeight: "42vh", overflowY: "auto", boxShadow: "0 -4px 20px rgba(0,0,0,0.3)" }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{packingOrder.no_nota}</p>
-                <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px" }}>{packingOrder.nama}</p>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, background: packingOrder.checkedBoxes.length >= packingOrder.totalBox ? "#D8E9E6" : "#FBF0D9", borderRadius: 8, padding: 8, marginBottom: 10 }}>
-                  {packingOrder.checkedBoxes.length >= packingOrder.totalBox ? <Check size={14} color="#28685D" /> : <ScanLine size={14} color="#8A6A1A" />}
-                  <p style={{ fontSize: 11.5, fontWeight: 700, color: packingOrder.checkedBoxes.length >= packingOrder.totalBox ? "#28685D" : "#8A6A1A", margin: 0 }}>
-                    {packingOrder.checkedBoxes.length} / {packingOrder.totalBox} box tercentang
-                    {packingOrder.selectedBox ? ` - box ${packingOrder.selectedBox} dipilih, silakan scan` : " - tekan nomor box, lalu scan"}
-                  </p>
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>
-                  {Array.from({ length: packingOrder.totalBox }, (_, i) => i + 1).map((noBox) => {
-                    const sudahCentang = packingOrder.checkedBoxes.includes(noBox);
-                    const dipilih = packingOrder.selectedBox === noBox;
-                    return (
-                      <button
-                        key={noBox}
-                        onClick={() => { if (!sudahCentang) setPackingOrder((prev) => ({ ...prev, selectedBox: noBox })); }}
-                        disabled={sudahCentang}
-                        style={{
-                          display: "flex", alignItems: "center", justifyContent: "center", gap: 2,
-                          padding: "8px 2px", borderRadius: 6, fontSize: 11, fontWeight: 700,
-                          background: sudahCentang ? "#D8E9E6" : dipilih ? "#FBF0D9" : "#F7F5F1",
-                          color: sudahCentang ? "#28685D" : dipilih ? "#8A6A1A" : "#9CA0A6",
-                          border: sudahCentang ? "1.5px solid #28685D" : dipilih ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA",
-                        }}
-                      >
-                        {sudahCentang && <Check size={10} />} {noBox}
-                      </button>
-                    );
-                  })}
-                </div>
-                {packingOrder.checkedBoxes.length >= packingOrder.totalBox && (
-                  <button
-                    onClick={() => { tutupKamera(); }}
-                    style={{ width: "100%", marginTop: 12, padding: 11, borderRadius: 9, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13 }}
-                  >
-                    Semua Box Selesai - Lanjut Catatan
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         )}
 
@@ -10867,76 +10810,23 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
                   <p className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: 0 }}>{confirmingScan.no_nota}</p>
                 </div>
               </div>
-              <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 20px" }}>{confirmingScan.clients?.nama}</p>
-              <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 18px" }}>Tambahkan paket ini ke daftar serah terima?</p>
+              <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 8px" }}>{confirmingScan.clients?.nama}</p>
+              {confirmingScan.totalBox && (
+                <p style={{ fontSize: 15, fontWeight: 700, color: "#8A6A1A", margin: "0 0 16px", padding: "8px 12px", background: "#FBF0D9", borderRadius: 8, display: "inline-block" }}>
+                  No. Box: {confirmingScan.noBox} / {confirmingScan.totalBox}
+                </p>
+              )}
+              <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 18px" }}>
+                {confirmingScan.totalBox
+                  ? `Konfirmasi box ke-${confirmingScan.noBox} paket ini?`
+                  : "Tambahkan paket ini ke daftar serah terima?"}
+              </p>
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={() => setConfirmingScan(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
                   Batalkan
                 </button>
                 <button onClick={konfirmasiTambahScan} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
-                  Tambahkan
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL PACKING LIST - khusus Kurir Toko + Pekanbaru, harus centang semua box.
-            Cuma tampil SETELAH kamera ditutup (panel di dalam kamera sudah
-            menangani tampilan saat masih scan) - supaya tidak dobel. */}
-        {packingOrder && !showCamera && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400, padding: 20 }}>
-            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 400, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
-              <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0, fontWeight: 700, textTransform: "uppercase" }}>Packing List</p>
-              <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{packingOrder.no_nota}</p>
-              <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 16px" }}>{packingOrder.nama}</p>
-
-              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", borderRadius: 9, padding: 10, marginBottom: 16 }}>
-                <Check size={16} color="#28685D" />
-                <p style={{ fontSize: 12.5, fontWeight: 700, color: "#28685D", margin: 0 }}>
-                  {packingOrder.checkedBoxes.length} / {packingOrder.totalBox} box tercentang - semua sudah lengkap
-                </p>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 20 }}>
-                {Array.from({ length: packingOrder.totalBox }, (_, i) => i + 1).map((noBox) => {
-                  const sudahCentang = packingOrder.checkedBoxes.includes(noBox);
-                  return (
-                    <div
-                      key={noBox}
-                      style={{
-                        display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
-                        padding: "8px 4px", borderRadius: 8, fontSize: 12, fontWeight: 700,
-                        background: sudahCentang ? "#D8E9E6" : "#F7F5F1",
-                        color: sudahCentang ? "#28685D" : "#9CA0A6",
-                        border: sudahCentang ? "1.5px solid #28685D" : "1.5px solid #E4E1DA",
-                      }}
-                    >
-                      {sudahCentang && <Check size={12} />} {noBox}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Catatan (opsional)</label>
-              <textarea
-                value={catatanPacking}
-                onChange={(e) => setCatatanPacking(e.target.value)}
-                placeholder="Catatan tambahan kalau ada..."
-                rows={2}
-                style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, resize: "vertical", marginBottom: 18 }}
-              />
-
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={batalkanPacking} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
-                  Batalkan
-                </button>
-                <button
-                  onClick={konfirmasiPacking}
-                  disabled={packingOrder.checkedBoxes.length < packingOrder.totalBox}
-                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: packingOrder.checkedBoxes.length < packingOrder.totalBox ? "#E4E1DA" : "#28685D", color: packingOrder.checkedBoxes.length < packingOrder.totalBox ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 13.5 }}
-                >
-                  Konfirmasi
+                  {confirmingScan.totalBox ? "Konfirmasi" : "Tambahkan"}
                 </button>
               </div>
             </div>
