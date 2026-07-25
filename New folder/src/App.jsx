@@ -409,7 +409,7 @@ export default function OwnerDashboard() {
         {page === "laporan_kunjungan_owner" && <LaporanKunjunganOwnerPage token={token} />}
         {page === "laporan_periodik_sales" && <LaporanPeriodikSalesOwnerPage token={token} />}
         {page === "laporan_kurir" && <LaporanKurirPage token={token} />}
-        {page === "buat_laporan_kurir" && <BuatLaporanKurirPage token={token} role={profile?.role} />}
+        {page === "buat_laporan_kurir" && <BuatLaporanKurirPage token={token} role={profile?.role} userId={profile?.id} namaAkun={profile?.nama} />}
         {page === "banner_promo" && <BannerPromoPage token={token} />}
           </>
         )}
@@ -9893,18 +9893,23 @@ function SiapDikirimBaruPage({ token, role }) {
 }
 
 function LaporanKurirDocContent({ laporan, items }) {
+  const isTokoLokal = laporan.jenis_kurir === "toko";
   return (
     <div className="nota-print-area" style={{ padding: "36px 44px", fontFamily: "'Times New Roman', serif" }}>
       <div style={{ textAlign: "center", marginBottom: 24 }}>
         <p style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{COMPANY_NAME}</p>
         <p style={{ fontSize: 15, fontWeight: 700, margin: "18px 0 0", textDecoration: "underline" }}>BUKTI SERAH TERIMA PAKET</p>
-        <p style={{ fontSize: 13, margin: "4px 0 0" }}>{laporan.jenis_kurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"}</p>
+        <p style={{ fontSize: 13, margin: "4px 0 0" }}>{isTokoLokal ? "Kurir Toko" : "Kurir Baraka"}</p>
       </div>
 
       <table style={{ marginBottom: 20, fontSize: 13 }}><tbody>
         <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Tanggal</td><td>: {new Date(laporan.created_at).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}</td></tr>
         <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Nama Kurir</td><td>: {laporan.nama_kurir}</td></tr>
-        <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>No. HP</td><td>: {laporan.no_hp_kurir || "-"}</td></tr>
+        {isTokoLokal ? (
+          <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Trip Ke</td><td>: {laporan.trip || 1}</td></tr>
+        ) : (
+          <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>No. HP</td><td>: {laporan.no_hp_kurir || "-"}</td></tr>
+        )}
         <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Jumlah Koli</td><td>: {laporan.jumlah_koli}</td></tr>
       </tbody></table>
 
@@ -9925,17 +9930,19 @@ function LaporanKurirDocContent({ laporan, items }) {
         </tbody>
       </table>
 
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <div style={{ textAlign: "center", width: 220 }}>
-          <p style={{ fontSize: 13, margin: "0 0 10px" }}>Yang Menerima,</p>
-          {laporan.ttd_kurir_url ? (
-            <img src={laporan.ttd_kurir_url} alt="Tanda tangan" style={{ height: 80, objectFit: "contain", margin: "0 auto" }} />
-          ) : (
-            <div style={{ height: 80 }} />
-          )}
-          <p style={{ fontSize: 13, margin: "6px 0 0", borderTop: "1px solid #24272B", paddingTop: 6 }}>{laporan.nama_kurir}</p>
+      {!isTokoLokal && (
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <div style={{ textAlign: "center", width: 220 }}>
+            <p style={{ fontSize: 13, margin: "0 0 10px" }}>Yang Menerima,</p>
+            {laporan.ttd_kurir_url ? (
+              <img src={laporan.ttd_kurir_url} alt="Tanda tangan" style={{ height: 80, objectFit: "contain", margin: "0 auto" }} />
+            ) : (
+              <div style={{ height: 80 }} />
+            )}
+            <p style={{ fontSize: 13, margin: "6px 0 0", borderTop: "1px solid #24272B", paddingTop: 6 }}>{laporan.nama_kurir}</p>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -9998,7 +10005,9 @@ function LaporanKurirPage({ token }) {
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
               <div>
                 <p style={{ fontSize: 14.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{l.nama_kurir}</p>
-                <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{l.jumlah_koli} koli - {new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}</p>
+                <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>
+                  {l.jenis_kurir === "toko" && `Trip ${l.trip || 1} - `}{l.jumlah_koli} koli - {new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+                </p>
               </div>
               <button
                 onClick={() => bukaDokumen(l)}
@@ -10036,7 +10045,7 @@ function LaporanKurirPage({ token }) {
 // ============================================================
 // BUAT LAPORAN KURIR - pilih kurir -> scan paket -> isi form -> konfirmasi
 // ============================================================
-function BuatLaporanKurirPage({ token, role }) {
+function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const isKurirAkun = role === "kurir";
   const [step, setStep] = useState(isKurirAkun ? "scan" : "pilih_kurir"); // "pilih_kurir" | "scan" | "form"
   const [jenisKurir, setJenisKurir] = useState(isKurirAkun ? "toko" : null); // "baraka" | "toko"
@@ -10049,10 +10058,11 @@ function BuatLaporanKurirPage({ token, role }) {
   const manualInputRef = useRef(null);
   const html5QrRef = useRef(null);
 
-  const [namaKurir, setNamaKurir] = useState("");
+  const [namaKurir, setNamaKurir] = useState(isKurirAkun ? (namaAkun || "") : "");
   const [noHpKurir, setNoHpKurir] = useState("");
   const [saving, setSaving] = useState(false);
   const [berhasilData, setBerhasilData] = useState(null); // laporan yang baru dibuat, buat konfirmasi sukses
+  const [tripKe, setTripKe] = useState(1);
 
   const canvasRef = useRef(null);
   const isDrawingRef = useRef(false);
@@ -10177,8 +10187,24 @@ function BuatLaporanKurirPage({ token, role }) {
     ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
   }
 
+  async function lanjutKeForm() {
+    if (isKurirAkun) {
+      // Hitung trip otomatis - berapa laporan yang SUDAH dibuat akun ini hari
+      // ini, trip berikutnya = jumlah itu + 1.
+      try {
+        const awalHari = new Date();
+        awalHari.setHours(0, 0, 0, 0);
+        const rows = await supabaseFetch(token, `laporan_kurir?select=id&dibuat_oleh=eq.${userId}&created_at=gte.${awalHari.toISOString()}`);
+        setTripKe((rows?.length || 0) + 1);
+      } catch (e) {
+        setTripKe(1);
+      }
+    }
+    setStep("form");
+  }
+
   async function submitLaporan() {
-    if (!namaKurir.trim()) {
+    if (!isKurirAkun && !namaKurir.trim()) {
       alert("Isi dulu nama kurir.");
       return;
     }
@@ -10188,25 +10214,32 @@ function BuatLaporanKurirPage({ token, role }) {
     }
     setSaving(true);
     try {
-      // Upload tanda tangan sebagai gambar
-      const canvas = canvasRef.current;
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+      // Akun kurir toko tidak perlu tanda tangan - cuma untuk Baraka/kurir
+      // eksternal yang diinput manual oleh admin/owner.
       let ttdUrl = null;
-      if (blob) {
-        const filePath = `ttd-kurir-${Date.now()}.png`;
-        const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
-          method: "POST",
-          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "image/png" },
-          body: blob,
-        });
-        if (res.ok) ttdUrl = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+      if (!isKurirAkun) {
+        const canvas = canvasRef.current;
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
+        if (blob) {
+          const filePath = `ttd-kurir-${Date.now()}.png`;
+          const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+            method: "POST",
+            headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "image/png" },
+            body: blob,
+          });
+          if (res.ok) ttdUrl = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+        }
       }
 
       const [laporan] = await supabaseFetch(token, "laporan_kurir", {
         method: "POST",
         body: JSON.stringify({
-          jenis_kurir: jenisKurir, nama_kurir: namaKurir.trim(), no_hp_kurir: noHpKurir.trim() || null,
+          jenis_kurir: jenisKurir,
+          nama_kurir: isKurirAkun ? (namaAkun || "Kurir Toko") : namaKurir.trim(),
+          no_hp_kurir: isKurirAkun ? null : (noHpKurir.trim() || null),
           ttd_kurir_url: ttdUrl, jumlah_koli: scannedList.length,
+          trip: isKurirAkun ? tripKe : 1,
+          dibuat_oleh: isKurirAkun ? userId : null,
         }),
       });
 
@@ -10345,7 +10378,7 @@ function BuatLaporanKurirPage({ token, role }) {
         )}
 
         <button
-          onClick={() => setStep("form")}
+          onClick={lanjutKeForm}
           disabled={scannedList.length === 0}
           style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: scannedList.length === 0 ? "#E4E1DA" : "#28685D", color: scannedList.length === 0 ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 14 }}
         >
@@ -10407,8 +10440,32 @@ function BuatLaporanKurirPage({ token, role }) {
       <button onClick={() => setStep("scan")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
         <ChevronLeft size={16} /> Kembali ke Scan
       </button>
-      <PageHeader title="Data Kurir & Tanda Tangan" subtitle={`${scannedList.length} koli - ${jenisKurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"}`} />
+      <PageHeader title={isKurirAkun ? "Konfirmasi Laporan" : "Data Kurir & Tanda Tangan"} subtitle={`${scannedList.length} koli - ${jenisKurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"}`} />
 
+      {isKurirAkun ? (
+        <Card style={{ maxWidth: 460 }}>
+          <div style={{ display: "flex", gap: 14, marginBottom: 20 }}>
+            <div style={{ flex: 1, background: "#F7F5F1", borderRadius: 10, padding: 16, textAlign: "center" }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 6px" }}>Trip Ke</p>
+              <p className="disp" style={{ fontSize: 28, fontWeight: 700, color: "#24272B", margin: 0 }}>{tripKe}</p>
+            </div>
+            <div style={{ flex: 1, background: "#F7F5F1", borderRadius: 10, padding: 16, textAlign: "center" }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 6px" }}>Jumlah Koli</p>
+              <p className="disp" style={{ fontSize: 28, fontWeight: 700, color: "#24272B", margin: 0 }}>{scannedList.length}</p>
+            </div>
+          </div>
+          <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 20px", textAlign: "center" }}>
+            Atas nama: <strong>{namaAkun || "Kurir Toko"}</strong>
+          </p>
+          <button
+            onClick={submitLaporan}
+            disabled={saving}
+            style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: saving ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14 }}
+          >
+            {saving ? "Menyimpan..." : "Konfirmasi Laporan"}
+          </button>
+        </Card>
+      ) : (
       <Card style={{ maxWidth: 460 }}>
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Nama Kurir</label>
@@ -10440,6 +10497,7 @@ function BuatLaporanKurirPage({ token, role }) {
           {saving ? "Menyimpan..." : "Konfirmasi Laporan"}
         </button>
       </Card>
+      )}
     </div>
   );
 }
