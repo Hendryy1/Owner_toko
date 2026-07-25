@@ -2351,9 +2351,10 @@ function RiwayatOrderPage({ token }) {
     return (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
   }
 
-  function statusInfo(status) {
-    if (status === "dikirim") return { label: "Terkirim", bg: "#D8E9E6", fg: "#28685D" };
-    if (status === "selesai") return { label: "Selesai", bg: "#EFE1BE", fg: "#8A6A1A" };
+  function statusInfo(o) {
+    if (o.status === "dikirim") return { label: "Terkirim", bg: "#D8E9E6", fg: "#28685D" };
+    if (o.status === "selesai" && o.alasan_retur) return { label: "Retur Selesai", bg: "#FBEAEA", fg: "#C0392B" };
+    if (o.status === "selesai") return { label: "Selesai", bg: "#EFE1BE", fg: "#8A6A1A" };
     return { label: "Ditolak", bg: "#FBEAEA", fg: "#C0392B" };
   }
 
@@ -2364,7 +2365,7 @@ function RiwayatOrderPage({ token }) {
       new Date(o.created_at).toLocaleDateString("id-ID"),
       o.clients?.kode || "",
       o.clients?.nama || "",
-      statusInfo(o.status).label,
+      statusInfo(o).label,
       o.channel,
       o.is_dropship ? "Ya" : "Tidak",
       orderTotal(o),
@@ -2416,7 +2417,7 @@ function RiwayatOrderPage({ token }) {
           </thead>
           <tbody>
             {filtered.map((o) => {
-              const st = statusInfo(o.status);
+              const st = statusInfo(o);
               return (
                 <tr key={o.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                   <td style={{ padding: "12px 14px", fontWeight: 700 }}>{o.no_nota}</td>
@@ -2912,7 +2913,7 @@ function RekapNotaPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
+        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -2959,6 +2960,7 @@ function RekapNotaPage({ token }) {
     if (o.status === "siap_dikirim") return { label: "Siap Dikirim", bg: "#D8E9E6", fg: "#28685D" };
     if (o.status === "proses_dikirim" || o.status === "dikirim") return { label: "Proses Dikirim", bg: "#D8E9E6", fg: "#28685D" };
     if (o.status === "diretur") return { label: "Diretur", bg: "#FBEAEA", fg: "#C0392B" };
+    if (o.status === "selesai" && o.alasan_retur) return { label: "Retur Selesai", bg: "#FBEAEA", fg: "#C0392B" };
     if (o.status === "selesai") return { label: "Telah Diselesaikan", bg: "#EFE1BE", fg: "#8A6A1A" };
     return { label: o.status, bg: "#F7F5F1", fg: "#6B6F75" };
   }
