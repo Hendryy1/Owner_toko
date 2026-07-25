@@ -63,12 +63,29 @@ function bukaTabPreviewBarcode(orders) {
     return;
   }
 
-  const itemsHtml = orders.map((o, i) => {
+  // Ratakan daftar dulu - order Pekanbaru (Kurir Toko) dipecah jadi
+  // sebanyak box-nya (1 box = 1 unit barang dipesan), masing-masing dapat
+  // label sendiri dengan nomor "No. Box: X/Total". Order luar kota tetap
+  // 1 label per order seperti biasa.
+  const entries = [];
+  orders.forEach((o) => {
+    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    if (isPekanbaru) {
+      const totalBox = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) || 1;
+      for (let b = 1; b <= totalBox; b++) {
+        entries.push({ order: o, isPekanbaru: true, noBox: b, totalBox });
+      }
+    } else {
+      entries.push({ order: o, isPekanbaru: false, noBox: null, totalBox: null });
+    }
+  });
+
+  const itemsHtml = entries.map((entry, i) => {
+    const o = entry.order;
     const jumlahBarang = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
     const teleponPenerima = o.tujuan_telp || o.clients?.telp;
     const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
-    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
     const namaPenerima = o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama;
     const baris = (o.order_items || []).map((it) => `
       <tr style="border-bottom:1px solid #EDEAE3">
@@ -76,15 +93,23 @@ function bukaTabPreviewBarcode(orders) {
         <td style="padding:4px;color:#24272B">${it.products?.nama || "-"}</td>
         <td style="padding:4px;color:#24272B;font-weight:700;text-align:right">${it.qty}</td>
       </tr>`).join("");
-    return `
-      <div class="barcode-item" style="text-align:center;padding:10px 0;${i < orders.length - 1 ? "page-break-after:always;" : ""}">
+    const infoAtas = entry.isPekanbaru
+      ? `<p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 10px">Penerima: ${namaPenerima}</p>`
+      : `
         ${o.is_dropship ? `<p style="font-size:12.5px;color:#8A6A1A;margin:0 0 4px;font-weight:700">Pengirim: ${o.nama_pengirim_dropship || o.clients?.nama}</p>` : ""}
         <p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 2px">Penerima: ${namaPenerima}</p>
         <p style="font-size:12.5px;color:#6B6F75;margin:0 0 2px">No HP: ${teleponPenerima || "-"}</p>
         <p style="font-size:11.5px;color:#6B6F75;margin:0 0 10px;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>
-        <p style="font-size:12.5px;color:#6B6F75;margin:0 0 16px">${jumlahBarang} barang dipesan</p>
+        <p style="font-size:12.5px;color:#6B6F75;margin:0 0 16px">${jumlahBarang} barang dipesan</p>`;
+    const infoBox = entry.noBox
+      ? `<p style="font-size:16px;font-weight:700;color:#8A6A1A;margin:0 0 10px;padding:4px 14px;background:#FBF0D9;display:inline-block;border-radius:6px">No. Box: ${entry.noBox} / ${entry.totalBox}</p>`
+      : "";
+    return `
+      <div class="barcode-item" style="text-align:center;padding:10px 0;${i < entries.length - 1 ? "page-break-after:always;" : ""}">
+        ${infoAtas}
+        ${infoBox}
         <div style="display:flex;justify-content:center;align-items:flex-end;gap:20px;margin-bottom:16px">
-          ${isPekanbaru
+          ${entry.isPekanbaru
             ? `<div style="display:flex;flex-direction:column;align-items:center"><div id="qr-${i}"></div><p style="font-size:12px;font-weight:700;color:#24272B;margin-top:6px;font-family:monospace">${o.no_nota}</p></div>`
             : `<svg id="barcode-${i}"></svg><div style="display:flex;flex-direction:column;align-items:center"><div id="qr-kecil-${i}"></div></div>`}
         </div>
@@ -102,17 +127,13 @@ function bukaTabPreviewBarcode(orders) {
   }).join("");
 
   // Data yang dibutuhkan script inisialisasi (nomor nota + apakah Pekanbaru)
-  const dataBarcode = orders.map((o, i) => {
-    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
-    return { idx: i, noNota: o.no_nota, isPekanbaru };
-  });
+  const dataBarcode = entries.map((entry, i) => ({ idx: i, noNota: entry.order.no_nota, isPekanbaru: entry.isPekanbaru }));
 
   win.document.write(`
     <!DOCTYPE html>
     <html>
       <head>
-        <title>${orders.length > 1 ? "Barcode Massal" : "Barcode"}</title>
+        <title>${entries.length > 1 ? "Barcode Massal" : "Barcode"}</title>
         <meta charset="utf-8" />
         <style>
           @page { size: 100mm 150mm; margin: 5mm; }
@@ -696,21 +717,35 @@ function QRCodeLabel({ value, size = 160 }) {
 // ============================================================
 // KONTEN LABEL BARCODE - dipakai untuk cetak satuan maupun massal
 // ============================================================
-function BarcodeLabelContent({ order: o }) {
+function BarcodeLabelContent({ order: o, noBox, totalBox }) {
   const jumlahBarang = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
   const teleponPenerima = o.tujuan_telp || o.clients?.telp;
   const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
   const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
   const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+  const namaPenerima = o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama;
   return (
     <div className="barcode-label-content" style={{ textAlign: "center", padding: "10px 0" }}>
-      {o.is_dropship && (
-        <p style={{ fontSize: 12.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700 }}>Pengirim: {o.nama_pengirim_dropship || o.clients?.nama}</p>
+      {isPekanbaru ? (
+        // Khusus Pekanbaru (Kurir Toko) - info pembeli disederhanakan cuma
+        // nama penerima saja, tidak perlu HP/alamat/jumlah barang di label
+        <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 10px" }}>Penerima: {namaPenerima}</p>
+      ) : (
+        <>
+          {o.is_dropship && (
+            <p style={{ fontSize: 12.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700 }}>Pengirim: {o.nama_pengirim_dropship || o.clients?.nama}</p>
+          )}
+          <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Penerima: {namaPenerima}</p>
+          <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>No HP: {teleponPenerima || "-"}</p>
+          <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
+          <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
+        </>
       )}
-      <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Penerima: {o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama}</p>
-      <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>No HP: {teleponPenerima || "-"}</p>
-      <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
-      <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
+      {noBox && totalBox && (
+        <p style={{ fontSize: 16, fontWeight: 700, color: "#8A6A1A", margin: "0 0 10px", padding: "4px 14px", background: "#FBF0D9", display: "inline-block", borderRadius: 6 }}>
+          No. Box: {noBox} / {totalBox}
+        </p>
+      )}
       <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 20, marginBottom: 16 }}>
         {isPekanbaru ? (
           <QRCodeLabel value={o.no_nota} />
@@ -10184,6 +10219,7 @@ function LaporanKurirDocContent({ laporan, items }) {
           <tr>
             <th style={{ border: "1px solid #24272B", padding: "6px 10px", width: 50 }}>No</th>
             <th style={{ border: "1px solid #24272B", padding: "6px 10px", textAlign: "left" }}>Nomor Nota</th>
+            <th style={{ border: "1px solid #24272B", padding: "6px 10px", textAlign: "left" }}>Catatan</th>
           </tr>
         </thead>
         <tbody>
@@ -10191,6 +10227,7 @@ function LaporanKurirDocContent({ laporan, items }) {
             <tr key={it.id}>
               <td style={{ border: "1px solid #24272B", padding: "6px 10px", textAlign: "center" }}>{i + 1}</td>
               <td style={{ border: "1px solid #24272B", padding: "6px 10px" }}>{it.no_nota}</td>
+              <td style={{ border: "1px solid #24272B", padding: "6px 10px" }}>{it.catatan || "-"}</td>
             </tr>
           ))}
         </tbody>
@@ -10326,6 +10363,8 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const [cameraError, setCameraError] = useState("");
   const [scanMsg, setScanMsg] = useState(null);
   const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan, nunggu konfirmasi tambah
+  const [packingOrder, setPackingOrder] = useState(null); // { id, no_nota, nama, totalBox, checkedCount } - khusus Kurir Toko + Pekanbaru
+  const [catatanPacking, setCatatanPacking] = useState("");
   const [inputManual, setInputManual] = useState("");
   const manualInputRef = useRef(null);
   const html5QrRef = useRef(null);
@@ -10392,6 +10431,20 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
 
   async function tambahScan(decodedText) {
     const kode = decodedText.trim();
+
+    // Kalau lagi packing order tertentu dan scan yang sama datang lagi -
+    // ini artinya kurir scan box berikutnya dari order yang sama, langsung
+    // tambah centang tanpa perlu cek ulang ke server.
+    if (packingOrder && packingOrder.no_nota === kode) {
+      if (packingOrder.checkedCount >= packingOrder.totalBox) {
+        setScanMsg({ type: "error", text: `Semua ${packingOrder.totalBox} box sudah tercentang.` });
+        return;
+      }
+      setPackingOrder((prev) => ({ ...prev, checkedCount: prev.checkedCount + 1 }));
+      setScanMsg({ type: "ok", text: `Box ${packingOrder.checkedCount + 1}/${packingOrder.totalBox} tercentang.` });
+      return;
+    }
+
     if (scannedList.some((s) => s.no_nota === kode)) {
       setScanMsg({ type: "error", text: `${kode} sudah discan sebelumnya.` });
       return;
@@ -10399,7 +10452,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     try {
       // Cuma boleh pesanan yang statusnya "Siap Dikirim" (sudah di-scan
       // outbound, tapi belum "Mulai Kirim") yang bisa diserahkan ke kurir.
-      const rows = await supabaseFetch(token, `orders?select=id,no_nota,status,clients(nama)&no_nota=eq.${kode}`);
+      const rows = await supabaseFetch(token, `orders?select=id,no_nota,status,tujuan_kota,clients(nama,kota),order_items(qty)&no_nota=eq.${kode}`);
       if (!rows || rows.length === 0) {
         setScanMsg({ type: "error", text: `Nomor "${kode}" tidak ditemukan.` });
         return;
@@ -10408,11 +10461,36 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         setScanMsg({ type: "error", text: `${rows[0].no_nota} bukan pesanan di menu Siap Dikirim (statusnya "${rows[0].status}").` });
         return;
       }
-      setScanMsg(null);
-      setConfirmingScan(rows[0]);
+      const kotaTujuanAsli = rows[0].tujuan_kota || rows[0].clients?.kota;
+      const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+
+      if (jenisKurir === "toko" && isPekanbaru) {
+        // Order Pekanbaru + Kurir Toko - pakai alur packing list (1 box = 1
+        // scan, harus dicentang semua dulu baru bisa konfirmasi)
+        const totalBox = (rows[0].order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) || 1;
+        setScanMsg(null);
+        setCatatanPacking("");
+        setPackingOrder({ id: rows[0].id, no_nota: rows[0].no_nota, nama: rows[0].clients?.nama, totalBox, checkedCount: 1 });
+      } else {
+        setScanMsg(null);
+        setConfirmingScan(rows[0]);
+      }
     } catch (e) {
       setScanMsg({ type: "error", text: "Gagal cek nomor: " + e.message });
     }
+  }
+
+  function konfirmasiPacking() {
+    if (!packingOrder || packingOrder.checkedCount < packingOrder.totalBox) return;
+    setScannedList((prev) => [...prev, { no_nota: packingOrder.no_nota, order_id: packingOrder.id, catatan: catatanPacking.trim() || null }]);
+    setScanMsg({ type: "ok", text: `${packingOrder.no_nota} berhasil ditambahkan (${packingOrder.totalBox} box).` });
+    setPackingOrder(null);
+    setCatatanPacking("");
+  }
+
+  function batalkanPacking() {
+    setPackingOrder(null);
+    setCatatanPacking("");
   }
 
   function konfirmasiTambahScan() {
@@ -10517,7 +10595,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
 
       await supabaseFetch(token, "laporan_kurir_items", {
         method: "POST",
-        body: JSON.stringify(scannedList.map((s) => ({ laporan_kurir_id: laporan.id, order_id: s.order_id, no_nota: s.no_nota }))),
+        body: JSON.stringify(scannedList.map((s) => ({ laporan_kurir_id: laporan.id, order_id: s.order_id, no_nota: s.no_nota, catatan: s.catatan || null }))),
       });
 
       // Bikin laporan kurir = serah terima paket ke kurir - jadi semua order
@@ -10680,7 +10758,10 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           <Card style={{ marginBottom: 20, padding: 0, overflow: "hidden" }}>
             {scannedList.map((s, i) => (
               <div key={s.no_nota} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderTop: i > 0 ? "1px solid #EDEAE3" : "none" }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: "#24272B" }}>{s.no_nota}</span>
+                <div>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#24272B" }}>{s.no_nota}</span>
+                  {s.catatan && <p style={{ fontSize: 11, color: "#9CA0A6", margin: "2px 0 0" }}>{s.catatan}</p>}
+                </div>
                 <button onClick={() => hapusScan(s.no_nota)} style={{ background: "none", border: "none", color: "#C0392B", fontSize: 11.5, fontWeight: 700 }}>Hapus</button>
               </div>
             ))}
@@ -10732,6 +10813,66 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
                 </button>
                 <button onClick={konfirmasiTambahScan} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
                   Tambahkan
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL PACKING LIST - khusus Kurir Toko + Pekanbaru, harus centang semua box */}
+        {packingOrder && (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400, padding: 20 }}>
+            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 400, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
+              <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0, fontWeight: 700, textTransform: "uppercase" }}>Packing List</p>
+              <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{packingOrder.no_nota}</p>
+              <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 16px" }}>{packingOrder.nama}</p>
+
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: packingOrder.checkedCount >= packingOrder.totalBox ? "#D8E9E6" : "#FBF0D9", borderRadius: 9, padding: 10, marginBottom: 16 }}>
+                {packingOrder.checkedCount >= packingOrder.totalBox ? <Check size={16} color="#28685D" /> : <ScanLine size={16} color="#8A6A1A" />}
+                <p style={{ fontSize: 12.5, fontWeight: 700, color: packingOrder.checkedCount >= packingOrder.totalBox ? "#28685D" : "#8A6A1A", margin: 0 }}>
+                  {packingOrder.checkedCount} / {packingOrder.totalBox} box tercentang - scan tiap box satu per satu
+                </p>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 20 }}>
+                {Array.from({ length: packingOrder.totalBox }, (_, i) => i + 1).map((noBox) => {
+                  const sudahCentang = noBox <= packingOrder.checkedCount;
+                  return (
+                    <div
+                      key={noBox}
+                      style={{
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
+                        padding: "8px 4px", borderRadius: 8, fontSize: 12, fontWeight: 700,
+                        background: sudahCentang ? "#D8E9E6" : "#F7F5F1",
+                        color: sudahCentang ? "#28685D" : "#9CA0A6",
+                        border: sudahCentang ? "1.5px solid #28685D" : "1.5px solid #E4E1DA",
+                      }}
+                    >
+                      {sudahCentang && <Check size={12} />} {noBox}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Catatan (opsional)</label>
+              <textarea
+                value={catatanPacking}
+                onChange={(e) => setCatatanPacking(e.target.value)}
+                placeholder="Catatan tambahan kalau ada..."
+                rows={2}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, resize: "vertical", marginBottom: 18 }}
+              />
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={batalkanPacking} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                  Batalkan
+                </button>
+                <button
+                  onClick={konfirmasiPacking}
+                  disabled={packingOrder.checkedCount < packingOrder.totalBox}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: packingOrder.checkedCount < packingOrder.totalBox ? "#E4E1DA" : "#28685D", color: packingOrder.checkedCount < packingOrder.totalBox ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 13.5 }}
+                >
+                  Konfirmasi
                 </button>
               </div>
             </div>
@@ -10923,7 +11064,7 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
       });
       await supabaseFetch(token, "laporan_kurir_items", {
         method: "POST",
-        body: JSON.stringify(scannedList.map((s) => ({ laporan_kurir_id: laporan.id, order_id: s.order_id, no_nota: s.no_nota }))),
+        body: JSON.stringify(scannedList.map((s) => ({ laporan_kurir_id: laporan.id, order_id: s.order_id, no_nota: s.no_nota, catatan: s.catatan || null }))),
       });
 
       setBerhasil(true);
