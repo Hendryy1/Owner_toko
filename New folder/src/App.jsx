@@ -409,7 +409,7 @@ export default function OwnerDashboard() {
         {page === "laporan_kunjungan_owner" && <LaporanKunjunganOwnerPage token={token} />}
         {page === "laporan_periodik_sales" && <LaporanPeriodikSalesOwnerPage token={token} />}
         {page === "laporan_kurir" && <LaporanKurirPage token={token} />}
-        {page === "buat_laporan_kurir" && <BuatLaporanKurirPage token={token} />}
+        {page === "buat_laporan_kurir" && <BuatLaporanKurirPage token={token} role={profile?.role} />}
         {page === "banner_promo" && <BannerPromoPage token={token} />}
           </>
         )}
@@ -10036,9 +10036,10 @@ function LaporanKurirPage({ token }) {
 // ============================================================
 // BUAT LAPORAN KURIR - pilih kurir -> scan paket -> isi form -> konfirmasi
 // ============================================================
-function BuatLaporanKurirPage({ token }) {
-  const [step, setStep] = useState("pilih_kurir"); // "pilih_kurir" | "scan" | "form"
-  const [jenisKurir, setJenisKurir] = useState(null); // "baraka" | "toko"
+function BuatLaporanKurirPage({ token, role }) {
+  const isKurirAkun = role === "kurir";
+  const [step, setStep] = useState(isKurirAkun ? "scan" : "pilih_kurir"); // "pilih_kurir" | "scan" | "form"
+  const [jenisKurir, setJenisKurir] = useState(isKurirAkun ? "toko" : null); // "baraka" | "toko"
   const [scannedList, setScannedList] = useState([]); // [{ no_nota, order_id }]
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState("");
@@ -10232,8 +10233,8 @@ function BuatLaporanKurirPage({ token }) {
   }
 
   function mulaiLagi() {
-    setStep("pilih_kurir");
-    setJenisKurir(null);
+    setStep(isKurirAkun ? "scan" : "pilih_kurir");
+    setJenisKurir(isKurirAkun ? "toko" : null);
     setScannedList([]);
     setNamaKurir("");
     setNoHpKurir("");
@@ -10288,9 +10289,11 @@ function BuatLaporanKurirPage({ token }) {
   if (step === "scan") {
     return (
       <div>
-        <button onClick={() => setStep("pilih_kurir")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
-          <ChevronLeft size={16} /> Ganti Kurir
-        </button>
+        {!isKurirAkun && (
+          <button onClick={() => setStep("pilih_kurir")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+            <ChevronLeft size={16} /> Ganti Kurir
+          </button>
+        )}
         <PageHeader title={`Scan Paket - ${jenisKurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"}`} subtitle="Scan barcode/QR tiap paket yang diserahkan" />
 
         <Card style={{ marginBottom: 16 }}>
