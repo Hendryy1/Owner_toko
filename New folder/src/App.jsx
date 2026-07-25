@@ -2956,7 +2956,9 @@ function RekapNotaPage({ token }) {
     if (o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas") return { label: "Menunggu Pembayaran", bg: "#FBEAEA", fg: "#C0392B" };
     if (o.status === "menunggu_pembayaran" && o.status_bayar === "lunas") return { label: "Bisa Cetak Nota", bg: "#FBF0D9", fg: "#8A6A1A" };
     if (o.status === "menunggu_pengiriman") return { label: "Menunggu Pengiriman", bg: "#D8E9E6", fg: "#28685D" };
+    if (o.status === "siap_dikirim") return { label: "Siap Dikirim", bg: "#D8E9E6", fg: "#28685D" };
     if (o.status === "proses_dikirim" || o.status === "dikirim") return { label: "Proses Dikirim", bg: "#D8E9E6", fg: "#28685D" };
+    if (o.status === "diretur") return { label: "Diretur", bg: "#FBEAEA", fg: "#C0392B" };
     if (o.status === "selesai") return { label: "Telah Diselesaikan", bg: "#EFE1BE", fg: "#8A6A1A" };
     return { label: o.status, bg: "#F7F5F1", fg: "#6B6F75" };
   }
@@ -3034,7 +3036,9 @@ function RekapNotaPage({ token }) {
             <option value="menunggu_persetujuan">Menunggu Pengecekan Stock</option>
             <option value="menunggu_pembayaran">Menunggu Pembayaran / Bisa Cetak</option>
             <option value="menunggu_pengiriman">Menunggu Pengiriman</option>
+            <option value="siap_dikirim">Siap Dikirim</option>
             <option value="proses_dikirim">Proses Dikirim</option>
+            <option value="diretur">Diretur</option>
             <option value="selesai">Telah Diselesaikan</option>
             <option value="ditolak">Ditolak</option>
           </select>
@@ -3150,6 +3154,9 @@ function KonfirmasiPembayaranPage({ token }) {
   const [error, setError] = useState("");
   const [processingId, setProcessingId] = useState(null);
   const [reviewingCod, setReviewingCod] = useState(null); // order id yang lagi direview
+  const [returReviewList, setReturReviewList] = useState([]);
+  const [viewingRetur, setViewingRetur] = useState(null);
+  const [processingReturId, setProcessingReturId] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -3168,10 +3175,27 @@ function KonfirmasiPembayaranPage({ token }) {
       //    upload kapan saja, meski belum bisa selesaikan sampai lengkap.
       const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas,status.eq.proses_dikirim)&order=created_at.desc&limit=200");
       setOrders(rows);
+
+      // Order retur yang SUDAH dikonfirmasi (ada bukti+alasan) di Proses
+      // Pengiriman - tinggal direview Owner sebelum ditutup
+      const returRows = await supabaseFetch(token, "orders?select=id,no_nota,alasan_retur,bukti_retur_url,tanggal_retur,clients(nama,kode)&status=eq.diretur&bukti_retur_url=not.is.null&order=tanggal_retur.desc");
+      setReturReviewList(returRows);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  async function selesaikanRetur(orderId) {
+    setProcessingReturId(orderId);
+    try {
+      await supabaseFetch(token, `orders?id=eq.${orderId}`, { method: "PATCH", body: JSON.stringify({ status: "selesai" }) });
+      setReturReviewList((prev) => prev.filter((o) => o.id !== orderId));
+      setViewingRetur(null);
+    } catch (e) {
+      alert("Gagal selesaikan retur: " + e.message);
+    }
+    setProcessingReturId(null);
+  }
 
   async function confirmPayment(orderId) {
     setProcessingId(orderId);
@@ -3262,6 +3286,30 @@ function KonfirmasiPembayaranPage({ token }) {
   return (
     <div>
       <PageHeader title="Konfirmasi Pembayaran" subtitle={`${menunggu.length} pesanan menunggu konfirmasi pembayaran`} />
+
+      {returReviewList.length > 0 && (
+        <>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#C0392B", margin: "0 0 12px" }}>Review Retur ({returReviewList.length})</h2>
+          {returReviewList.map((o) => (
+            <Card key={o.id} style={{ marginBottom: 12, border: "1.5px solid #FBEAEA" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+                  <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                  <p style={{ fontSize: 12, color: "#C0392B", margin: "4px 0 0" }}>{o.alasan_retur}</p>
+                </div>
+                <button
+                  onClick={() => setViewingRetur(o)}
+                  style={{ padding: "9px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                >
+                  Lihat Detail
+                </button>
+              </div>
+            </Card>
+          ))}
+          <div style={{ height: 8 }} />
+        </>
+      )}
       {menunggu.length === 0 ? (
         <EmptyState text="Tidak ada pesanan yang perlu diproses saat ini." />
       ) : (
@@ -3389,6 +3437,35 @@ function KonfirmasiPembayaranPage({ token }) {
           </div>
         );
       })()}
+
+      {/* MODAL DETAIL RETUR - review bukti + alasan, lalu selesaikan */}
+      {viewingRetur && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "88vh", overflowY: "auto", padding: 26 }}>
+            <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Detail Retur</h2>
+            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 20px" }}>{viewingRetur.no_nota} - {viewingRetur.clients?.nama}</p>
+
+            <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Bukti Retur</p>
+            <img src={viewingRetur.bukti_retur_url} alt="Bukti retur" style={{ width: "100%", borderRadius: 10, marginBottom: 18 }} />
+
+            <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Alasan Retur</p>
+            <p style={{ fontSize: 13.5, color: "#24272B", margin: "0 0 22px", lineHeight: 1.5 }}>{viewingRetur.alasan_retur}</p>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setViewingRetur(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                Tutup
+              </button>
+              <button
+                onClick={() => selesaikanRetur(viewingRetur.id)}
+                disabled={processingReturId === viewingRetur.id}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+              >
+                {processingReturId === viewingRetur.id ? "Menyimpan..." : "Selesaikan Retur"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -3772,6 +3849,12 @@ function ProsesPengirimanPage({ token, role }) {
   const [confirmingCodId, setConfirmingCodId] = useState(null);
   const [loadingRuteId, setLoadingRuteId] = useState(null);
   const [clientIdsWithGps, setClientIdsWithGps] = useState(new Set());
+  const [returOrders, setReturOrders] = useState([]);
+  const [konfirmasiReturId, setKonfirmasiReturId] = useState(null);
+  const [buktiRetur, setBuktiRetur] = useState(null);
+  const [alasanRetur, setAlasanRetur] = useState("");
+  const [uploadingBuktiRetur, setUploadingBuktiRetur] = useState(false);
+  const [savingRetur, setSavingRetur] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -3786,6 +3869,16 @@ function ProsesPengirimanPage({ token, role }) {
           })
         : rows;
       setOrders(rowsFiltered);
+
+      // Order yang statusnya "diretur" tapi belum ada bukti+alasan - perlu
+      // dikonfirmasi kurir/admin di sini sebelum lanjut ke review Owner
+      const returRows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,kota)&status=eq.diretur&bukti_retur_url=is.null&order=tanggal_retur.asc");
+      setReturOrders(role === "kurir"
+        ? returRows.filter((o) => {
+            const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+            return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+          })
+        : returRows);
 
       // Cek toko mana saja yang PUNYA titik GPS tersimpan dari kunjungan
       // sales - dipakai buat nyala/matiin tombol Rute per order
@@ -3919,6 +4012,49 @@ function ProsesPengirimanPage({ token, role }) {
     setProcessingId(null);
   }
 
+  async function uploadBuktiRetur(file) {
+    setUploadingBuktiRetur(true);
+    try {
+      const ext = file.name.split(".").pop();
+      const filePath = `bukti-retur-${konfirmasiReturId}-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      setBuktiRetur(`${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`);
+    } catch (e) {
+      alert("Gagal upload bukti: " + e.message);
+    }
+    setUploadingBuktiRetur(false);
+  }
+
+  async function submitKonfirmasiRetur() {
+    if (!buktiRetur) {
+      alert("Upload dulu bukti retur.");
+      return;
+    }
+    if (!alasanRetur.trim()) {
+      alert("Isi dulu alasan retur.");
+      return;
+    }
+    setSavingRetur(true);
+    try {
+      await supabaseFetch(token, `orders?id=eq.${konfirmasiReturId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ bukti_retur_url: buktiRetur, alasan_retur: alasanRetur.trim() }),
+      });
+      setReturOrders((prev) => prev.filter((o) => o.id !== konfirmasiReturId));
+      setKonfirmasiReturId(null);
+      setBuktiRetur(null);
+      setAlasanRetur("");
+    } catch (e) {
+      alert("Gagal simpan konfirmasi retur: " + e.message);
+    }
+    setSavingRetur(false);
+  }
+
   function daysSince(dateStr) {
     if (!dateStr) return 0;
     return (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
@@ -3949,6 +4085,31 @@ function ProsesPengirimanPage({ token, role }) {
   return (
     <div>
       <PageHeader title="Proses Pengiriman" subtitle={`${orders.length} pesanan dalam proses pengiriman`} />
+
+      {returOrders.length > 0 && (
+        <>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#C0392B", margin: "0 0 12px" }}>Perlu Konfirmasi Retur ({returOrders.length})</h2>
+          {returOrders.map((o) => (
+            <Card key={o.id} style={{ marginBottom: 12, border: "1.5px solid #FBEAEA" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+                  <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                </div>
+                <button
+                  onClick={() => { setKonfirmasiReturId(o.id); setBuktiRetur(null); setAlasanRetur(""); }}
+                  style={{ padding: "10px 18px", borderRadius: 9, border: "none", background: "#C0392B", color: "#fff", fontSize: 12.5, fontWeight: 700 }}
+                >
+                  Konfirmasi Retur
+                </button>
+              </div>
+            </Card>
+          ))}
+          <div style={{ height: 8 }} />
+        </>
+      )}
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "12px 0 12px" }}>Dalam Pengiriman</h2>
       {orders.length === 0 ? (
         <EmptyState text="Tidak ada pesanan dalam proses pengiriman saat ini." />
       ) : (
@@ -4103,6 +4264,55 @@ function ProsesPengirimanPage({ token, role }) {
                   style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: (buktiNotaCod && buktiCashCod) ? "#E8A426" : "#E4E1DA", color: (buktiNotaCod && buktiCashCod) ? "#24272B" : "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}
                 >
                   {confirmingCodId === order.id ? "Menyimpan..." : "Konfirmasi"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL KONFIRMASI RETUR - upload bukti + alasan wajib */}
+      {konfirmasiReturId && (() => {
+        const o = returOrders.find((x) => x.id === konfirmasiReturId);
+        if (!o) return null;
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 440, maxHeight: "88vh", overflowY: "auto", padding: 26 }}>
+              <h2 className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Konfirmasi Retur</h2>
+              <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 20px" }}>{o.no_nota} - {o.clients?.nama}</p>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Bukti Retur (Foto)</label>
+                {buktiRetur ? (
+                  <img src={buktiRetur} alt="Bukti retur" style={{ width: "100%", height: 180, objectFit: "cover", borderRadius: 9 }} />
+                ) : (
+                  <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 20, borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                    {uploadingBuktiRetur ? "Mengupload..." : <><UploadCloud size={16} /> Tap untuk upload foto</>}
+                    <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingBuktiRetur} onChange={(e) => { if (e.target.files[0]) uploadBuktiRetur(e.target.files[0]); }} />
+                  </label>
+                )}
+              </div>
+
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Alasan Retur</label>
+                <textarea
+                  value={alasanRetur} onChange={(e) => setAlasanRetur(e.target.value)}
+                  placeholder="Contoh: toko tutup, barang tidak sesuai pesanan, dll..."
+                  rows={3}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, resize: "vertical" }}
+                />
+              </div>
+
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setKonfirmasiReturId(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                  Batal
+                </button>
+                <button
+                  onClick={submitKonfirmasiRetur}
+                  disabled={savingRetur || !buktiRetur || !alasanRetur.trim()}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: (savingRetur || !buktiRetur || !alasanRetur.trim()) ? "#E4E1DA" : "#C0392B", color: (savingRetur || !buktiRetur || !alasanRetur.trim()) ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 13.5 }}
+                >
+                  {savingRetur ? "Menyimpan..." : "Konfirmasi"}
                 </button>
               </div>
             </div>
@@ -10047,6 +10257,7 @@ function LaporanKurirPage({ token }) {
 // ============================================================
 function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const isKurirAkun = role === "kurir";
+  const [modeUtama, setModeUtama] = useState("serah_terima"); // "serah_terima" | "retur"
   const [step, setStep] = useState(isKurirAkun ? "scan" : "pilih_kurir"); // "pilih_kurir" | "scan" | "form"
   const [jenisKurir, setJenisKurir] = useState(isKurirAkun ? "toko" : null); // "baraka" | "toko"
   const [scannedList, setScannedList] = useState([]); // [{ no_nota, order_id }]
@@ -10275,6 +10486,11 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     setScanMsg(null);
   }
 
+  // ---------- MODE RETUR (terpisah total dari alur serah terima) ----------
+  if (modeUtama === "retur") {
+    return <BuatReturPage token={token} onGantiMode={() => setModeUtama("serah_terima")} />;
+  }
+
   // ---------- TAMPILAN SUKSES ----------
   if (berhasilData) {
     return (
@@ -10300,6 +10516,22 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     return (
       <div>
         <PageHeader title="Buat Laporan Kurir" subtitle="Pilih jenis kurir untuk mulai serah terima paket" />
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+          <button
+            onClick={() => setModeUtama("serah_terima")}
+            style={{ padding: "9px 18px", borderRadius: 9, border: "1.5px solid #E8A426", background: "#FBF0D9", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+          >
+            Serah Terima Paket
+          </button>
+          <button
+            onClick={() => setModeUtama("retur")}
+            style={{ padding: "9px 18px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+          >
+            Retur Paket
+          </button>
+        </div>
+
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
           <div onClick={() => pilihKurir("baraka")} style={{ cursor: "pointer" }}>
             <Card style={{ width: 220, textAlign: "center", padding: 28 }}>
@@ -10328,6 +10560,23 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           </button>
         )}
         <PageHeader title={`Scan Paket - ${jenisKurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"}`} subtitle="Scan barcode/QR tiap paket yang diserahkan" />
+
+        {isKurirAkun && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+            <button
+              onClick={() => setModeUtama("serah_terima")}
+              style={{ padding: "9px 18px", borderRadius: 9, border: "1.5px solid #E8A426", background: "#FBF0D9", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+            >
+              Serah Terima Paket
+            </button>
+            <button
+              onClick={() => setModeUtama("retur")}
+              style={{ padding: "9px 18px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+            >
+              Retur Paket
+            </button>
+          </div>
+        )}
 
         <Card style={{ marginBottom: 16 }}>
           <button
@@ -10497,6 +10746,233 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           {saving ? "Menyimpan..." : "Konfirmasi Laporan"}
         </button>
       </Card>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// BUAT RETUR - scan paket yang mau diretur, status order langsung
+// jadi "diretur" (perlu konfirmasi bukti+alasan nanti di Proses Pengiriman)
+// ============================================================
+function BuatReturPage({ token, onGantiMode }) {
+  const [scannedList, setScannedList] = useState([]); // [{ no_nota, order_id, nama }]
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraError, setCameraError] = useState("");
+  const [scanMsg, setScanMsg] = useState(null);
+  const [confirmingScan, setConfirmingScan] = useState(null);
+  const [inputManual, setInputManual] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [berhasil, setBerhasil] = useState(false);
+  const html5QrRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (html5QrRef.current) html5QrRef.current.stop().catch(() => {});
+    };
+  }, []);
+
+  function tutupKamera() {
+    if (html5QrRef.current) {
+      html5QrRef.current.stop().catch(() => {}).finally(() => { html5QrRef.current = null; });
+    }
+    setShowCamera(false);
+  }
+
+  async function mulaiScanKamera() {
+    setCameraError("");
+    setShowCamera(true);
+    try {
+      await loadHtml5Qrcode();
+      setTimeout(async () => {
+        try {
+          const html5Qr = new window.Html5Qrcode("reader-kamera-retur");
+          html5QrRef.current = html5Qr;
+          await html5Qr.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 300, height: 150 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_128, window.Html5QrcodeSupportedFormats.QR_CODE] },
+            (decodedText) => { tambahScan(decodedText); },
+            () => {}
+          );
+        } catch (e) {
+          setCameraError("Gagal buka kamera: " + e.message);
+        }
+      }, 200);
+    } catch (e) {
+      setCameraError("Gagal muat library scanner: " + e.message);
+    }
+  }
+
+  async function tambahScan(decodedText) {
+    const kode = decodedText.trim();
+    if (scannedList.some((s) => s.no_nota === kode)) {
+      setScanMsg({ type: "error", text: `${kode} sudah discan sebelumnya.` });
+      return;
+    }
+    try {
+      const rows = await supabaseFetch(token, `orders?select=id,no_nota,status,clients(nama)&no_nota=eq.${kode}`);
+      if (!rows || rows.length === 0) {
+        setScanMsg({ type: "error", text: `Nomor "${kode}" tidak ditemukan.` });
+        return;
+      }
+      if (!["proses_dikirim", "siap_dikirim"].includes(rows[0].status)) {
+        setScanMsg({ type: "error", text: `${rows[0].no_nota} tidak bisa diretur (statusnya "${rows[0].status}").` });
+        return;
+      }
+      setScanMsg(null);
+      setConfirmingScan(rows[0]);
+    } catch (e) {
+      setScanMsg({ type: "error", text: "Gagal cek nomor: " + e.message });
+    }
+  }
+
+  function konfirmasiTambahScan() {
+    if (!confirmingScan) return;
+    setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, nama: confirmingScan.clients?.nama }]);
+    setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} ditambahkan ke daftar retur.` });
+    setConfirmingScan(null);
+  }
+
+  function hapusScan(no_nota) {
+    setScannedList((prev) => prev.filter((s) => s.no_nota !== no_nota));
+  }
+
+  async function konfirmasiRetur() {
+    if (scannedList.length === 0) return;
+    if (!confirm(`Yakin retur ${scannedList.length} paket ini? Statusnya akan berubah jadi "Diretur".`)) return;
+    setSaving(true);
+    try {
+      const now = new Date().toISOString();
+      const orderIds = scannedList.map((s) => s.order_id);
+      await supabaseFetch(token, `orders?id=in.(${orderIds.join(",")})`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "diretur", tanggal_retur: now }),
+      });
+      setBerhasil(true);
+    } catch (e) {
+      alert("Gagal proses retur: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  if (berhasil) {
+    return (
+      <div>
+        <Card style={{ textAlign: "center", padding: 40, maxWidth: 440, margin: "0 auto" }}>
+          <div style={{ width: 60, height: 60, borderRadius: "50%", background: "#FBEAEA", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 18px" }}>
+            <Check size={28} color="#C0392B" />
+          </div>
+          <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>Retur Berhasil Dicatat</p>
+          <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 24px" }}>
+            {scannedList.length} paket sudah ditandai retur. Owner/Admin perlu konfirmasi bukti & alasan retur di menu Proses Pengiriman.
+          </p>
+          <button onClick={() => { setScannedList([]); setBerhasil(false); }} style={{ padding: "12px 28px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+            Retur Paket Lain
+          </button>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <button onClick={onGantiMode} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+        <ChevronLeft size={16} /> Kembali ke Serah Terima
+      </button>
+      <PageHeader title="Retur Paket" subtitle="Scan paket yang mau diretur" />
+
+      <Card style={{ marginBottom: 16 }}>
+        <button
+          onClick={mulaiScanKamera}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: 13, borderRadius: 10, border: "none", background: "#C0392B", color: "#fff", fontWeight: 700, fontSize: 14, marginBottom: 14 }}
+        >
+          <Camera size={17} /> Scan Pakai Kamera HP
+        </button>
+        <p style={{ fontSize: 11, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 8px", textAlign: "center" }}>atau</p>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#F7F5F1", borderRadius: 10, padding: "10px 14px" }}>
+          <ScanLine size={20} color="#C0392B" />
+          <input
+            value={inputManual}
+            onChange={(e) => setInputManual(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && inputManual.trim()) { tambahScan(inputManual); setInputManual(""); } }}
+            placeholder="Scan pakai alat scanner fisik, atau ketik manual lalu Enter..."
+            style={{ flex: 1, background: "none", border: "none", outline: "none", fontSize: 14, fontWeight: 600, color: "#24272B" }}
+          />
+        </div>
+        {scanMsg && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, padding: 10, borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600 }}>
+            {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
+          </div>
+        )}
+      </Card>
+
+      <Card style={{ marginBottom: 20 }}>
+        <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Jumlah Paket Retur</p>
+        <p className="disp" style={{ fontSize: 32, fontWeight: 700, color: "#C0392B", margin: 0 }}>{scannedList.length}</p>
+      </Card>
+
+      {scannedList.length > 0 && (
+        <Card style={{ marginBottom: 20, padding: 0, overflow: "hidden" }}>
+          {scannedList.map((s, i) => (
+            <div key={s.no_nota} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderTop: i > 0 ? "1px solid #EDEAE3" : "none" }}>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "#24272B", margin: 0 }}>{s.no_nota}</p>
+                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: 0 }}>{s.nama}</p>
+              </div>
+              <button onClick={() => hapusScan(s.no_nota)} style={{ background: "none", border: "none", color: "#C0392B", fontSize: 11.5, fontWeight: 700 }}>Hapus</button>
+            </div>
+          ))}
+        </Card>
+      )}
+
+      <button
+        onClick={konfirmasiRetur}
+        disabled={scannedList.length === 0 || saving}
+        style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: (scannedList.length === 0 || saving) ? "#E4E1DA" : "#C0392B", color: (scannedList.length === 0 || saving) ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 14 }}
+      >
+        {saving ? "Memproses..." : `Konfirmasi Retur (${scannedList.length} paket)`}
+      </button>
+
+      {showCamera && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode/QR paket</p>
+          <div id="reader-kamera-retur" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
+          {scanMsg && !confirmingScan && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, padding: "10px 14px", borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600, maxWidth: 400, textAlign: "center" }}>
+              {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
+            </div>
+          )}
+          {cameraError && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraError}</p>}
+          <button onClick={tutupKamera} style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
+            Tutup Kamera
+          </button>
+        </div>
+      )}
+
+      {confirmingScan && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, padding: 26 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#FBEAEA", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <ScanLine size={20} color="#C0392B" />
+              </div>
+              <div>
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0, fontWeight: 700, textTransform: "uppercase" }}>Scan Berhasil</p>
+                <p className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: 0 }}>{confirmingScan.no_nota}</p>
+              </div>
+            </div>
+            <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 20px" }}>{confirmingScan.clients?.nama}</p>
+            <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 18px" }}>Tambahkan paket ini ke daftar retur?</p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setConfirmingScan(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                Batalkan
+              </button>
+              <button onClick={konfirmasiTambahScan} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#C0392B", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
+                Tambahkan
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
