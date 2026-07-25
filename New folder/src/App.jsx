@@ -10379,6 +10379,15 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const isDrawingRef = useRef(false);
   const lastPosRef = useRef({ x: 0, y: 0 });
 
+  // Callback kamera (html5-qrcode) cuma didaftarkan SEKALI saat kamera
+  // dibuka, jadi kalau baca state React langsung, ia akan pegang versi LAMA
+  // terus (stale closure) - makanya baca dari ref ini yang selalu disinkron
+  // ke nilai TERBARU lewat useEffect di bawah.
+  const packingOrderRef = useRef(packingOrder);
+  const scannedListRef = useRef(scannedList);
+  useEffect(() => { packingOrderRef.current = packingOrder; }, [packingOrder]);
+  useEffect(() => { scannedListRef.current = scannedList; }, [scannedList]);
+
   useEffect(() => {
     return () => {
       if (html5QrRef.current) html5QrRef.current.stop().catch(() => {});
@@ -10431,28 +10440,26 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
 
   async function tambahScan(decodedText) {
     const kode = decodedText.trim();
+    const packingSekarang = packingOrderRef.current;
 
     // Kalau lagi packing order tertentu dan scan yang sama datang lagi -
-    // ini artinya kurir scan box berikutnya dari order yang sama. Kamera
-    // di-stop sejenak (supaya sesi scan-nya benar-benar baru lagi saat
-    // dilanjutkan - library kamera kadang menolak kode identik yang
-    // "baru saja" terdeteksi, padahal itu box FISIK yang berbeda).
-    if (packingOrder && packingOrder.no_nota === kode) {
-      if (!packingOrder.selectedBox) {
+    // ini artinya kurir scan box berikutnya dari order yang sama.
+    if (packingSekarang && packingSekarang.no_nota === kode) {
+      if (!packingSekarang.selectedBox) {
         setScanMsg({ type: "error", text: "Tekan dulu nomor box yang mau dicentang, baru scan." });
         return;
       }
-      if (packingOrder.checkedBoxes.includes(packingOrder.selectedBox)) {
-        setScanMsg({ type: "error", text: `Box ${packingOrder.selectedBox} sudah tercentang.` });
+      if (packingSekarang.checkedBoxes.includes(packingSekarang.selectedBox)) {
+        setScanMsg({ type: "error", text: `Box ${packingSekarang.selectedBox} sudah tercentang.` });
         return;
       }
-      const boxYangDicentang = packingOrder.selectedBox;
+      const boxYangDicentang = packingSekarang.selectedBox;
       setPackingOrder((prev) => ({ ...prev, checkedBoxes: [...prev.checkedBoxes, boxYangDicentang], selectedBox: null }));
-      setScanMsg({ type: "ok", text: `Box ${boxYangDicentang}/${packingOrder.totalBox} tercentang.` });
+      setScanMsg({ type: "ok", text: `Box ${boxYangDicentang}/${packingSekarang.totalBox} tercentang.` });
       return;
     }
 
-    if (scannedList.some((s) => s.no_nota === kode)) {
+    if (scannedListRef.current.some((s) => s.no_nota === kode)) {
       setScanMsg({ type: "error", text: `${kode} sudah discan sebelumnya.` });
       return;
     }
