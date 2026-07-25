@@ -5,7 +5,7 @@ import {
   Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine
 } from "lucide-react";
 
-const COMPANY_NAME = "PT Nama Perusahaan Anda";
+const COMPANY_NAME = "PT INDO GARUDA ABADI";
 
 // ============================================================
 // BUKA TAB BARU UNTUK PREVIEW SEBELUM PRINT - render konten JSX jadi
@@ -10220,6 +10220,7 @@ function LaporanKurirDocContent({ laporan, items }) {
           <tr>
             <th style={{ border: "1px solid #24272B", padding: "6px 10px", width: 50 }}>No</th>
             <th style={{ border: "1px solid #24272B", padding: "6px 10px", textAlign: "left" }}>Nomor Nota</th>
+            <th style={{ border: "1px solid #24272B", padding: "6px 10px", width: 80 }}>Jumlah Box</th>
             <th style={{ border: "1px solid #24272B", padding: "6px 10px", textAlign: "left" }}>Catatan</th>
           </tr>
         </thead>
@@ -10228,6 +10229,7 @@ function LaporanKurirDocContent({ laporan, items }) {
             <tr key={it.id}>
               <td style={{ border: "1px solid #24272B", padding: "6px 10px", textAlign: "center" }}>{i + 1}</td>
               <td style={{ border: "1px solid #24272B", padding: "6px 10px" }}>{it.no_nota}</td>
+              <td style={{ border: "1px solid #24272B", padding: "6px 10px", textAlign: "center" }}>{it.jumlah_box || 1}</td>
               <td style={{ border: "1px solid #24272B", padding: "6px 10px" }}>{it.catatan || "-"}</td>
             </tr>
           ))}
@@ -10512,7 +10514,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
       if (daftarBoxBaru.length >= confirmingScan.totalBox) {
         // Semua box sudah dikonfirmasi - baru order-nya benar-benar
         // ditambahkan ke daftar serah terima
-        setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id }]);
+        setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, jumlah_box: confirmingScan.totalBox }]);
         setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} lengkap (${confirmingScan.totalBox} box) - ditambahkan ke daftar.` });
       } else {
         setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} - box ${confirmingScan.noBox}/${confirmingScan.totalBox} tercatat (${daftarBoxBaru.length}/${confirmingScan.totalBox} total). Scan box lain.`, orderId: confirmingScan.id, noNota: confirmingScan.no_nota, totalBox: confirmingScan.totalBox });
@@ -10619,7 +10621,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
 
       await supabaseFetch(token, "laporan_kurir_items", {
         method: "POST",
-        body: JSON.stringify(scannedList.map((s) => ({ laporan_kurir_id: laporan.id, order_id: s.order_id, no_nota: s.no_nota, catatan: s.catatan || null }))),
+        body: JSON.stringify(scannedList.map((s) => ({ laporan_kurir_id: laporan.id, order_id: s.order_id, no_nota: s.no_nota, catatan: s.catatan || null, jumlah_box: s.jumlah_box || 1 }))),
       });
 
       // Bikin laporan kurir = serah terima paket ke kurir - jadi semua order
