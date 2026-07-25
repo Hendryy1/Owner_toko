@@ -10363,8 +10363,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const [cameraError, setCameraError] = useState("");
   const [scanMsg, setScanMsg] = useState(null);
   const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan, nunggu konfirmasi tambah
-  const [packingOrder, setPackingOrder] = useState(null); // { id, no_nota, nama, totalBox, checkedCount } - khusus Kurir Toko + Pekanbaru
-  const [cameraPaused, setCameraPaused] = useState(false);
+  const [packingOrder, setPackingOrder] = useState(null); // { id, no_nota, nama, totalBox, checkedBoxes: [], selectedBox } - khusus Kurir Toko + Pekanbaru
   const [catatanPacking, setCatatanPacking] = useState("");
   const [inputManual, setInputManual] = useState("");
   const manualInputRef = useRef(null);
@@ -10399,12 +10398,10 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
       });
     }
     setShowCamera(false);
-    setCameraPaused(false);
   }
 
   async function mulaiScanKamera() {
     setCameraError("");
-    setCameraPaused(false);
     setShowCamera(true);
     try {
       await loadHtml5Qrcode();
@@ -10441,19 +10438,17 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     // dilanjutkan - library kamera kadang menolak kode identik yang
     // "baru saja" terdeteksi, padahal itu box FISIK yang berbeda).
     if (packingOrder && packingOrder.no_nota === kode) {
-      if (packingOrder.checkedCount >= packingOrder.totalBox) {
-        setScanMsg({ type: "error", text: `Semua ${packingOrder.totalBox} box sudah tercentang.` });
+      if (!packingOrder.selectedBox) {
+        setScanMsg({ type: "error", text: "Tekan dulu nomor box yang mau dicentang, baru scan." });
         return;
       }
-      const jumlahBaru = packingOrder.checkedCount + 1;
-      setPackingOrder((prev) => ({ ...prev, checkedCount: jumlahBaru }));
-      setScanMsg({ type: "ok", text: `Box ${jumlahBaru}/${packingOrder.totalBox} tercentang.` });
-      if (jumlahBaru < packingOrder.totalBox) {
-        if (html5QrRef.current) {
-          html5QrRef.current.pause(true);
-        }
-        setCameraPaused(true);
+      if (packingOrder.checkedBoxes.includes(packingOrder.selectedBox)) {
+        setScanMsg({ type: "error", text: `Box ${packingOrder.selectedBox} sudah tercentang.` });
+        return;
       }
+      const boxYangDicentang = packingOrder.selectedBox;
+      setPackingOrder((prev) => ({ ...prev, checkedBoxes: [...prev.checkedBoxes, boxYangDicentang], selectedBox: null }));
+      setScanMsg({ type: "ok", text: `Box ${boxYangDicentang}/${packingOrder.totalBox} tercentang.` });
       return;
     }
 
@@ -10482,7 +10477,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         const totalBox = (rows[0].order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) || 1;
         setScanMsg(null);
         setCatatanPacking("");
-        setPackingOrder({ id: rows[0].id, no_nota: rows[0].no_nota, nama: rows[0].clients?.nama, totalBox, checkedCount: 1 });
+        setPackingOrder({ id: rows[0].id, no_nota: rows[0].no_nota, nama: rows[0].clients?.nama, totalBox, checkedBoxes: [1], selectedBox: null });
       } else {
         setScanMsg(null);
         setConfirmingScan(rows[0]);
@@ -10493,19 +10488,11 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   }
 
   function konfirmasiPacking() {
-    if (!packingOrder || packingOrder.checkedCount < packingOrder.totalBox) return;
+    if (!packingOrder || packingOrder.checkedBoxes.length < packingOrder.totalBox) return;
     setScannedList((prev) => [...prev, { no_nota: packingOrder.no_nota, order_id: packingOrder.id, catatan: catatanPacking.trim() || null }]);
     setScanMsg({ type: "ok", text: `${packingOrder.no_nota} berhasil ditambahkan (${packingOrder.totalBox} box).` });
     setPackingOrder(null);
     setCatatanPacking("");
-  }
-
-  function lanjutkanScan() {
-    if (html5QrRef.current) {
-      html5QrRef.current.resume();
-    }
-    setCameraPaused(false);
-    setScanMsg(null);
   }
 
   function batalkanPacking() {
@@ -10818,34 +10805,39 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
               <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "#fff", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, maxHeight: "42vh", overflowY: "auto", boxShadow: "0 -4px 20px rgba(0,0,0,0.3)" }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{packingOrder.no_nota}</p>
                 <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px" }}>{packingOrder.nama}</p>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, background: packingOrder.checkedCount >= packingOrder.totalBox ? "#D8E9E6" : "#FBF0D9", borderRadius: 8, padding: 8, marginBottom: 10 }}>
-                  {packingOrder.checkedCount >= packingOrder.totalBox ? <Check size={14} color="#28685D" /> : <ScanLine size={14} color="#8A6A1A" />}
-                  <p style={{ fontSize: 11.5, fontWeight: 700, color: packingOrder.checkedCount >= packingOrder.totalBox ? "#28685D" : "#8A6A1A", margin: 0 }}>
-                    {packingOrder.checkedCount} / {packingOrder.totalBox} box tercentang
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: packingOrder.checkedBoxes.length >= packingOrder.totalBox ? "#D8E9E6" : "#FBF0D9", borderRadius: 8, padding: 8, marginBottom: 10 }}>
+                  {packingOrder.checkedBoxes.length >= packingOrder.totalBox ? <Check size={14} color="#28685D" /> : <ScanLine size={14} color="#8A6A1A" />}
+                  <p style={{ fontSize: 11.5, fontWeight: 700, color: packingOrder.checkedBoxes.length >= packingOrder.totalBox ? "#28685D" : "#8A6A1A", margin: 0 }}>
+                    {packingOrder.checkedBoxes.length} / {packingOrder.totalBox} box tercentang
+                    {packingOrder.selectedBox ? ` - box ${packingOrder.selectedBox} dipilih, silakan scan` : " - tekan nomor box, lalu scan"}
                   </p>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, marginBottom: packingOrder.checkedCount >= packingOrder.totalBox ? 12 : 0 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>
                   {Array.from({ length: packingOrder.totalBox }, (_, i) => i + 1).map((noBox) => {
-                    const sudahCentang = noBox <= packingOrder.checkedCount;
+                    const sudahCentang = packingOrder.checkedBoxes.includes(noBox);
+                    const dipilih = packingOrder.selectedBox === noBox;
                     return (
-                      <div key={noBox} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, padding: "6px 2px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: sudahCentang ? "#D8E9E6" : "#F7F5F1", color: sudahCentang ? "#28685D" : "#9CA0A6", border: sudahCentang ? "1px solid #28685D" : "1px solid #E4E1DA" }}>
+                      <button
+                        key={noBox}
+                        onClick={() => { if (!sudahCentang) setPackingOrder((prev) => ({ ...prev, selectedBox: noBox })); }}
+                        disabled={sudahCentang}
+                        style={{
+                          display: "flex", alignItems: "center", justifyContent: "center", gap: 2,
+                          padding: "8px 2px", borderRadius: 6, fontSize: 11, fontWeight: 700,
+                          background: sudahCentang ? "#D8E9E6" : dipilih ? "#FBF0D9" : "#F7F5F1",
+                          color: sudahCentang ? "#28685D" : dipilih ? "#8A6A1A" : "#9CA0A6",
+                          border: sudahCentang ? "1.5px solid #28685D" : dipilih ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA",
+                        }}
+                      >
                         {sudahCentang && <Check size={10} />} {noBox}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
-                {cameraPaused && packingOrder.checkedCount < packingOrder.totalBox && (
-                  <button
-                    onClick={lanjutkanScan}
-                    style={{ width: "100%", padding: 11, borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13 }}
-                  >
-                    Lanjut Scan Box Berikutnya
-                  </button>
-                )}
-                {packingOrder.checkedCount >= packingOrder.totalBox && (
+                {packingOrder.checkedBoxes.length >= packingOrder.totalBox && (
                   <button
                     onClick={() => { tutupKamera(); }}
-                    style={{ width: "100%", padding: 11, borderRadius: 9, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13 }}
+                    style={{ width: "100%", marginTop: 12, padding: 11, borderRadius: 9, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13 }}
                   >
                     Semua Box Selesai - Lanjut Catatan
                   </button>
@@ -10892,16 +10884,16 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
               <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{packingOrder.no_nota}</p>
               <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 16px" }}>{packingOrder.nama}</p>
 
-              <div style={{ display: "flex", alignItems: "center", gap: 8, background: packingOrder.checkedCount >= packingOrder.totalBox ? "#D8E9E6" : "#FBF0D9", borderRadius: 9, padding: 10, marginBottom: 16 }}>
-                {packingOrder.checkedCount >= packingOrder.totalBox ? <Check size={16} color="#28685D" /> : <ScanLine size={16} color="#8A6A1A" />}
-                <p style={{ fontSize: 12.5, fontWeight: 700, color: packingOrder.checkedCount >= packingOrder.totalBox ? "#28685D" : "#8A6A1A", margin: 0 }}>
-                  {packingOrder.checkedCount} / {packingOrder.totalBox} box tercentang - scan tiap box satu per satu
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", borderRadius: 9, padding: 10, marginBottom: 16 }}>
+                <Check size={16} color="#28685D" />
+                <p style={{ fontSize: 12.5, fontWeight: 700, color: "#28685D", margin: 0 }}>
+                  {packingOrder.checkedBoxes.length} / {packingOrder.totalBox} box tercentang - semua sudah lengkap
                 </p>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 20 }}>
                 {Array.from({ length: packingOrder.totalBox }, (_, i) => i + 1).map((noBox) => {
-                  const sudahCentang = noBox <= packingOrder.checkedCount;
+                  const sudahCentang = packingOrder.checkedBoxes.includes(noBox);
                   return (
                     <div
                       key={noBox}
@@ -10934,8 +10926,8 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
                 </button>
                 <button
                   onClick={konfirmasiPacking}
-                  disabled={packingOrder.checkedCount < packingOrder.totalBox}
-                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: packingOrder.checkedCount < packingOrder.totalBox ? "#E4E1DA" : "#28685D", color: packingOrder.checkedCount < packingOrder.totalBox ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 13.5 }}
+                  disabled={packingOrder.checkedBoxes.length < packingOrder.totalBox}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: packingOrder.checkedBoxes.length < packingOrder.totalBox ? "#E4E1DA" : "#28685D", color: packingOrder.checkedBoxes.length < packingOrder.totalBox ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 13.5 }}
                 >
                   Konfirmasi
                 </button>
