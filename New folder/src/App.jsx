@@ -10777,12 +10777,25 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         </button>
 
         {showCamera && (
-          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", padding: "20px 20px 0" }}>
             <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode/QR paket</p>
-            <div id="reader-kamera-laporan-kurir" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
+            <div id="reader-kamera-laporan-kurir" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden", flexShrink: 0 }} />
 
+            {scanMsg && !confirmingScan && !packingOrder && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, padding: "10px 14px", borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600, maxWidth: 400, textAlign: "center" }}>
+                {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
+              </div>
+            )}
+            {cameraError && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraError}</p>}
+
+            <button onClick={() => { tutupKamera(); setPackingOrder(null); setCatatanPacking(""); }} style={{ marginTop: 20, padding: "10px 20px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13, flexShrink: 0 }}>
+              Tutup Kamera
+            </button>
+
+            {/* Panel packing list - posisi TETAP di bawah layar, TIDAK
+                ikut mendorong/menggeser tampilan kamera di atasnya */}
             {packingOrder && (
-              <div style={{ width: "100%", maxWidth: 400, marginTop: 14, background: "#fff", borderRadius: 12, padding: 14 }}>
+              <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, background: "#fff", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 16, maxHeight: "42vh", overflowY: "auto", boxShadow: "0 -4px 20px rgba(0,0,0,0.3)" }}>
                 <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{packingOrder.no_nota}</p>
                 <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px" }}>{packingOrder.nama}</p>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, background: packingOrder.checkedCount >= packingOrder.totalBox ? "#D8E9E6" : "#FBF0D9", borderRadius: 8, padding: 8, marginBottom: 10 }}>
@@ -10791,7 +10804,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
                     {packingOrder.checkedCount} / {packingOrder.totalBox} box tercentang
                   </p>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, marginBottom: packingOrder.checkedCount >= packingOrder.totalBox ? 12 : 0, maxHeight: 140, overflowY: "auto" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, marginBottom: packingOrder.checkedCount >= packingOrder.totalBox ? 12 : 0 }}>
                   {Array.from({ length: packingOrder.totalBox }, (_, i) => i + 1).map((noBox) => {
                     const sudahCentang = noBox <= packingOrder.checkedCount;
                     return (
@@ -10811,16 +10824,6 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
                 )}
               </div>
             )}
-
-            {scanMsg && !confirmingScan && !packingOrder && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, padding: "10px 14px", borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600, maxWidth: 400, textAlign: "center" }}>
-                {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
-              </div>
-            )}
-            {cameraError && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraError}</p>}
-            <button onClick={() => { tutupKamera(); setPackingOrder(null); setCatatanPacking(""); }} style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
-              Tutup Kamera
-            </button>
           </div>
         )}
 
