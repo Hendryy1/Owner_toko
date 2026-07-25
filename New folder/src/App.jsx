@@ -3201,6 +3201,21 @@ function KonfirmasiPembayaranPage({ token }) {
     }
   }
 
+  async function bukaViewRetur(order) {
+    setViewingRetur(order);
+    setInfoKurirOrder("loading");
+    try {
+      const itemRows = await supabaseFetch(token, `laporan_kurir_items?select=laporan_kurir(nama_kurir,jenis_kurir,jenis_laporan)&order_id=eq.${order.id}&order=created_at.desc&limit=1`);
+      if (itemRows && itemRows.length > 0 && itemRows[0].laporan_kurir) {
+        setInfoKurirOrder(itemRows[0].laporan_kurir);
+      } else {
+        setInfoKurirOrder(null);
+      }
+    } catch (e) {
+      setInfoKurirOrder(null);
+    }
+  }
+
   async function selesaikanRetur(orderId) {
     setProcessingReturId(orderId);
     try {
@@ -3315,7 +3330,7 @@ function KonfirmasiPembayaranPage({ token }) {
                   <p style={{ fontSize: 12, color: "#C0392B", margin: "4px 0 0" }}>{o.alasan_retur}</p>
                 </div>
                 <button
-                  onClick={() => setViewingRetur(o)}
+                  onClick={() => bukaViewRetur(o)}
                   style={{ padding: "9px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
                 >
                   Lihat Detail
@@ -3470,7 +3485,18 @@ function KonfirmasiPembayaranPage({ token }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "88vh", overflowY: "auto", padding: 26 }}>
             <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Detail Retur</h2>
-            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 20px" }}>{viewingRetur.no_nota} - {viewingRetur.clients?.nama}</p>
+            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 16px" }}>{viewingRetur.no_nota} - {viewingRetur.clients?.nama}</p>
+
+            {infoKurirOrder === "loading" ? (
+              <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 16px" }}>Memuat info kurir...</p>
+            ) : infoKurirOrder ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#F7F5F1", borderRadius: 9, padding: 10, marginBottom: 18 }}>
+                <Truck size={15} color="#8A6A1A" style={{ flexShrink: 0 }} />
+                <p style={{ fontSize: 12.5, color: "#24272B", margin: 0 }}>
+                  Diretur oleh: <strong>{infoKurirOrder.nama_kurir}</strong> ({infoKurirOrder.jenis_kurir === "toko" ? "Kurir Toko" : "Kurir Baraka"})
+                </p>
+              </div>
+            ) : null}
 
             <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Bukti Retur</p>
             <img src={viewingRetur.bukti_retur_url} alt="Bukti retur" style={{ width: "100%", borderRadius: 10, marginBottom: 18 }} />
@@ -3479,7 +3505,7 @@ function KonfirmasiPembayaranPage({ token }) {
             <p style={{ fontSize: 13.5, color: "#24272B", margin: "0 0 22px", lineHeight: 1.5 }}>{viewingRetur.alasan_retur}</p>
 
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setViewingRetur(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+              <button onClick={() => { setViewingRetur(null); setInfoKurirOrder(null); }} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
                 Tutup
               </button>
               <button
