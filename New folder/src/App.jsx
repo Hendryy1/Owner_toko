@@ -10780,13 +10780,45 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
             <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode/QR paket</p>
             <div id="reader-kamera-laporan-kurir" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
-            {scanMsg && !confirmingScan && (
+
+            {packingOrder && (
+              <div style={{ width: "100%", maxWidth: 400, marginTop: 14, background: "#fff", borderRadius: 12, padding: 14 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{packingOrder.no_nota}</p>
+                <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px" }}>{packingOrder.nama}</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: packingOrder.checkedCount >= packingOrder.totalBox ? "#D8E9E6" : "#FBF0D9", borderRadius: 8, padding: 8, marginBottom: 10 }}>
+                  {packingOrder.checkedCount >= packingOrder.totalBox ? <Check size={14} color="#28685D" /> : <ScanLine size={14} color="#8A6A1A" />}
+                  <p style={{ fontSize: 11.5, fontWeight: 700, color: packingOrder.checkedCount >= packingOrder.totalBox ? "#28685D" : "#8A6A1A", margin: 0 }}>
+                    {packingOrder.checkedCount} / {packingOrder.totalBox} box tercentang
+                  </p>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6, marginBottom: packingOrder.checkedCount >= packingOrder.totalBox ? 12 : 0, maxHeight: 140, overflowY: "auto" }}>
+                  {Array.from({ length: packingOrder.totalBox }, (_, i) => i + 1).map((noBox) => {
+                    const sudahCentang = noBox <= packingOrder.checkedCount;
+                    return (
+                      <div key={noBox} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, padding: "6px 2px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: sudahCentang ? "#D8E9E6" : "#F7F5F1", color: sudahCentang ? "#28685D" : "#9CA0A6", border: sudahCentang ? "1px solid #28685D" : "1px solid #E4E1DA" }}>
+                        {sudahCentang && <Check size={10} />} {noBox}
+                      </div>
+                    );
+                  })}
+                </div>
+                {packingOrder.checkedCount >= packingOrder.totalBox && (
+                  <button
+                    onClick={() => { tutupKamera(); }}
+                    style={{ width: "100%", padding: 11, borderRadius: 9, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13 }}
+                  >
+                    Semua Box Selesai - Lanjut Catatan
+                  </button>
+                )}
+              </div>
+            )}
+
+            {scanMsg && !confirmingScan && !packingOrder && (
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, padding: "10px 14px", borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600, maxWidth: 400, textAlign: "center" }}>
                 {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
               </div>
             )}
             {cameraError && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraError}</p>}
-            <button onClick={tutupKamera} style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
+            <button onClick={() => { tutupKamera(); setPackingOrder(null); setCatatanPacking(""); }} style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
               Tutup Kamera
             </button>
           </div>
