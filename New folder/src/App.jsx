@@ -10854,8 +10854,10 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           </div>
         )}
 
-        {/* MODAL PACKING LIST - khusus Kurir Toko + Pekanbaru, harus centang semua box */}
-        {packingOrder && (
+        {/* MODAL PACKING LIST - khusus Kurir Toko + Pekanbaru, harus centang semua box.
+            Cuma tampil SETELAH kamera ditutup (panel di dalam kamera sudah
+            menangani tampilan saat masih scan) - supaya tidak dobel. */}
+        {packingOrder && !showCamera && (
           <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 400, padding: 20 }}>
             <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 400, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
               <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0, fontWeight: 700, textTransform: "uppercase" }}>Packing List</p>
