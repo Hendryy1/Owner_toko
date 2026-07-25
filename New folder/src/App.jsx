@@ -10104,18 +10104,19 @@ function SiapDikirimBaruPage({ token, role }) {
 
 function LaporanKurirDocContent({ laporan, items }) {
   const isTokoLokal = laporan.jenis_kurir === "toko";
+  const isRetur = laporan.jenis_laporan === "retur";
   return (
     <div className="nota-print-area" style={{ padding: "36px 44px", fontFamily: "'Times New Roman', serif" }}>
       <div style={{ textAlign: "center", marginBottom: 24 }}>
         <p style={{ fontSize: 20, fontWeight: 700, margin: 0 }}>{COMPANY_NAME}</p>
-        <p style={{ fontSize: 15, fontWeight: 700, margin: "18px 0 0", textDecoration: "underline" }}>BUKTI SERAH TERIMA PAKET</p>
+        <p style={{ fontSize: 15, fontWeight: 700, margin: "18px 0 0", textDecoration: "underline" }}>{isRetur ? "BUKTI RETUR PAKET" : "BUKTI SERAH TERIMA PAKET"}</p>
         <p style={{ fontSize: 13, margin: "4px 0 0" }}>{isTokoLokal ? "Kurir Toko" : "Kurir Baraka"}</p>
       </div>
 
       <table style={{ marginBottom: 20, fontSize: 13 }}><tbody>
         <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Tanggal</td><td>: {new Date(laporan.created_at).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}</td></tr>
-        <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Nama Kurir</td><td>: {laporan.nama_kurir}</td></tr>
-        {isTokoLokal ? (
+        <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Dikonfirmasi Oleh</td><td>: {laporan.nama_kurir}</td></tr>
+        {isRetur ? null : isTokoLokal ? (
           <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Trip Ke</td><td>: {laporan.trip || 1}</td></tr>
         ) : (
           <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>No. HP</td><td>: {laporan.no_hp_kurir || "-"}</td></tr>
@@ -10140,7 +10141,7 @@ function LaporanKurirDocContent({ laporan, items }) {
         </tbody>
       </table>
 
-      {!isTokoLokal && (
+      {!isTokoLokal && !isRetur && (
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <div style={{ textAlign: "center", width: 220 }}>
             <p style={{ fontSize: 13, margin: "0 0 10px" }}>Yang Menerima,</p>
@@ -10211,12 +10212,17 @@ function LaporanKurirPage({ token }) {
         <EmptyState text="Belum ada laporan untuk kategori ini." />
       ) : (
         laporanList.map((l) => (
-          <Card key={l.id} style={{ marginBottom: 12 }}>
+          <Card key={l.id} style={{ marginBottom: 12, border: l.jenis_laporan === "retur" ? "1.5px solid #FBEAEA" : undefined }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
               <div>
-                <p style={{ fontSize: 14.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{l.nama_kurir}</p>
+                <p style={{ fontSize: 14.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
+                  {l.nama_kurir}
+                  {l.jenis_laporan === "retur" && (
+                    <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B", verticalAlign: "middle" }}>RETUR</span>
+                  )}
+                </p>
                 <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>
-                  {l.jenis_kurir === "toko" && `Trip ${l.trip || 1} - `}{l.jumlah_koli} koli - {new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+                  {l.jenis_laporan !== "retur" && l.jenis_kurir === "toko" && `Trip ${l.trip || 1} - `}{l.jumlah_koli} koli - {new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
                 </p>
               </div>
               <button
@@ -10488,7 +10494,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
 
   // ---------- MODE RETUR (terpisah total dari alur serah terima) ----------
   if (modeUtama === "retur") {
-    return <BuatReturPage token={token} onGantiMode={() => setModeUtama("serah_terima")} />;
+    return <BuatReturPage token={token} role={role} userId={userId} namaAkun={namaAkun} onGantiMode={() => setModeUtama("serah_terima")} />;
   }
 
   // ---------- TAMPILAN SUKSES ----------
@@ -10755,7 +10761,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
 // BUAT RETUR - scan paket yang mau diretur, status order langsung
 // jadi "diretur" (perlu konfirmasi bukti+alasan nanti di Proses Pengiriman)
 // ============================================================
-function BuatReturPage({ token, onGantiMode }) {
+function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
   const [scannedList, setScannedList] = useState([]); // [{ no_nota, order_id, nama }]
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState("");
@@ -10848,6 +10854,23 @@ function BuatReturPage({ token, onGantiMode }) {
         method: "PATCH",
         body: JSON.stringify({ status: "diretur", tanggal_retur: now }),
       });
+
+      // Catat juga sebagai laporan_kurir (jenis_laporan="retur") supaya
+      // Owner bisa lihat riwayatnya di menu Laporan Kurir.
+      const [laporan] = await supabaseFetch(token, "laporan_kurir", {
+        method: "POST",
+        body: JSON.stringify({
+          jenis_kurir: "toko", jenis_laporan: "retur",
+          nama_kurir: role === "kurir" ? (namaAkun || "Kurir Toko") : "Admin/Owner",
+          jumlah_koli: scannedList.length,
+          dibuat_oleh: role === "kurir" ? userId : null,
+        }),
+      });
+      await supabaseFetch(token, "laporan_kurir_items", {
+        method: "POST",
+        body: JSON.stringify(scannedList.map((s) => ({ laporan_kurir_id: laporan.id, order_id: s.order_id, no_nota: s.no_nota }))),
+      });
+
       setBerhasil(true);
     } catch (e) {
       alert("Gagal proses retur: " + e.message);
