@@ -127,7 +127,7 @@ function bukaTabPreviewBarcode(orders) {
   }).join("");
 
   // Data yang dibutuhkan script inisialisasi (nomor nota + apakah Pekanbaru)
-  const dataBarcode = entries.map((entry, i) => ({ idx: i, noNota: entry.order.no_nota, isPekanbaru: entry.isPekanbaru }));
+  const dataBarcode = entries.map((entry, i) => ({ idx: i, noNota: entry.order.no_nota, isPekanbaru: entry.isPekanbaru, noBox: entry.noBox || null }));
 
   win.document.write(`
     <!DOCTYPE html>
@@ -161,7 +161,8 @@ function bukaTabPreviewBarcode(orders) {
             var data = ${JSON.stringify(dataBarcode)};
             data.forEach(function (d) {
               if (d.isPekanbaru) {
-                new QRCode(document.getElementById("qr-" + d.idx), { text: d.noNota, width: 160, height: 160 });
+                var kodeUnik = d.noBox ? (d.noNota + "-" + String(d.noBox).padStart(2, "0")) : d.noNota;
+                new QRCode(document.getElementById("qr-" + d.idx), { text: kodeUnik, width: 160, height: 160 });
               } else {
                 JsBarcode("#barcode-" + d.idx, d.noNota, { format: "CODE128", width: 3, height: 80, displayValue: true, fontSize: 14, margin: 6 });
                 new QRCode(document.getElementById("qr-kecil-" + d.idx), { text: d.noNota, width: 80, height: 80 });
@@ -748,7 +749,7 @@ function BarcodeLabelContent({ order: o, noBox, totalBox }) {
       )}
       <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 20, marginBottom: 16 }}>
         {isPekanbaru ? (
-          <QRCodeLabel value={o.no_nota} />
+          <QRCodeLabel value={noBox ? `${o.no_nota}-${String(noBox).padStart(2, "0")}` : o.no_nota} />
         ) : (
           <>
             <BarcodeLabel value={o.no_nota} />
@@ -10211,7 +10212,7 @@ function LaporanKurirDocContent({ laporan, items }) {
         ) : (
           <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>No. HP</td><td>: {laporan.no_hp_kurir || "-"}</td></tr>
         )}
-        <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Jumlah Koli</td><td>: {laporan.jumlah_koli}</td></tr>
+        <tr><td style={{ padding: "2px 14px 2px 0", fontWeight: 700 }}>Jumlah Box</td><td>: {laporan.jumlah_koli}</td></tr>
       </tbody></table>
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, marginBottom: 30 }}>
@@ -10314,7 +10315,7 @@ function LaporanKurirPage({ token }) {
                   )}
                 </p>
                 <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>
-                  {l.jenis_laporan !== "retur" && l.jenis_kurir === "toko" && `Trip ${l.trip || 1} - `}{l.jumlah_koli} koli - {new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+                  {l.jenis_laporan !== "retur" && l.jenis_kurir === "toko" && `Trip ${l.trip || 1} - `}{l.jumlah_koli} box - {new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
                 </p>
               </div>
               <button
@@ -10363,7 +10364,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const [cameraError, setCameraError] = useState("");
   const [scanMsg, setScanMsg] = useState(null);
   const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan (+ info box kalau relevan), nunggu konfirmasi tambah
-  const [boxProgress, setBoxProgress] = useState({}); // { [order_id]: jumlah box yang sudah dikonfirmasi } - khusus Kurir Toko + Pekanbaru
+  const [boxProgress, setBoxProgress] = useState({}); // { [order_id]: [nomor box yang sudah dikonfirmasi, ...] } - khusus Kurir Toko + Pekanbaru
   const [inputManual, setInputManual] = useState("");
   const manualInputRef = useRef(null);
   const html5QrRef = useRef(null);
@@ -10438,12 +10439,19 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   }
 
   async function tambahScan(decodedText) {
-    const kode = decodedText.trim();
+    const rawKode = decodedText.trim();
 
     // Tutup kamera dulu setiap kali berhasil scan (sama seperti alur
     // konfirmasi biasa) - supaya video kamera tidak macet/freeze karena
     // terus aktif berbarengan sama perubahan tampilan lain.
     tutupKamera();
+
+    // Parse kode unik per box: format "NOMOR_INDUK-NN" (misal
+    // NT1834181924194-01). Kalau tidak ada pemisah "-NN" di akhir, berarti
+    // kode polos (non-boxed, misal Baraka) - pakai apa adanya.
+    const match = rawKode.match(/^(.+)-(\d{2,3})$/);
+    const kode = match ? match[1] : rawKode;
+    const noBoxScan = match ? parseInt(match[2], 10) : null;
 
     if (scannedListRef.current.some((s) => s.no_nota === kode)) {
       setScanMsg({ type: "error", text: `${kode} sudah discan sebelumnya.` });
@@ -10465,16 +10473,25 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
       const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
 
       if (jenisKurir === "toko" && isPekanbaru) {
-        // Order Pekanbaru + Kurir Toko - hitung box: tiap scan barcode yang
-        // sama = 1 box baru. Tampilkan konfirmasi "No Box: X/Total".
+        // Order Pekanbaru + Kurir Toko - tiap box punya kode unik sendiri
+        // (NOMOR_INDUK-01, -02, dst), jadi box mana yang discan bisa
+        // dipastikan LANGSUNG dari kodenya, tidak perlu tebak urutan lagi.
         const totalBox = (rows[0].order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) || 1;
-        const sudahDikonfirmasi = boxProgressRef.current[rows[0].id] || 0;
-        if (sudahDikonfirmasi >= totalBox) {
-          setScanMsg({ type: "error", text: `${rows[0].no_nota} semua ${totalBox} box sudah dikonfirmasi.` });
+        if (noBoxScan === null) {
+          setScanMsg({ type: "error", text: `Barcode ini belum punya nomor box - cetak ulang barcode untuk order ini.` });
+          return;
+        }
+        if (noBoxScan < 1 || noBoxScan > totalBox) {
+          setScanMsg({ type: "error", text: `Nomor box ${noBoxScan} tidak valid (order ini cuma punya ${totalBox} box).` });
+          return;
+        }
+        const sudahScan = boxProgressRef.current[rows[0].id] || [];
+        if (sudahScan.includes(noBoxScan)) {
+          setScanMsg({ type: "error", text: `Box ${noBoxScan} sudah discan sebelumnya.` });
           return;
         }
         setScanMsg(null);
-        setConfirmingScan({ ...rows[0], noBox: sudahDikonfirmasi + 1, totalBox });
+        setConfirmingScan({ ...rows[0], noBox: noBoxScan, totalBox });
       } else {
         setScanMsg(null);
         setConfirmingScan(rows[0]);
@@ -10487,16 +10504,17 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   function konfirmasiTambahScan() {
     if (!confirmingScan) return;
     if (confirmingScan.totalBox) {
-      // Order Pekanbaru + Kurir Toko - update progress box-nya dulu
-      const progresBaru = confirmingScan.noBox;
-      setBoxProgress((prev) => ({ ...prev, [confirmingScan.id]: progresBaru }));
-      if (progresBaru >= confirmingScan.totalBox) {
+      // Order Pekanbaru + Kurir Toko - tambahkan nomor box ini ke daftar
+      // box yang sudah dikonfirmasi untuk order tersebut
+      const daftarBoxBaru = [...(boxProgress[confirmingScan.id] || []), confirmingScan.noBox];
+      setBoxProgress((prev) => ({ ...prev, [confirmingScan.id]: daftarBoxBaru }));
+      if (daftarBoxBaru.length >= confirmingScan.totalBox) {
         // Semua box sudah dikonfirmasi - baru order-nya benar-benar
         // ditambahkan ke daftar serah terima
         setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id }]);
         setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} lengkap (${confirmingScan.totalBox} box) - ditambahkan ke daftar.` });
       } else {
-        setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} - box ${progresBaru}/${confirmingScan.totalBox} tercatat. Scan lagi buat box berikutnya.` });
+        setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} - box ${confirmingScan.noBox}/${confirmingScan.totalBox} tercatat (${daftarBoxBaru.length}/${confirmingScan.totalBox} total). Scan box lain.` });
       }
     } else {
       setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id }]);
@@ -10592,7 +10610,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           jenis_kurir: jenisKurir,
           nama_kurir: isKurirAkun ? (namaAkun || "Kurir Toko") : namaKurir.trim(),
           no_hp_kurir: isKurirAkun ? null : (noHpKurir.trim() || null),
-          ttd_kurir_url: ttdUrl, jumlah_koli: scannedList.length,
+          ttd_kurir_url: ttdUrl, jumlah_koli: totalBoxKeseluruhan,
           trip: isKurirAkun ? tripKe : 1,
           dibuat_oleh: isKurirAkun ? userId : null,
         }),
@@ -10755,8 +10773,10 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         </Card>
 
         <Card style={{ marginBottom: 20 }}>
-          <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Jumlah Koli</p>
-          <p className="disp" style={{ fontSize: 32, fontWeight: 700, color: "#24272B", margin: 0 }}>{scannedList.length}</p>
+          <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Jumlah Box</p>
+          <p className="disp" style={{ fontSize: 32, fontWeight: 700, color: "#24272B", margin: 0 }}>
+            {scannedList.reduce((sum, s) => sum + (boxProgress[s.order_id]?.length || 1), 0)}
+          </p>
         </Card>
 
         {scannedList.length > 0 && (
@@ -10840,12 +10860,14 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
   const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
 
+  const totalBoxKeseluruhan = scannedList.reduce((sum, s) => sum + (boxProgress[s.order_id]?.length || 1), 0);
+
   return (
     <div>
       <button onClick={() => setStep("scan")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
         <ChevronLeft size={16} /> Kembali ke Scan
       </button>
-      <PageHeader title={isKurirAkun ? "Konfirmasi Laporan" : "Data Kurir & Tanda Tangan"} subtitle={`${scannedList.length} koli - ${jenisKurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"}`} />
+      <PageHeader title={isKurirAkun ? "Konfirmasi Laporan" : "Data Kurir & Tanda Tangan"} subtitle={`${totalBoxKeseluruhan} box - ${jenisKurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"}`} />
 
       {isKurirAkun ? (
         <Card style={{ maxWidth: 460 }}>
@@ -10855,8 +10877,8 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
               <p className="disp" style={{ fontSize: 28, fontWeight: 700, color: "#24272B", margin: 0 }}>{tripKe}</p>
             </div>
             <div style={{ flex: 1, background: "#F7F5F1", borderRadius: 10, padding: 16, textAlign: "center" }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 6px" }}>Jumlah Koli</p>
-              <p className="disp" style={{ fontSize: 28, fontWeight: 700, color: "#24272B", margin: 0 }}>{scannedList.length}</p>
+              <p style={{ fontSize: 11, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 6px" }}>Jumlah Box</p>
+              <p className="disp" style={{ fontSize: 28, fontWeight: 700, color: "#24272B", margin: 0 }}>{totalBoxKeseluruhan}</p>
             </div>
           </div>
           <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 20px", textAlign: "center" }}>
