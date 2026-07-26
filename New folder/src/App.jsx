@@ -3865,17 +3865,6 @@ function SiapDikirimPage({ token, role }) {
                       )}
                     </>
                   )}
-
-                  {hasProofKirim ? (
-                    <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, background: "#FBF0D9", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700 }}>
-                      <ScanLine size={15} /> Menunggu Scan Outbound
-                    </span>
-                  ) : (
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-                      {uploadingId === o.id ? "Mengupload..." : <><UploadCloud size={15} /> Upload Bukti Pengiriman</>}
-                      <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadBuktiPengiriman(o, e.target.files[0]); }} />
-                    </label>
-                  )}
                 </div>
               </div>
             </Card>
@@ -11237,7 +11226,8 @@ function PickingListPage({ token, role, userId }) {
   const [confirmingBoxOrder, setConfirmingBoxOrder] = useState(null); // order yang picking-nya baru selesai, nunggu konfirmasi jumlah box
   const [jumlahBoxInput, setJumlahBoxInput] = useState("");
   const [savingBox, setSavingBox] = useState(false);
-  const [orderSelesaiCetak, setOrderSelesaiCetak] = useState(null); // order yang siap ditawarkan cetak barcode
+  const [packingSelesaiOrder, setPackingSelesaiOrder] = useState(null); // order yang box-nya sudah dikonfirmasi, nunggu upload bukti pengemasan
+  const [uploadingBukti, setUploadingBukti] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -11302,7 +11292,7 @@ function PickingListPage({ token, role, userId }) {
         method: "PATCH",
         body: JSON.stringify({ jumlah_box_konfirmasi: jumlahBox }),
       });
-      setOrderSelesaiCetak({ ...confirmingBoxOrder, jumlah_box_konfirmasi: jumlahBox });
+      setPackingSelesaiOrder({ ...confirmingBoxOrder, jumlah_box_konfirmasi: jumlahBox });
       setConfirmingBoxOrder(null);
       setJumlahBoxInput("");
     } catch (e) {
@@ -11311,10 +11301,36 @@ function PickingListPage({ token, role, userId }) {
     setSavingBox(false);
   }
 
-  function cetakBarcodeSelesaiPicking() {
-    if (!orderSelesaiCetak) return;
-    bukaTabPreviewBarcode([orderSelesaiCetak]);
-    setOrderSelesaiCetak(null);
+  function cetakBarcodeDariPacking() {
+    if (!packingSelesaiOrder) return;
+    bukaTabPreviewBarcode([packingSelesaiOrder]);
+  }
+
+  // Upload bukti pengemasan = foto pesanan di area penjemputan. Begitu
+  // berhasil upload, order LANGSUNG otomatis dianggap "outbound" (skip
+  // scan manual di menu Outbound) dan masuk ke Siap Dikirim.
+  async function uploadBuktiPengemasan(file) {
+    setUploadingBukti(true);
+    try {
+      const filePath = `bukti-pengemasan-${packingSelesaiOrder.id}-${Date.now()}.jpg`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "image/jpeg" },
+        body: file,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+
+      const now = new Date().toISOString();
+      await supabaseFetch(token, `orders?id=eq.${packingSelesaiOrder.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ bukti_pengiriman_url: url, outbound_verified_at: now, status: "siap_dikirim" }),
+      });
+      setPackingSelesaiOrder(null);
+    } catch (e) {
+      alert("Gagal upload bukti pengemasan: " + e.message);
+    }
+    setUploadingBukti(false);
   }
 
   if (loading) return <LoadingState />;
@@ -11407,6 +11423,51 @@ function PickingListPage({ token, role, userId }) {
     );
   }
 
+  // ---------- TAMPILAN SETELAH BOX DIKONFIRMASI - upload bukti pengemasan ----------
+  if (packingSelesaiOrder) {
+    return (
+      <div>
+        <PageHeader title="Pengemasan Selesai" subtitle={`${packingSelesaiOrder.no_nota} - ${packingSelesaiOrder.jumlah_box_konfirmasi} box`} />
+
+        <Card style={{ maxWidth: 460, marginBottom: 16 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#D8E9E6", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            <Check size={16} color="#28685D" style={{ flexShrink: 0, marginTop: 1 }} />
+            <p style={{ fontSize: 12.5, color: "#28685D", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+              Picking & jumlah box sudah dikonfirmasi. Cetak barcode dulu kalau perlu, lalu upload bukti pengemasan di bawah.
+            </p>
+          </div>
+          <button
+            onClick={cetakBarcodeDariPacking}
+            style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          >
+            <Barcode size={16} /> Cetak Barcode ({packingSelesaiOrder.jumlah_box_konfirmasi} box)
+          </button>
+        </Card>
+
+        <Card style={{ maxWidth: 460 }}>
+          <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 6px" }}>Bukti Pengemasan</p>
+          <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 16px", lineHeight: 1.5 }}>
+            Upload foto saat pesanan berada di area penjemputan. Begitu diupload, pesanan otomatis masuk ke "Siap Dikirim".
+          </p>
+          <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, padding: 32, borderRadius: 12, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", cursor: "pointer" }}>
+            {uploadingBukti ? (
+              <>
+                <Loader2 size={28} className="spin" />
+                <span style={{ fontSize: 13, fontWeight: 700 }}>Mengupload...</span>
+              </>
+            ) : (
+              <>
+                <Camera size={28} />
+                <span style={{ fontSize: 13, fontWeight: 700 }}>Tap untuk Upload Foto</span>
+              </>
+            )}
+            <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingBukti} onChange={(e) => { if (e.target.files[0]) uploadBuktiPengemasan(e.target.files[0]); }} />
+          </label>
+        </Card>
+      </div>
+    );
+  }
+
   // ---------- TAMPILAN DAFTAR ORDER ----------
   return (
     <div>
@@ -11464,27 +11525,6 @@ function PickingListPage({ token, role, userId }) {
             >
               {savingBox ? "Menyimpan..." : "Konfirmasi Jumlah Box"}
             </button>
-          </div>
-        </div>
-      )}
-
-      {/* TAWARAN CETAK BARCODE - setelah jumlah box dikonfirmasi */}
-      {orderSelesaiCetak && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}>
-          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, padding: 26, textAlign: "center" }}>
-            <div style={{ width: 50, height: 50, borderRadius: "50%", background: "#FBF0D9", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
-              <Barcode size={24} color="#8A6A1A" />
-            </div>
-            <p className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>{orderSelesaiCetak.no_nota}</p>
-            <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 22px" }}>{orderSelesaiCetak.jumlah_box_konfirmasi} box siap dicetak barcode-nya sekarang?</p>
-            <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => setOrderSelesaiCetak(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
-                Nanti Saja
-              </button>
-              <button onClick={cetakBarcodeSelesaiPicking} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <Printer size={15} /> Cetak Sekarang
-              </button>
-            </div>
           </div>
         </div>
       )}
