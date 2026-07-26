@@ -10174,7 +10174,7 @@ function SiapDikirimBaruPage({ token, role }) {
                 <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>{o.tujuan_alamat || o.clients?.alamat}</p>
               </div>
               <span style={{ display: "flex", alignItems: "center", gap: 6, padding: "11px 20px", borderRadius: 10, background: "#F7F5F1", color: "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}>
-                <ScanLine size={16} /> Menunggu Scan
+                <ScanLine size={16} /> Menunggu Scan Kurir
               </span>
             </div>
           </Card>
