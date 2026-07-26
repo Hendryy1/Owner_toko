@@ -10358,6 +10358,8 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const [scanMsg, setScanMsg] = useState(null);
   const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan (+ info box kalau relevan), nunggu konfirmasi tambah
   const [boxProgress, setBoxProgress] = useState({}); // { [order_id]: [nomor box yang sudah dikonfirmasi, ...] } - khusus Kurir Toko + Pekanbaru
+  const [orderSedangProses, setOrderSedangProses] = useState(null); // { orderId, noNota, totalBox } - order yang box-nya BELUM lengkap semua
+  const [scanDitolakMsg, setScanDitolakMsg] = useState(null); // pesan penolakan terpisah, supaya tidak menimpa info scan order yang sedang aktif
   const [viewingBoxDetail, setViewingBoxDetail] = useState(null); // { orderId, noNota, totalBox } | null
   const [inputManual, setInputManual] = useState("");
   const manualInputRef = useRef(null);
@@ -10379,8 +10381,10 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   // ke nilai TERBARU lewat useEffect di bawah.
   const boxProgressRef = useRef(boxProgress);
   const scannedListRef = useRef(scannedList);
+  const orderSedangProsesRef = useRef(orderSedangProses);
   useEffect(() => { boxProgressRef.current = boxProgress; }, [boxProgress]);
   useEffect(() => { scannedListRef.current = scannedList; }, [scannedList]);
+  useEffect(() => { orderSedangProsesRef.current = orderSedangProses; }, [orderSedangProses]);
 
   useEffect(() => {
     return () => {
@@ -10463,6 +10467,17 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         setScanMsg({ type: "error", text: `${rows[0].no_nota} bukan pesanan di menu Siap Dikirim (statusnya "${rows[0].status}").` });
         return;
       }
+
+      // Kalau masih ada order LAIN yang box-nya belum lengkap semua, tolak
+      // scan order berbeda ini - tapi JANGAN timpa scanMsg (info progress
+      // order yang sedang aktif tetap harus tampil, cuma pesan tolaknya
+      // ditaruh terpisah).
+      const sedangProses = orderSedangProsesRef.current;
+      if (sedangProses && sedangProses.orderId !== rows[0].id) {
+        setScanDitolakMsg(`Selesaikan dulu semua box ${sedangProses.noNota} sebelum scan order lain.`);
+        return;
+      }
+
       const kotaTujuanAsli = rows[0].tujuan_kota || rows[0].clients?.kota;
       const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
 
@@ -10485,6 +10500,8 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           return;
         }
         setScanMsg(null);
+        setScanDitolakMsg(null);
+        setOrderSedangProses({ orderId: rows[0].id, noNota: rows[0].no_nota, totalBox });
         setConfirmingScan({ ...rows[0], noBox: noBoxScan, totalBox });
       } else {
         setScanMsg(null);
@@ -10504,9 +10521,11 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
       setBoxProgress((prev) => ({ ...prev, [confirmingScan.id]: daftarBoxBaru }));
       if (daftarBoxBaru.length >= confirmingScan.totalBox) {
         // Semua box sudah dikonfirmasi - baru order-nya benar-benar
-        // ditambahkan ke daftar serah terima
+        // ditambahkan ke daftar serah terima, dan buka lagi kesempatan
+        // scan order LAIN (tidak terkunci ke order ini lagi)
         setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, jumlah_box: confirmingScan.totalBox }]);
         setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} lengkap (${confirmingScan.totalBox} box) - ditambahkan ke daftar.` });
+        setOrderSedangProses(null);
       } else {
         setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} - box ${confirmingScan.noBox}/${confirmingScan.totalBox} tercatat (${daftarBoxBaru.length}/${confirmingScan.totalBox} total). Scan box lain.`, orderId: confirmingScan.id, noNota: confirmingScan.no_nota, totalBox: confirmingScan.totalBox });
       }
@@ -10772,6 +10791,11 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
                   Lihat Detail
                 </button>
               )}
+            </div>
+          )}
+          {scanDitolakMsg && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 10, padding: 10, borderRadius: 9, background: "#FBEAEA", color: "#C0392B", fontSize: 12.5, fontWeight: 600 }}>
+              <X size={15} /> {scanDitolakMsg}
             </div>
           )}
         </Card>
