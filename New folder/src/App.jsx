@@ -3928,6 +3928,7 @@ function ProsesPengirimanPage({ token, role }) {
   const [processingId, setProcessingId] = useState(null);
   const [uploadingId, setUploadingId] = useState(null);
   const [uploadingField, setUploadingField] = useState(null); // "barang_sampai" | "nota_ttd" | null
+  const [uploadModalOrder, setUploadModalOrder] = useState(null); // order yang lagi dibuka modal upload buktinya
   const [showKonfirmasiCod, setShowKonfirmasiCod] = useState(null); // order id
   const [buktiNotaCod, setBuktiNotaCod] = useState(null);
   const [buktiCashCod, setBuktiCashCod] = useState(null);
@@ -4035,6 +4036,7 @@ function ProsesPengirimanPage({ token, role }) {
       const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bukti-pengiriman/${filePath}`;
       await supabaseFetch(token, `orders?id=eq.${order.id}`, { method: "PATCH", body: JSON.stringify({ [kolom]: publicUrl }) });
       setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, [kolom]: publicUrl } : o)));
+      setUploadModalOrder((prev) => (prev && prev.id === order.id ? { ...prev, [kolom]: publicUrl } : prev));
     } catch (e) {
       alert("Gagal upload: " + e.message);
     }
@@ -4258,17 +4260,13 @@ function ProsesPengirimanPage({ token, role }) {
 
                   {wajibUploadBukti ? (
                     <>
-                      {!hasBarangSampai && (
-                        <label style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                          {uploadingId === o.id && uploadingField === "barang_sampai" ? "Mengupload..." : <><UploadCloud size={13} /> Upload Bukti Barang Sampai</>}
-                          <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadFotoOrder(o, e.target.files[0], "bukti_barang_sampai_url", "barang_sampai"); }} />
-                        </label>
-                      )}
-                      {!hasNotaTtd && (
-                        <label style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                          {uploadingId === o.id && uploadingField === "nota_ttd" ? "Mengupload..." : <><UploadCloud size={13} /> Upload Nota TTD Penerima</>}
-                          <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadFotoOrder(o, e.target.files[0], "bukti_nota_ttd_url", "nota_ttd"); }} />
-                        </label>
+                      {(!hasBarangSampai || !hasNotaTtd) && (
+                        <button
+                          onClick={() => setUploadModalOrder(o)}
+                          style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                        >
+                          <UploadCloud size={13} /> Upload Bukti Pengiriman
+                        </button>
                       )}
                       {hasBarangSampai && (
                         <a href={o.bukti_barang_sampai_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "#28685D", fontWeight: 700, textDecoration: "underline" }}>
@@ -4357,7 +4355,52 @@ function ProsesPengirimanPage({ token, role }) {
         );
       })()}
 
-      {/* MODAL KONFIRMASI RETUR - upload bukti + alasan wajib */}
+      {/* MODAL UPLOAD BUKTI PENGIRIMAN - gabungan Bukti Barang Sampai + Nota TTD */}
+      {uploadModalOrder && (() => {
+        const o = uploadModalOrder;
+        const sudahBarangSampai = !!o.bukti_barang_sampai_url;
+        const sudahNotaTtd = !!o.bukti_nota_ttd_url;
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+            <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 400, padding: 26 }}>
+              <h2 className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Upload Bukti Pengiriman</h2>
+              <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 20px" }}>{o.no_nota}</p>
+
+              <div style={{ marginBottom: 14 }}>
+                <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Bukti Barang Sampai</p>
+                {sudahBarangSampai ? (
+                  <a href={o.bukti_barang_sampai_url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#28685D", fontWeight: 700, textDecoration: "underline" }}>
+                    <Check size={14} /> Sudah diupload - Lihat
+                  </a>
+                ) : (
+                  <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                    {uploadingId === o.id && uploadingField === "barang_sampai" ? "Mengupload..." : <><UploadCloud size={15} /> Upload Foto</>}
+                    <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadFotoOrder(o, e.target.files[0], "bukti_barang_sampai_url", "barang_sampai"); }} />
+                  </label>
+                )}
+              </div>
+
+              <div style={{ marginBottom: 22 }}>
+                <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Nota TTD Penerima</p>
+                {sudahNotaTtd ? (
+                  <a href={o.bukti_nota_ttd_url} target="_blank" rel="noopener noreferrer" style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#28685D", fontWeight: 700, textDecoration: "underline" }}>
+                    <Check size={14} /> Sudah diupload - Lihat
+                  </a>
+                ) : (
+                  <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+                    {uploadingId === o.id && uploadingField === "nota_ttd" ? "Mengupload..." : <><UploadCloud size={15} /> Upload Foto</>}
+                    <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadFotoOrder(o, e.target.files[0], "bukti_nota_ttd_url", "nota_ttd"); }} />
+                  </label>
+                )}
+              </div>
+
+              <button onClick={() => setUploadModalOrder(null)} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                Tutup
+              </button>
+            </div>
+          </div>
+        );
+      })()}
       {konfirmasiReturId && (() => {
         const o = returOrders.find((x) => x.id === konfirmasiReturId);
         if (!o) return null;
