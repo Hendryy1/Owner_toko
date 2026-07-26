@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import ReactDOMServer from "react-dom/server";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine
+  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3
 } from "lucide-react";
 
 const COMPANY_NAME = "PT INDO GARUDA ABADI";
@@ -410,6 +410,7 @@ export default function OwnerDashboard() {
         {page === "rekap_absen" && <RekapAbsenPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
+        {page === "laporan_pesanan" && <LaporanPesananPage token={token} />}
         {page === "picking_list" && <PickingListPage token={token} role={profile?.role} userId={profile?.id} />}
         {page === "pesanan_siap" && <SiapDikirimPage token={token} role={profile?.role} />}
         {page === "siap_dikirim_baru" && <SiapDikirimBaruPage token={token} role={profile?.role} />}
@@ -509,6 +510,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
+    { key: "laporan_pesanan", label: "Laporan Pesanan", icon: BarChart3, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "picking_list", label: "Picking List", icon: ClipboardCheck, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "pesanan_siap", label: "Pesanan", icon: PackagePlus, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "siap_dikirim_baru", label: "Siap Dikirim", icon: Truck, roles: ["owner", "admin_transaksi", "kurir", "staff_gudang"] },
@@ -11854,6 +11856,102 @@ function PickingListPage({ token, role, userId }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// LAPORAN PESANAN - kartu ringkasan status pesanan keseluruhan
+// ============================================================
+function LaporanPesananPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState([]);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(
+        token,
+        "orders?select=id,no_nota,status,created_at,tanggal_dikirim,picking_selesai_at,outbound_verified_at,alasan_retur,tujuan_kota,clients(kota)&order=created_at.desc&limit=2000"
+      );
+      setOrders(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  function cekTerlambatPengemasan(o) {
+    const dibuat = new Date(o.created_at);
+    const sekarang = new Date();
+    if (dibuat.getHours() < 13) {
+      const sameDay = dibuat.getFullYear() === sekarang.getFullYear() && dibuat.getMonth() === sekarang.getMonth() && dibuat.getDate() === sekarang.getDate();
+      return !sameDay;
+    } else {
+      const batasWaktu = new Date(dibuat);
+      batasWaktu.setDate(batasWaktu.getDate() + 1);
+      batasWaktu.setHours(13, 0, 0, 0);
+      return sekarang > batasWaktu;
+    }
+  }
+
+  function cekTerlambatDikirim(o) {
+    if (!o.tanggal_dikirim) return false;
+    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const dikirim = new Date(o.tanggal_dikirim);
+    const sekarang = new Date();
+    const elapsedDays = (sekarang - dikirim) / (1000 * 60 * 60 * 24);
+    if (isPekanbaru) {
+      // Pekanbaru harusnya sampai hari yang sama
+      const sameDay = dikirim.getFullYear() === sekarang.getFullYear() && dikirim.getMonth() === sekarang.getMonth() && dikirim.getDate() === sekarang.getDate();
+      return !sameDay;
+    }
+    // Luar kota - kasih toleransi 3 hari
+    return elapsedDays >= 3;
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const statusPengemasan = ["menunggu_pembayaran", "menunggu_pengiriman"];
+  const orderPengemasan = orders.filter((o) => statusPengemasan.includes(o.status));
+  const orderSiapKirim = orders.filter((o) => o.status === "siap_dikirim");
+  const orderProsesKirim = orders.filter((o) => o.status === "proses_dikirim");
+  const orderSelesai = orders.filter((o) => o.status === "selesai" && !o.alasan_retur);
+  const orderTerlambatPengemasan = orderPengemasan.filter((o) => cekTerlambatPengemasan(o));
+  const orderTerlambatDikirim = orderProsesKirim.filter((o) => cekTerlambatDikirim(o));
+  const orderProsesRetur = orders.filter((o) => o.status === "diretur");
+  const orderReturSelesai = orders.filter((o) => o.status === "selesai" && !!o.alasan_retur);
+
+  const kartu = [
+    { label: "Total Pesanan Pengemasan", nilai: orderPengemasan.length, bg: "#F7F5F1", fg: "#24272B", icon: Package },
+    { label: "Total Siap Kirim", nilai: orderSiapKirim.length, bg: "#D8E9E6", fg: "#28685D", icon: Truck },
+    { label: "Total Proses Kirim", nilai: orderProsesKirim.length, bg: "#D8E9E6", fg: "#28685D", icon: Navigation },
+    { label: "Total Terselesaikan", nilai: orderSelesai.length, bg: "#EFE1BE", fg: "#8A6A1A", icon: Check },
+    { label: "Total Terlambat Pengemasan", nilai: orderTerlambatPengemasan.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
+    { label: "Total Terlambat Dikirim", nilai: orderTerlambatDikirim.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
+    { label: "Total Proses Retur", nilai: orderProsesRetur.length, bg: "#FBF0D9", fg: "#8A6A1A", icon: RefreshCw },
+    { label: "Total Retur Terselesaikan", nilai: orderReturSelesai.length, bg: "#FBEAEA", fg: "#C0392B", icon: Check },
+  ];
+
+  return (
+    <div>
+      <PageHeader title="Laporan Pesanan" subtitle={`Ringkasan dari ${orders.length} pesanan (2000 terakhir)`} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+        {kartu.map((k, i) => (
+          <Card key={i} style={{ padding: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: k.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <k.icon size={19} color={k.fg} />
+              </div>
+            </div>
+            <p className="disp" style={{ fontSize: 30, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>{k.nilai}</p>
+            <p style={{ fontSize: 12.5, color: "#6B6F75", margin: 0, fontWeight: 600 }}>{k.label}</p>
+          </Card>
+        ))}
+      </div>
     </div>
   );
 }
