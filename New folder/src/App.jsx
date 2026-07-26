@@ -10355,11 +10355,17 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const [scannedList, setScannedList] = useState([]); // [{ no_nota, order_id }]
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState("");
-  const [scanMsg, setScanMsg] = useState(null);
+  const [scanMsg, setScanMsg] = useState([]); // array riwayat pesan scan, terbaru di depan - supaya info lama tidak hilang tertimpa
   const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan (+ info box kalau relevan), nunggu konfirmasi tambah
   const [boxProgress, setBoxProgress] = useState({}); // { [order_id]: [nomor box yang sudah dikonfirmasi, ...] } - khusus Kurir Toko + Pekanbaru
   const [orderSedangProses, setOrderSedangProses] = useState(null); // { orderId, noNota, totalBox } - order yang box-nya BELUM lengkap semua
   const [scanDitolakMsg, setScanDitolakMsg] = useState(null); // pesan penolakan terpisah, supaya tidak menimpa info scan order yang sedang aktif
+
+  // Tambah pesan baru ke ATAS riwayat (bukan menimpa) - supaya kurir masih
+  // bisa lihat info box sebelumnya sebagai pengingat, maksimal 8 terakhir.
+  function tambahPesanScan(pesanBaru) {
+    setScanMsg((prev) => [pesanBaru, ...prev].slice(0, 8));
+  }
   const [viewingBoxDetail, setViewingBoxDetail] = useState(null); // { orderId, noNota, totalBox } | null
   const [inputManual, setInputManual] = useState("");
   const manualInputRef = useRef(null);
@@ -10452,7 +10458,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     const noBoxScan = match ? parseInt(match[2], 10) : null;
 
     if (scannedListRef.current.some((s) => s.no_nota === kode)) {
-      setScanMsg({ type: "error", text: `${kode} sudah discan sebelumnya.` });
+      tambahPesanScan({ type: "error", text: `${kode} sudah discan sebelumnya.` });
       return;
     }
     try {
@@ -10460,11 +10466,11 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
       // outbound, tapi belum "Mulai Kirim") yang bisa diserahkan ke kurir.
       const rows = await supabaseFetch(token, `orders?select=id,no_nota,status,tujuan_kota,clients(nama,kota),order_items(qty)&no_nota=eq.${kode}`);
       if (!rows || rows.length === 0) {
-        setScanMsg({ type: "error", text: `Nomor "${kode}" tidak ditemukan.` });
+        tambahPesanScan({ type: "error", text: `Nomor "${kode}" tidak ditemukan.` });
         return;
       }
       if (rows[0].status !== "siap_dikirim") {
-        setScanMsg({ type: "error", text: `${rows[0].no_nota} bukan pesanan di menu Siap Dikirim (statusnya "${rows[0].status}").` });
+        tambahPesanScan({ type: "error", text: `${rows[0].no_nota} bukan pesanan di menu Siap Dikirim (statusnya "${rows[0].status}").` });
         return;
       }
 
@@ -10487,28 +10493,26 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         // dipastikan LANGSUNG dari kodenya, tidak perlu tebak urutan lagi.
         const totalBox = (rows[0].order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) || 1;
         if (noBoxScan === null) {
-          setScanMsg({ type: "error", text: `Barcode ini belum punya nomor box - cetak ulang barcode untuk order ini.` });
+          tambahPesanScan({ type: "error", text: `Barcode ini belum punya nomor box - cetak ulang barcode untuk order ini.` });
           return;
         }
         if (noBoxScan < 1 || noBoxScan > totalBox) {
-          setScanMsg({ type: "error", text: `Nomor box ${noBoxScan} tidak valid (order ini cuma punya ${totalBox} box).` });
+          tambahPesanScan({ type: "error", text: `Nomor box ${noBoxScan} tidak valid (order ini cuma punya ${totalBox} box).` });
           return;
         }
         const sudahScan = boxProgressRef.current[rows[0].id] || [];
         if (sudahScan.includes(noBoxScan)) {
-          setScanMsg({ type: "error", text: `Box ${noBoxScan} sudah discan sebelumnya.` });
+          tambahPesanScan({ type: "error", text: `Box ${noBoxScan} sudah discan sebelumnya.` });
           return;
         }
-        setScanMsg(null);
         setScanDitolakMsg(null);
         setOrderSedangProses({ orderId: rows[0].id, noNota: rows[0].no_nota, totalBox });
         setConfirmingScan({ ...rows[0], noBox: noBoxScan, totalBox });
       } else {
-        setScanMsg(null);
         setConfirmingScan(rows[0]);
       }
     } catch (e) {
-      setScanMsg({ type: "error", text: "Gagal cek nomor: " + e.message });
+      tambahPesanScan({ type: "error", text: "Gagal cek nomor: " + e.message });
     }
   }
 
@@ -10524,14 +10528,14 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         // ditambahkan ke daftar serah terima, dan buka lagi kesempatan
         // scan order LAIN (tidak terkunci ke order ini lagi)
         setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, jumlah_box: confirmingScan.totalBox }]);
-        setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} lengkap (${confirmingScan.totalBox} box) - ditambahkan ke daftar.` });
+        tambahPesanScan({ type: "ok", text: `${confirmingScan.no_nota} lengkap (${confirmingScan.totalBox} box) - ditambahkan ke daftar.` });
         setOrderSedangProses(null);
       } else {
-        setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} - box ${confirmingScan.noBox}/${confirmingScan.totalBox} tercatat (${daftarBoxBaru.length}/${confirmingScan.totalBox} total). Scan box lain.`, orderId: confirmingScan.id, noNota: confirmingScan.no_nota, totalBox: confirmingScan.totalBox });
+        tambahPesanScan({ type: "ok", text: `${confirmingScan.no_nota} - box ${confirmingScan.noBox}/${confirmingScan.totalBox} tercatat (${daftarBoxBaru.length}/${confirmingScan.totalBox} total). Scan box lain.`, orderId: confirmingScan.id, noNota: confirmingScan.no_nota, totalBox: confirmingScan.totalBox });
       }
     } else {
       setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id }]);
-      setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} berhasil ditambahkan.` });
+      tambahPesanScan({ type: "ok", text: `${confirmingScan.no_nota} berhasil ditambahkan.` });
     }
     setConfirmingScan(null);
   }
@@ -10658,7 +10662,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     setNamaKurir("");
     setNoHpKurir("");
     setBerhasilData(null);
-    setScanMsg(null);
+    setScanMsg([]);
   }
 
   // ---------- MODE RETUR (terpisah total dari alur serah terima) ----------
@@ -10778,19 +10782,23 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
             Kompatibel dengan alat scanner barcode USB/Bluetooth (bekerja seperti keyboard) - lebih akurat untuk barcode CODE128 dibanding kamera HP.
           </p>
 
-          {scanMsg && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 12, padding: 10, borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600 }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
-              </span>
-              {scanMsg.totalBox && (
-                <button
-                  onClick={() => setViewingBoxDetail({ orderId: scanMsg.orderId, noNota: scanMsg.noNota, totalBox: scanMsg.totalBox })}
-                  style={{ background: "none", border: "none", color: "#28685D", fontSize: 11.5, fontWeight: 700, textDecoration: "underline", flexShrink: 0, padding: 0 }}
-                >
-                  Lihat Detail
-                </button>
-              )}
+          {scanMsg.length > 0 && (
+            <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+              {scanMsg.map((m, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 10, borderRadius: 9, background: m.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: m.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600, opacity: i === 0 ? 1 : 0.7 }}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    {m.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {m.text}
+                  </span>
+                  {m.totalBox && (
+                    <button
+                      onClick={() => setViewingBoxDetail({ orderId: m.orderId, noNota: m.noNota, totalBox: m.totalBox })}
+                      style={{ background: "none", border: "none", color: "#28685D", fontSize: 11.5, fontWeight: 700, textDecoration: "underline", flexShrink: 0, padding: 0 }}
+                    >
+                      Lihat Detail
+                    </button>
+                  )}
+                </div>
+              ))}
             </div>
           )}
           {scanDitolakMsg && (
@@ -10833,9 +10841,9 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
             <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode/QR paket</p>
             <div id="reader-kamera-laporan-kurir" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
-            {scanMsg && !confirmingScan && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, padding: "10px 14px", borderRadius: 9, background: scanMsg.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600, maxWidth: 400, textAlign: "center" }}>
-                {scanMsg.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg.text}
+            {scanMsg.length > 0 && !confirmingScan && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 14, padding: "10px 14px", borderRadius: 9, background: scanMsg[0].type === "ok" ? "#D8E9E6" : "#FBEAEA", color: scanMsg[0].type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600, maxWidth: 400, textAlign: "center" }}>
+                {scanMsg[0].type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {scanMsg[0].text}
               </div>
             )}
             {cameraError && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraError}</p>}
