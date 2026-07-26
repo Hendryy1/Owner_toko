@@ -63,21 +63,25 @@ function bukaTabPreviewBarcode(orders) {
     return;
   }
 
-  // Ratakan daftar dulu - order Pekanbaru (Kurir Toko) dipecah jadi
-  // sebanyak box-nya (1 box = 1 unit barang dipesan), masing-masing dapat
-  // label sendiri dengan nomor "No. Box: X/Total". Order luar kota tetap
-  // 1 label per order seperti biasa.
+  // Ratakan daftar dulu - order Pekanbaru (Kurir Toko) dipecah PER PRODUK:
+  // tiap unit barang di tiap item dapat 1 label sendiri, dengan nomor box
+  // KHUSUS untuk produk itu (misal KZ-01 box 1/5, KZ-02 box 1/3), dan kode
+  // barcode-nya SUDAH menyertakan nomor produk (NONOTA-NN-NOMORPRODUK) -
+  // supaya checker bisa pastikan box ini benar-benar berisi produk yang
+  // seharusnya. Order luar kota tetap 1 label per order seperti biasa.
   const entries = [];
   orders.forEach((o) => {
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
     const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
     if (isPekanbaru) {
-      const totalBox = o.jumlah_box_konfirmasi || (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) || 1;
-      for (let b = 1; b <= totalBox; b++) {
-        entries.push({ order: o, isPekanbaru: true, noBox: b, totalBox });
-      }
+      (o.order_items || []).forEach((item) => {
+        const qty = Number(item.qty || 0) || 1;
+        for (let b = 1; b <= qty; b++) {
+          entries.push({ order: o, isPekanbaru: true, noBox: b, totalBox: qty, item });
+        }
+      });
     } else {
-      entries.push({ order: o, isPekanbaru: false, noBox: null, totalBox: null });
+      entries.push({ order: o, isPekanbaru: false, noBox: null, totalBox: null, item: null });
     }
   });
 
@@ -88,7 +92,7 @@ function bukaTabPreviewBarcode(orders) {
     const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
     const namaPenerima = o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama;
     const baris = (o.order_items || []).map((it) => `
-      <tr style="border-bottom:1px solid #EDEAE3">
+      <tr style="border-bottom:1px solid #EDEAE3${entry.item && it.id === entry.item.id ? ";background:#FBF0D9" : ""}">
         <td style="padding:4px;color:#6B6F75">${it.products?.kode || "-"}</td>
         <td style="padding:4px;color:#24272B">${it.products?.nama || "-"}</td>
         <td style="padding:4px;color:#24272B;font-weight:700;text-align:right">${it.qty}</td>
@@ -102,7 +106,7 @@ function bukaTabPreviewBarcode(orders) {
         <p style="font-size:11.5px;color:#6B6F75;margin:0 0 10px;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>
         <p style="font-size:12.5px;color:#6B6F75;margin:0 0 16px">${jumlahBarang} barang dipesan</p>`;
     const infoBox = entry.noBox
-      ? `<p style="font-size:16px;font-weight:700;color:#8A6A1A;margin:0 0 10px;padding:4px 14px;background:#FBF0D9;display:inline-block;border-radius:6px">No. Box: ${entry.noBox} / ${entry.totalBox}</p>`
+      ? `<p style="font-size:16px;font-weight:700;color:#8A6A1A;margin:0 0 10px;padding:4px 14px;background:#FBF0D9;display:inline-block;border-radius:6px">${entry.item?.products?.kode || ""} - No. Box: ${entry.noBox} / ${entry.totalBox}</p>`
       : "";
     return `
       <div class="barcode-item" style="text-align:center;padding:10px 0;${i < entries.length - 1 ? "page-break-after:always;" : ""}">
@@ -127,7 +131,7 @@ function bukaTabPreviewBarcode(orders) {
   }).join("");
 
   // Data yang dibutuhkan script inisialisasi (nomor nota + apakah Pekanbaru)
-  const dataBarcode = entries.map((entry, i) => ({ idx: i, noNota: entry.order.no_nota, isPekanbaru: entry.isPekanbaru, noBox: entry.noBox || null }));
+  const dataBarcode = entries.map((entry, i) => ({ idx: i, noNota: entry.order.no_nota, isPekanbaru: entry.isPekanbaru, noBox: entry.noBox || null, nomorProduk: entry.item?.products?.nomor_produk || null }));
 
   win.document.write(`
     <!DOCTYPE html>
@@ -161,7 +165,7 @@ function bukaTabPreviewBarcode(orders) {
             var data = ${JSON.stringify(dataBarcode)};
             data.forEach(function (d) {
               if (d.isPekanbaru) {
-                var kodeUnik = d.noBox ? (d.noNota + "-" + String(d.noBox).padStart(2, "0")) : d.noNota;
+                var kodeUnik = d.noBox ? (d.noNota + "-" + String(d.noBox).padStart(2, "0") + (d.nomorProduk ? ("-" + d.nomorProduk) : "")) : d.noNota;
                 new QRCode(document.getElementById("qr-" + d.idx), { text: kodeUnik, width: 160, height: 160 });
               } else {
                 JsBarcode("#barcode-" + d.idx, d.noNota, { format: "CODE128", width: 3, height: 80, displayValue: true, fontSize: 14, margin: 6 });
@@ -10450,12 +10454,23 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     // terus aktif berbarengan sama perubahan tampilan lain.
     tutupKamera();
 
-    // Parse kode unik per box: format "NOMOR_INDUK-NN" (misal
-    // NT1834181924194-01). Kalau tidak ada pemisah "-NN" di akhir, berarti
-    // kode polos (non-boxed, misal Baraka) - pakai apa adanya.
-    const match = rawKode.match(/^(.+)-(\d{2,3})$/);
-    const kode = match ? match[1] : rawKode;
-    const noBoxScan = match ? parseInt(match[2], 10) : null;
+    // Parse kode unik per box - sekarang ada 2 kemungkinan format:
+    // Format 1: "NOMOR_INDUK-NN-NOMORPRODUK" - barcode terbaru, sudah
+    // sematkan nomor produk juga, misal NT...-01-888260601
+    // Format 2: "NOMOR_INDUK-NN" - barcode versi lama, tanpa nomor produk
+    // Kalau tidak ada pemisah "-NN" sama sekali, berarti kode polos
+    // (non-boxed, misal Baraka) - pakai apa adanya.
+    let kode = rawKode;
+    let noBoxScan = null;
+    const match3 = rawKode.match(/^(.+)-(\d{2,3})-(.+)$/);
+    const match2 = rawKode.match(/^(.+)-(\d{2,3})$/);
+    if (match3) {
+      kode = match3[1];
+      noBoxScan = parseInt(match3[2], 10);
+    } else if (match2) {
+      kode = match2[1];
+      noBoxScan = parseInt(match2[2], 10);
+    }
 
     if (scannedListRef.current.some((s) => s.no_nota === kode)) {
       tambahPesanScan({ type: "error", text: `${kode} sudah discan sebelumnya.` });
@@ -11261,7 +11276,8 @@ function PickingListPage({ token, role, userId }) {
   const [packingSelesaiOrder, setPackingSelesaiOrder] = useState(null); // order yang box-nya sudah dikonfirmasi, nunggu upload bukti pengemasan
   const [uploadingBukti, setUploadingBukti] = useState(false);
   const [ordersTertunda, setOrdersTertunda] = useState([]); // sudah picking+box, TAPI belum upload bukti - buat lanjut kalau sempat putus
-  const [checkerScan, setCheckerScan] = useState({}); // { order_item_id: "ok" | "salah" | undefined }
+  const [scanTerakhir, setScanTerakhir] = useState(null); // null | "barcode" | "produk" - tipe scan yang lagi menunggu pasangannya
+  const [pasanganSelesai, setPasanganSelesai] = useState(0); // jumlah box yang sudah diverifikasi lengkap (barcode+produk cocok)
   const [checkerInput, setCheckerInput] = useState(""); // input manual/scanner fisik
   const [checkerPesan, setCheckerPesan] = useState(null);
   const [showCameraChecker, setShowCameraChecker] = useState(false);
@@ -11341,7 +11357,7 @@ function PickingListPage({ token, role, userId }) {
         body: JSON.stringify({ jumlah_box_konfirmasi: jumlahBox }),
       });
       setPackingSelesaiOrder({ ...confirmingBoxOrder, jumlah_box_konfirmasi: jumlahBox });
-      setCheckerScan({});
+      setScanTerakhir(null); setPasanganSelesai(0);
       setCheckerPesan(null);
       setConfirmingBoxOrder(null);
       setJumlahBoxInput("");
@@ -11354,24 +11370,54 @@ function PickingListPage({ token, role, userId }) {
   // ---------- CHECKER PRODUK - verifikasi barcode kemasan fisik ----------
   function semuaItemSudahDicek() {
     if (!packingSelesaiOrder) return false;
-    return (packingSelesaiOrder.order_items || []).every((it) => checkerScan[it.id] === "ok");
+    return pasanganSelesai >= (packingSelesaiOrder.jumlah_box_konfirmasi || 1);
+  }
+
+  // Parse kode: kalau formatnya NONOTA-NN-NOMORPRODUK (barcode label kita,
+  // sudah menyematkan nomor produk di dalamnya) -> kembalikan info barcode.
+  // Kalau kodenya POLOS (angka/kode manufaktur) -> anggap scan kode produk
+  // fisik di kemasan.
+  function parseKode(kode) {
+    const match = kode.match(/^(.+)-(\d{2,3})-(.+)$/);
+    if (match && match[1] === packingSelesaiOrder.no_nota) {
+      return { tipe: "barcode", nomorProduk: match[3] };
+    }
+    return { tipe: "produk", nomorProduk: kode };
   }
 
   function prosesCheckerScan(kodeScan) {
     const kode = kodeScan.trim();
     if (!kode) return;
-    // Cari item yang nomor produknya cocok dengan kode yang discan
-    const itemCocok = (packingSelesaiOrder.order_items || []).find((it) => it.products?.nomor_produk === kode);
-    if (!itemCocok) {
-      setCheckerPesan({ type: "error", text: `Kode "${kode}" tidak cocok dengan produk manapun di pesanan ini - cek lagi, kemungkinan salah ambil barang.` });
+    const hasil = parseKode(kode);
+
+    if (scanTerakhir === null) {
+      // Scan PERTAMA dari satu pasangan (box) baru - simpan dulu, tunggu
+      // pasangannya buat dicocokkan
+      setScanTerakhir(hasil);
+      setCheckerPesan({ type: "ok", text: `${hasil.tipe === "barcode" ? "Barcode" : "Kode produk"} terbaca. Sekarang scan ${hasil.tipe === "barcode" ? "kode produk" : "barcode"} di kemasan yang sama.` });
       return;
     }
-    if (checkerScan[itemCocok.id] === "ok") {
-      setCheckerPesan({ type: "error", text: `${itemCocok.products?.nama} sudah diverifikasi sebelumnya.` });
+
+    if (scanTerakhir.tipe === hasil.tipe) {
+      // Scan tipe yang SAMA lagi berturut-turut - ditolak
+      setCheckerPesan({ type: "error", text: `Harus scan ${hasil.tipe === "barcode" ? "kode produk" : "barcode"} dulu, jangan ${hasil.tipe === "barcode" ? "barcode" : "kode produk"} lagi.` });
       return;
     }
-    setCheckerScan((prev) => ({ ...prev, [itemCocok.id]: "ok" }));
-    setCheckerPesan({ type: "ok", text: `${itemCocok.products?.nama} terverifikasi cocok.` });
+
+    // Tipe BEDA dari scan sebelumnya - sekarang COCOKKAN nomor produknya
+    if (scanTerakhir.nomorProduk !== hasil.nomorProduk) {
+      const kodeBarcode = scanTerakhir.tipe === "barcode" ? scanTerakhir.nomorProduk : hasil.nomorProduk;
+      const kodeFisik = scanTerakhir.tipe === "produk" ? scanTerakhir.nomorProduk : hasil.nomorProduk;
+      setCheckerPesan({ type: "error", text: `Salah produk! Barcode ini untuk kode "${kodeBarcode}", tapi kode di kemasan fisik "${kodeFisik}" - cek lagi barangnya.` });
+      setScanTerakhir(null);
+      return;
+    }
+
+    // Cocok! 1 pasangan (1 box) lengkap dan BENAR produknya
+    const pasanganBaru = pasanganSelesai + 1;
+    setPasanganSelesai(pasanganBaru);
+    setScanTerakhir(null);
+    setCheckerPesan({ type: "ok", text: `Box ${pasanganBaru}/${packingSelesaiOrder.jumlah_box_konfirmasi} terverifikasi cocok!` });
   }
 
   function tutupKameraChecker() {
@@ -11558,14 +11604,14 @@ function PickingListPage({ token, role, userId }) {
         <Card style={{ maxWidth: 460, marginBottom: 16 }}>
           <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Checker Produk</p>
           <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 16px", lineHeight: 1.5 }}>
-            Scan barcode/kode produk yang ada di kemasan fisik untuk pastikan barang yang diambil benar - mencegah salah picking.
+            Scan barcode di kemasan DAN kode produk di kemasan secara bergantian (bebas mana dulu) - untuk pastikan barang yang diambil benar dan mencegah salah picking.
           </p>
 
           <button
             onClick={mulaiScanChecker}
             style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#C0392B", color: "#fff", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 10 }}
           >
-            <Camera size={16} /> Scan Kode Produk di Kemasan
+            <Camera size={16} /> Scan Barcode / Kode Produk
           </button>
           <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#F7F5F1", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
             <ScanLine size={18} color="#C0392B" />
@@ -11584,22 +11630,20 @@ function PickingListPage({ token, role, userId }) {
             </div>
           )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {(packingSelesaiOrder.order_items || []).map((it) => {
-              const status = checkerScan[it.id];
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: semuaItemSudahDicek() ? "#D8E9E6" : "#FBF0D9", borderRadius: 9, padding: 10, marginBottom: 12 }}>
+            {semuaItemSudahDicek() ? <Check size={16} color="#28685D" /> : <ScanLine size={16} color="#8A6A1A" />}
+            <p style={{ fontSize: 12.5, fontWeight: 700, color: semuaItemSudahDicek() ? "#28685D" : "#8A6A1A", margin: 0 }}>
+              {pasanganSelesai} / {packingSelesaiOrder.jumlah_box_konfirmasi} box terverifikasi
+              {scanTerakhir && ` - menunggu scan ${scanTerakhir.tipe === "barcode" ? "kode produk" : "barcode"}`}
+            </p>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 6 }}>
+            {Array.from({ length: packingSelesaiOrder.jumlah_box_konfirmasi || 1 }, (_, i) => i + 1).map((noBox) => {
+              const sudahCentang = noBox <= pasanganSelesai;
               return (
-                <div key={it.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 9, background: status === "ok" ? "#D8E9E6" : "#F7F5F1", border: status === "ok" ? "1.5px solid #28685D" : "1.5px solid #E4E1DA" }}>
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>{it.products?.kode} - {it.products?.nama}</p>
-                    <p style={{ fontSize: 11, color: "#9CA0A6", margin: "2px 0 0" }}>Qty: {it.qty} {it.products?.satuan}</p>
-                  </div>
-                  {status === "ok" ? (
-                    <span style={{ display: "flex", alignItems: "center", gap: 4, color: "#28685D", fontSize: 11.5, fontWeight: 700 }}>
-                      <Check size={14} /> Cocok
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: 11.5, color: "#9CA0A6", fontWeight: 600 }}>Belum dicek</span>
-                  )}
+                <div key={noBox} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 2, padding: "8px 2px", borderRadius: 6, fontSize: 11, fontWeight: 700, background: sudahCentang ? "#D8E9E6" : "#F7F5F1", color: sudahCentang ? "#28685D" : "#9CA0A6", border: sudahCentang ? "1.5px solid #28685D" : "1.5px solid #E4E1DA" }}>
+                  {sudahCentang && <Check size={10} />} {noBox}
                 </div>
               );
             })}
@@ -11607,7 +11651,7 @@ function PickingListPage({ token, role, userId }) {
 
           {showCameraChecker && (
             <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
-              <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke kode produk di kemasan</p>
+              <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode ATAU kode produk di kemasan</p>
               <div id="reader-kamera-checker" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
               {cameraErrorChecker && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraErrorChecker}</p>}
               <button onClick={tutupKameraChecker} style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
@@ -11664,7 +11708,7 @@ function PickingListPage({ token, role, userId }) {
                   <p style={{ fontSize: 11.5, color: "#C0392B", margin: "4px 0 0", fontWeight: 600 }}>Picking sudah selesai - {o.jumlah_box_konfirmasi} box, tinggal upload foto</p>
                 </div>
                 <button
-                  onClick={() => { setPackingSelesaiOrder(o); setCheckerScan({}); setCheckerPesan(null); }}
+                  onClick={() => { setPackingSelesaiOrder(o); setScanTerakhir(null); setPasanganSelesai(0); setCheckerPesan(null); }}
                   style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: "#C0392B", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
                 >
                   Lanjutkan
