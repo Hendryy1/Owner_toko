@@ -11406,6 +11406,22 @@ function PickingListPage({ token, role, userId }) {
   }
   useEffect(() => { load(); }, []);
 
+  // Cek keterlambatan pengemasan - order masuk sebelum jam 13:00 wajib
+  // di-picking hari itu juga; setelah jam 13:00 wajib besok.
+  function cekTerlambatPengemasan(o) {
+    const dibuat = new Date(o.created_at);
+    const sekarang = new Date();
+    if (dibuat.getHours() < 13) {
+      const sameDay = dibuat.getFullYear() === sekarang.getFullYear() && dibuat.getMonth() === sekarang.getMonth() && dibuat.getDate() === sekarang.getDate();
+      return !sameDay;
+    } else {
+      const batasWaktu = new Date(dibuat);
+      batasWaktu.setDate(batasWaktu.getDate() + 1);
+      batasWaktu.setHours(13, 0, 0, 0);
+      return sekarang > batasWaktu;
+    }
+  }
+
   function mulaiPicking(order) {
     setSelectedOrder(order);
     const initial = {};
@@ -11844,13 +11860,18 @@ function PickingListPage({ token, role, userId }) {
       {orders.length === 0 ? (
         <EmptyState text="Tidak ada pesanan yang perlu di-picking saat ini." />
       ) : (
-        orders.map((o) => {
+        [...orders].sort((a, b) => (cekTerlambatPengemasan(b) ? 1 : 0) - (cekTerlambatPengemasan(a) ? 1 : 0)).map((o) => {
           const totalItem = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
           return (
             <Card key={o.id} style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                 <div>
-                  <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+                  <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
+                    {o.no_nota}
+                    {cekTerlambatPengemasan(o) && (
+                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B", verticalAlign: "middle" }}>Terlambat Pengemasan</span>
+                    )}
+                  </p>
                   <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
                   <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>{(o.order_items || []).length} jenis barang - {totalItem} total pcs</p>
                 </div>
