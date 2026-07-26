@@ -273,7 +273,7 @@ export default function OwnerDashboard() {
     // Kurir cuma bisa akses Proses Pengiriman - langsung arahkan ke situ,
     // karena halaman default (Ringkasan) tidak bisa diakses kurir.
     if (profRows[0].role === "kurir") setPage("proses_kirim");
-    if (profRows[0].role === "staff_gudang") setPage("pesanan_siap");
+    if (profRows[0].role === "staff_gudang") setPage("picking_list");
     // admin_transaksi tidak lagi bisa akses Ringkasan (halaman default) -
     // arahkan ke Approve Pesanan sebagai gantinya.
     if (profRows[0].role === "admin_transaksi") setPage("orders");
@@ -402,6 +402,7 @@ export default function OwnerDashboard() {
         {page === "rekap_absen" && <RekapAbsenPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
+        {page === "picking_list" && <PickingListPage token={token} role={profile?.role} userId={profile?.id} />}
         {page === "pesanan_siap" && <SiapDikirimPage token={token} role={profile?.role} />}
         {page === "siap_dikirim_baru" && <SiapDikirimBaruPage token={token} role={profile?.role} />}
         {page === "proses_kirim" && <ProsesPengirimanPage token={token} role={profile?.role} />}
@@ -500,6 +501,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
+    { key: "picking_list", label: "Picking List", icon: ClipboardCheck, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "pesanan_siap", label: "Pesanan", icon: PackagePlus, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "siap_dikirim_baru", label: "Siap Dikirim", icon: Truck, roles: ["owner", "admin_transaksi", "kurir", "staff_gudang"] },
     { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "kurir"] },
@@ -11215,6 +11217,151 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// PICKING LIST (Staff Gudang) - setelah order di-approve, staff ambil
+// barang fisik dan WAJIB isi jumlah manual sesuai fisik yang diambil.
+// Kalau tidak cocok dengan pesanan, tidak bisa dikonfirmasi.
+// ============================================================
+function PickingListPage({ token, role, userId }) {
+  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState([]);
+  const [error, setError] = useState("");
+  const [selectedOrder, setSelectedOrder] = useState(null); // order yang lagi dipicking
+  const [inputJumlah, setInputJumlah] = useState({}); // { order_item_id: string }
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(
+        token,
+        "orders?select=id,no_nota,created_at,clients(nama,kode),order_items(id,qty,products(kode,nama,satuan))&status=not.in.(menunggu_persetujuan,ditolak)&picking_selesai_at=is.null&order=created_at.asc"
+      );
+      setOrders(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  function mulaiPicking(order) {
+    setSelectedOrder(order);
+    const initial = {};
+    (order.order_items || []).forEach((it) => { initial[it.id] = ""; });
+    setInputJumlah(initial);
+  }
+
+  function semuaCocok() {
+    if (!selectedOrder) return false;
+    return (selectedOrder.order_items || []).every((it) => {
+      const val = inputJumlah[it.id];
+      return val !== "" && Number(val) === Number(it.qty);
+    });
+  }
+
+  async function konfirmasiPicking() {
+    if (!semuaCocok()) return;
+    setSaving(true);
+    try {
+      await supabaseFetch(token, `orders?id=eq.${selectedOrder.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ picking_selesai_at: new Date().toISOString(), picking_oleh: userId }),
+      });
+      setOrders((prev) => prev.filter((o) => o.id !== selectedOrder.id));
+      setSelectedOrder(null);
+      setInputJumlah({});
+    } catch (e) {
+      alert("Gagal konfirmasi picking: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  // ---------- TAMPILAN DETAIL PICKING SATU ORDER ----------
+  if (selectedOrder) {
+    return (
+      <div>
+        <button onClick={() => { setSelectedOrder(null); setInputJumlah({}); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+          <ChevronLeft size={16} /> Kembali
+        </button>
+        <PageHeader title={`Picking List - ${selectedOrder.no_nota}`} subtitle={`${selectedOrder.clients?.nama} (${selectedOrder.clients?.kode})`} />
+
+        <Card style={{ maxWidth: 520 }}>
+          {(selectedOrder.order_items || []).map((it, i) => {
+            const val = inputJumlah[it.id] ?? "";
+            const sudahDiisi = val !== "";
+            const cocok = sudahDiisi && Number(val) === Number(it.qty);
+            const salah = sudahDiisi && Number(val) !== Number(it.qty);
+            return (
+              <div key={it.id} style={{ paddingBottom: 16, marginBottom: 16, borderBottom: i < selectedOrder.order_items.length - 1 ? "1px solid #EDEAE3" : "none" }}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{it.products?.kode} - {it.products?.nama}</p>
+                <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 10px" }}>Wajib: {it.qty} {it.products?.satuan}</p>
+                <label style={labelStyle}>Jumlah Fisik Diambil</label>
+                <input
+                  type="number"
+                  value={val}
+                  onChange={(e) => setInputJumlah((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                  placeholder={`Isi jumlah ${it.products?.satuan}...`}
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 700, outline: "none",
+                    border: salah ? "1.5px solid #C0392B" : cocok ? "1.5px solid #28685D" : "1.5px solid #E4E1DA",
+                    background: salah ? "#FBEAEA" : cocok ? "#D8E9E6" : "#fff",
+                    color: salah ? "#C0392B" : cocok ? "#28685D" : "#24272B",
+                  }}
+                />
+                {salah && <p style={{ fontSize: 11.5, color: "#C0392B", margin: "6px 0 0", fontWeight: 600 }}>Tidak cocok - seharusnya {it.qty} {it.products?.satuan}</p>}
+              </div>
+            );
+          })}
+
+          <button
+            onClick={konfirmasiPicking}
+            disabled={!semuaCocok() || saving}
+            style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", fontWeight: 700, fontSize: 14, background: (!semuaCocok() || saving) ? "#E4E1DA" : "#28685D", color: (!semuaCocok() || saving) ? "#9CA0A6" : "#fff" }}
+          >
+            {saving ? "Menyimpan..." : semuaCocok() ? "Konfirmasi Picking" : "Isi Semua Jumlah dengan Benar Dulu"}
+          </button>
+        </Card>
+      </div>
+    );
+  }
+
+  // ---------- TAMPILAN DAFTAR ORDER ----------
+  return (
+    <div>
+      <PageHeader title="Picking List" subtitle={`${orders.length} pesanan menunggu diambil barangnya`} />
+      {orders.length === 0 ? (
+        <EmptyState text="Tidak ada pesanan yang perlu di-picking saat ini." />
+      ) : (
+        orders.map((o) => {
+          const totalItem = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
+          return (
+            <Card key={o.id} style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+                  <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                  <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>{(o.order_items || []).length} jenis barang - {totalItem} total pcs</p>
+                </div>
+                <button
+                  onClick={() => mulaiPicking(o)}
+                  style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}
+                >
+                  Mulai Picking
+                </button>
+              </div>
+            </Card>
+          );
+        })
       )}
     </div>
   );
