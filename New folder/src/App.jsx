@@ -11261,6 +11261,12 @@ function PickingListPage({ token, role, userId }) {
   const [packingSelesaiOrder, setPackingSelesaiOrder] = useState(null); // order yang box-nya sudah dikonfirmasi, nunggu upload bukti pengemasan
   const [uploadingBukti, setUploadingBukti] = useState(false);
   const [ordersTertunda, setOrdersTertunda] = useState([]); // sudah picking+box, TAPI belum upload bukti - buat lanjut kalau sempat putus
+  const [checkerScan, setCheckerScan] = useState({}); // { order_item_id: "ok" | "salah" | undefined }
+  const [checkerInput, setCheckerInput] = useState(""); // input manual/scanner fisik
+  const [checkerPesan, setCheckerPesan] = useState(null);
+  const [showCameraChecker, setShowCameraChecker] = useState(false);
+  const [cameraErrorChecker, setCameraErrorChecker] = useState("");
+  const html5QrCheckerRef = useRef(null);
 
   async function load() {
     setLoading(true);
@@ -11268,7 +11274,7 @@ function PickingListPage({ token, role, userId }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,tujuan_kota,tujuan_telp,tujuan_alamat,tujuan_nama,is_dropship,nama_pengirim_dropship,metode_bayar,clients(nama,kode,kota,alamat,telp),order_items(id,qty,products(kode,nama,satuan))&status=not.in.(menunggu_persetujuan,ditolak)&picking_selesai_at=is.null&order=created_at.asc"
+        "orders?select=id,no_nota,created_at,tujuan_kota,tujuan_telp,tujuan_alamat,tujuan_nama,is_dropship,nama_pengirim_dropship,metode_bayar,clients(nama,kode,kota,alamat,telp),order_items(id,qty,products(kode,nama,satuan,nomor_produk))&status=not.in.(menunggu_persetujuan,ditolak)&picking_selesai_at=is.null&order=created_at.asc"
       );
       setOrders(rows);
 
@@ -11277,7 +11283,7 @@ function PickingListPage({ token, role, userId }) {
       // jalan) - supaya bisa dilanjutkan, bukan hilang begitu saja.
       const tertunda = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,jumlah_box_konfirmasi,tujuan_kota,tujuan_telp,tujuan_alamat,tujuan_nama,is_dropship,nama_pengirim_dropship,metode_bayar,clients(nama,kode,kota,alamat,telp),order_items(id,qty,products(kode,nama,satuan))&picking_selesai_at=not.is.null&outbound_verified_at=is.null&order=picking_selesai_at.asc"
+        "orders?select=id,no_nota,jumlah_box_konfirmasi,tujuan_kota,tujuan_telp,tujuan_alamat,tujuan_nama,is_dropship,nama_pengirim_dropship,metode_bayar,clients(nama,kode,kota,alamat,telp),order_items(id,qty,products(kode,nama,satuan,nomor_produk))&picking_selesai_at=not.is.null&outbound_verified_at=is.null&order=picking_selesai_at.asc"
       );
       setOrdersTertunda(tertunda);
     } catch (e) { setError(e.message); }
@@ -11335,12 +11341,71 @@ function PickingListPage({ token, role, userId }) {
         body: JSON.stringify({ jumlah_box_konfirmasi: jumlahBox }),
       });
       setPackingSelesaiOrder({ ...confirmingBoxOrder, jumlah_box_konfirmasi: jumlahBox });
+      setCheckerScan({});
+      setCheckerPesan(null);
       setConfirmingBoxOrder(null);
       setJumlahBoxInput("");
     } catch (e) {
       alert("Gagal simpan jumlah box: " + e.message);
     }
     setSavingBox(false);
+  }
+
+  // ---------- CHECKER PRODUK - verifikasi barcode kemasan fisik ----------
+  function semuaItemSudahDicek() {
+    if (!packingSelesaiOrder) return false;
+    return (packingSelesaiOrder.order_items || []).every((it) => checkerScan[it.id] === "ok");
+  }
+
+  function prosesCheckerScan(kodeScan) {
+    const kode = kodeScan.trim();
+    if (!kode) return;
+    // Cari item yang nomor produknya cocok dengan kode yang discan
+    const itemCocok = (packingSelesaiOrder.order_items || []).find((it) => it.products?.nomor_produk === kode);
+    if (!itemCocok) {
+      setCheckerPesan({ type: "error", text: `Kode "${kode}" tidak cocok dengan produk manapun di pesanan ini - cek lagi, kemungkinan salah ambil barang.` });
+      return;
+    }
+    if (checkerScan[itemCocok.id] === "ok") {
+      setCheckerPesan({ type: "error", text: `${itemCocok.products?.nama} sudah diverifikasi sebelumnya.` });
+      return;
+    }
+    setCheckerScan((prev) => ({ ...prev, [itemCocok.id]: "ok" }));
+    setCheckerPesan({ type: "ok", text: `${itemCocok.products?.nama} terverifikasi cocok.` });
+  }
+
+  function tutupKameraChecker() {
+    if (html5QrCheckerRef.current) {
+      html5QrCheckerRef.current.stop().catch(() => {}).finally(() => { html5QrCheckerRef.current = null; });
+    }
+    setShowCameraChecker(false);
+  }
+
+  async function mulaiScanChecker() {
+    setCameraErrorChecker("");
+    setShowCameraChecker(true);
+    try {
+      await loadHtml5Qrcode();
+      setTimeout(async () => {
+        try {
+          const html5Qr = new window.Html5Qrcode("reader-kamera-checker");
+          html5QrCheckerRef.current = html5Qr;
+          await html5Qr.start(
+            { facingMode: "environment" },
+            { fps: 5, qrbox: { width: 300, height: 150 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_128, window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
+            (decodedText) => {
+              tutupKameraChecker();
+              prosesCheckerScan(decodedText);
+            },
+            () => {}
+          );
+        } catch (e) {
+          setCameraErrorChecker("Gagal buka kamera: " + e.message);
+        }
+      }, 200);
+    } catch (e) {
+      setCameraErrorChecker("Gagal muat library scanner: " + e.message);
+    }
   }
 
   function cetakBarcodeDariPacking() {
@@ -11490,6 +11555,69 @@ function PickingListPage({ token, role, userId }) {
           </button>
         </Card>
 
+        <Card style={{ maxWidth: 460, marginBottom: 16 }}>
+          <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Checker Produk</p>
+          <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 16px", lineHeight: 1.5 }}>
+            Scan barcode/kode produk yang ada di kemasan fisik untuk pastikan barang yang diambil benar - mencegah salah picking.
+          </p>
+
+          <button
+            onClick={mulaiScanChecker}
+            style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#C0392B", color: "#fff", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 10 }}
+          >
+            <Camera size={16} /> Scan Kode Produk di Kemasan
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, background: "#F7F5F1", borderRadius: 10, padding: "10px 14px", marginBottom: 12 }}>
+            <ScanLine size={18} color="#C0392B" />
+            <input
+              value={checkerInput}
+              onChange={(e) => setCheckerInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && checkerInput.trim()) { prosesCheckerScan(checkerInput); setCheckerInput(""); } }}
+              placeholder="Atau scan pakai scanner fisik / ketik manual..."
+              style={{ flex: 1, background: "none", border: "none", outline: "none", fontSize: 13.5, fontWeight: 600, color: "#24272B" }}
+            />
+          </div>
+
+          {checkerPesan && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: 10, borderRadius: 9, background: checkerPesan.type === "ok" ? "#D8E9E6" : "#FBEAEA", color: checkerPesan.type === "ok" ? "#28685D" : "#C0392B", fontSize: 12.5, fontWeight: 600, marginBottom: 14 }}>
+              {checkerPesan.type === "ok" ? <Check size={15} /> : <AlertCircle size={15} />} {checkerPesan.text}
+            </div>
+          )}
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {(packingSelesaiOrder.order_items || []).map((it) => {
+              const status = checkerScan[it.id];
+              return (
+                <div key={it.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", borderRadius: 9, background: status === "ok" ? "#D8E9E6" : "#F7F5F1", border: status === "ok" ? "1.5px solid #28685D" : "1.5px solid #E4E1DA" }}>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>{it.products?.kode} - {it.products?.nama}</p>
+                    <p style={{ fontSize: 11, color: "#9CA0A6", margin: "2px 0 0" }}>Qty: {it.qty} {it.products?.satuan}</p>
+                  </div>
+                  {status === "ok" ? (
+                    <span style={{ display: "flex", alignItems: "center", gap: 4, color: "#28685D", fontSize: 11.5, fontWeight: 700 }}>
+                      <Check size={14} /> Cocok
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: 11.5, color: "#9CA0A6", fontWeight: 600 }}>Belum dicek</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {showCameraChecker && (
+            <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.9)", zIndex: 300, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 20 }}>
+              <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke kode produk di kemasan</p>
+              <div id="reader-kamera-checker" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
+              {cameraErrorChecker && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraErrorChecker}</p>}
+              <button onClick={tutupKameraChecker} style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
+                Tutup Kamera
+              </button>
+            </div>
+          )}
+        </Card>
+
+        {semuaItemSudahDicek() ? (
         <Card style={{ maxWidth: 460 }}>
           <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 6px" }}>Bukti Pengemasan</p>
           <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 16px", lineHeight: 1.5 }}>
@@ -11510,6 +11638,11 @@ function PickingListPage({ token, role, userId }) {
             <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingBukti} onChange={(e) => { if (e.target.files[0]) uploadBuktiPengemasan(e.target.files[0]); }} />
           </label>
         </Card>
+        ) : (
+          <Card style={{ maxWidth: 460, textAlign: "center", padding: 24 }}>
+            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: 0 }}>Selesaikan Checker Produk di atas dulu (semua item harus "Cocok") sebelum bisa upload bukti pengemasan.</p>
+          </Card>
+        )}
       </div>
     );
   }
@@ -11531,7 +11664,7 @@ function PickingListPage({ token, role, userId }) {
                   <p style={{ fontSize: 11.5, color: "#C0392B", margin: "4px 0 0", fontWeight: 600 }}>Picking sudah selesai - {o.jumlah_box_konfirmasi} box, tinggal upload foto</p>
                 </div>
                 <button
-                  onClick={() => setPackingSelesaiOrder(o)}
+                  onClick={() => { setPackingSelesaiOrder(o); setCheckerScan({}); setCheckerPesan(null); }}
                   style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: "#C0392B", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
                 >
                   Lanjutkan
