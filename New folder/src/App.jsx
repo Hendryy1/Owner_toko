@@ -4149,6 +4149,23 @@ function ProsesPengirimanPage({ token, role }) {
     setSavingRetur(false);
   }
 
+  // Cek apakah order yang SEDANG "Proses Dikirim" ini sudah TERLAMBAT -
+  // dalam kota (Pekanbaru) harus sampai/selesai di hari yang sama saat
+  // discan kurir; luar kota dikasih toleransi minimal 3 hari.
+  function cekTerlambatDikirimKurir(o) {
+    if (!o.tanggal_dikirim) return false;
+    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const dikirim = new Date(o.tanggal_dikirim);
+    const sekarang = new Date();
+    if (isPekanbaru) {
+      const sameDay = dikirim.getFullYear() === sekarang.getFullYear() && dikirim.getMonth() === sekarang.getMonth() && dikirim.getDate() === sekarang.getDate();
+      return !sameDay;
+    }
+    const elapsedDays = (sekarang - dikirim) / (1000 * 60 * 60 * 24);
+    return elapsedDays >= 3;
+  }
+
   function daysSince(dateStr) {
     if (!dateStr) return 0;
     return (Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24);
@@ -4233,6 +4250,9 @@ function ProsesPengirimanPage({ token, role }) {
                     {o.no_nota}
                     {isCod && (
                       <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                    )}
+                    {cekTerlambatDikirimKurir(o) && (
+                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B", verticalAlign: "middle" }}>Terlambat Dikirim Kurir</span>
                     )}
                   </p>
                   <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
@@ -10174,6 +10194,24 @@ function SiapDikirimBaruPage({ token, role }) {
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
     return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
   }
+
+  // Cek apakah order ini TERLAMBAT diambil kurir - sudah outbound (siap
+  // dikirim) tapi belum juga masuk Proses Pengiriman, pakai aturan jam
+  // 13:00 yang sama seperti Terlambat Pengemasan.
+  function cekTerlambatDiambilKurir(o) {
+    if (!o.outbound_verified_at) return false;
+    const outbound = new Date(o.outbound_verified_at);
+    const sekarang = new Date();
+    if (outbound.getHours() < 13) {
+      const sameDay = outbound.getFullYear() === sekarang.getFullYear() && outbound.getMonth() === sekarang.getMonth() && outbound.getDate() === sekarang.getDate();
+      return !sameDay;
+    } else {
+      const batasWaktu = new Date(outbound);
+      batasWaktu.setDate(batasWaktu.getDate() + 1);
+      batasWaktu.setHours(23, 59, 59, 999);
+      return sekarang > batasWaktu;
+    }
+  }
   const orderToko = orders.filter((o) => isPekanbaruOrder(o));
   const orderBaraka = orders.filter((o) => !isPekanbaruOrder(o));
   const orderTampil = activeTab === "baraka" ? orderBaraka : activeTab === "toko" ? orderToko : orders;
@@ -10221,6 +10259,9 @@ function SiapDikirimBaruPage({ token, role }) {
                   {o.no_nota}
                   {o.metode_bayar === "cod" && (
                     <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                  )}
+                  {cekTerlambatDiambilKurir(o) && (
+                    <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B", verticalAlign: "middle" }}>Terlambat Diambil Kurir</span>
                   )}
                 </p>
                 <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
@@ -11897,19 +11938,24 @@ function LaporanPesananPage({ token }) {
   }
 
   function cekTerlambatDikirim(o) {
-    if (!o.tanggal_dikirim) return false;
-    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
-    const dikirim = new Date(o.tanggal_dikirim);
+    // Berlaku untuk order yang MASIH di "Siap Dikirim" (sudah outbound,
+    // tapi belum masuk Proses Pengiriman) - pakai aturan jam 13:00 yang
+    // sama seperti Terlambat Pengemasan, tapi acuannya outbound_verified_at.
+    if (o.status !== "siap_dikirim" || !o.outbound_verified_at) return false;
+    const outbound = new Date(o.outbound_verified_at);
     const sekarang = new Date();
-    const elapsedDays = (sekarang - dikirim) / (1000 * 60 * 60 * 24);
-    if (isPekanbaru) {
-      // Pekanbaru harusnya sampai hari yang sama
-      const sameDay = dikirim.getFullYear() === sekarang.getFullYear() && dikirim.getMonth() === sekarang.getMonth() && dikirim.getDate() === sekarang.getDate();
+    if (outbound.getHours() < 13) {
+      // Outbound sebelum jam 13:00 -> wajib kirim hari itu juga
+      const sameDay = outbound.getFullYear() === sekarang.getFullYear() && outbound.getMonth() === sekarang.getMonth() && outbound.getDate() === sekarang.getDate();
       return !sameDay;
+    } else {
+      // Outbound setelah jam 13:00 -> wajib kirim besok (belum terlambat
+      // hari ini), baru terlambat kalau besoknya JUGA belum dikirim
+      const batasWaktu = new Date(outbound);
+      batasWaktu.setDate(batasWaktu.getDate() + 1);
+      batasWaktu.setHours(23, 59, 59, 999);
+      return sekarang > batasWaktu;
     }
-    // Luar kota - kasih toleransi 3 hari
-    return elapsedDays >= 3;
   }
 
   if (loading) return <LoadingState />;
@@ -11921,7 +11967,7 @@ function LaporanPesananPage({ token }) {
   const orderProsesKirim = orders.filter((o) => o.status === "proses_dikirim");
   const orderSelesai = orders.filter((o) => o.status === "selesai" && !o.alasan_retur);
   const orderTerlambatPengemasan = orderPengemasan.filter((o) => cekTerlambatPengemasan(o));
-  const orderTerlambatDikirim = orderProsesKirim.filter((o) => cekTerlambatDikirim(o));
+  const orderTerlambatDikirim = orderSiapKirim.filter((o) => cekTerlambatDikirim(o));
   const orderProsesRetur = orders.filter((o) => o.status === "diretur");
   const orderReturSelesai = orders.filter((o) => o.status === "selesai" && !!o.alasan_retur);
 
