@@ -10526,13 +10526,22 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     try {
       // Cuma boleh pesanan yang statusnya "Siap Dikirim" (sudah di-scan
       // outbound, tapi belum "Mulai Kirim") yang bisa diserahkan ke kurir.
-      const rows = await supabaseFetch(token, `orders?select=id,no_nota,status,tujuan_kota,clients(nama,kota),order_items(qty)&no_nota=eq.${kode}`);
+      const rows = await supabaseFetch(token, `orders?select=id,no_nota,status,tujuan_kota,clients(nama,kota),order_items(qty),picking_selesai_at&no_nota=eq.${kode}`);
       if (!rows || rows.length === 0) {
         tambahPesanScan({ type: "error", text: `Nomor "${kode}" tidak ditemukan.` });
         return;
       }
       if (rows[0].status !== "siap_dikirim") {
-        tambahPesanScan({ type: "error", text: `${rows[0].no_nota} bukan pesanan di menu Siap Dikirim (statusnya "${rows[0].status}").` });
+        const posisiSekarang = {
+          menunggu_persetujuan: "masih menunggu persetujuan admin",
+          ditolak: "sudah ditolak",
+          menunggu_pembayaran: "masih menunggu pembayaran",
+          menunggu_pengiriman: rows[0].picking_selesai_at ? "masih di Picking List (sudah picking, belum upload bukti pengemasan)" : "masih di Picking List (belum di-picking)",
+          proses_dikirim: "sudah dalam proses pengiriman (sudah diserahkan ke kurir sebelumnya)",
+          diretur: "sedang dalam proses retur",
+          selesai: "sudah selesai/terkirim",
+        }[rows[0].status] || `statusnya "${rows[0].status}"`;
+        tambahPesanScan({ type: "error", text: `${rows[0].no_nota} belum bisa discan di sini - paket ${posisiSekarang}.` });
         return;
       }
 
