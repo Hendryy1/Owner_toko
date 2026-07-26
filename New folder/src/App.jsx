@@ -11228,6 +11228,7 @@ function PickingListPage({ token, role, userId }) {
   const [savingBox, setSavingBox] = useState(false);
   const [packingSelesaiOrder, setPackingSelesaiOrder] = useState(null); // order yang box-nya sudah dikonfirmasi, nunggu upload bukti pengemasan
   const [uploadingBukti, setUploadingBukti] = useState(false);
+  const [ordersTertunda, setOrdersTertunda] = useState([]); // sudah picking+box, TAPI belum upload bukti - buat lanjut kalau sempat putus
 
   async function load() {
     setLoading(true);
@@ -11238,6 +11239,15 @@ function PickingListPage({ token, role, userId }) {
         "orders?select=id,no_nota,created_at,tujuan_kota,tujuan_telp,tujuan_alamat,tujuan_nama,is_dropship,nama_pengirim_dropship,metode_bayar,clients(nama,kode,kota,alamat,telp),order_items(id,qty,products(kode,nama,satuan))&status=not.in.(menunggu_persetujuan,ditolak)&picking_selesai_at=is.null&order=created_at.asc"
       );
       setOrders(rows);
+
+      // Order yang picking+box-nya SUDAH dikonfirmasi tapi belum sempat
+      // upload bukti pengemasan (misal jaringan putus/HP mati di tengah
+      // jalan) - supaya bisa dilanjutkan, bukan hilang begitu saja.
+      const tertunda = await supabaseFetch(
+        token,
+        "orders?select=id,no_nota,jumlah_box_konfirmasi,tujuan_kota,tujuan_telp,tujuan_alamat,tujuan_nama,is_dropship,nama_pengirim_dropship,metode_bayar,clients(nama,kode,kota,alamat,telp),order_items(id,qty,products(kode,nama,satuan))&picking_selesai_at=not.is.null&outbound_verified_at=is.null&order=picking_selesai_at.asc"
+      );
+      setOrdersTertunda(tertunda);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -11326,6 +11336,7 @@ function PickingListPage({ token, role, userId }) {
         method: "PATCH",
         body: JSON.stringify({ bukti_pengiriman_url: url, outbound_verified_at: now, status: "siap_dikirim" }),
       });
+      setOrdersTertunda((prev) => prev.filter((o) => o.id !== packingSelesaiOrder.id));
       setPackingSelesaiOrder(null);
     } catch (e) {
       alert("Gagal upload bukti pengemasan: " + e.message);
@@ -11427,6 +11438,9 @@ function PickingListPage({ token, role, userId }) {
   if (packingSelesaiOrder) {
     return (
       <div>
+        <button onClick={() => setPackingSelesaiOrder(null)} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+          <ChevronLeft size={16} /> Kembali (progres tetap tersimpan)
+        </button>
         <PageHeader title="Pengemasan Selesai" subtitle={`${packingSelesaiOrder.no_nota} - ${packingSelesaiOrder.jumlah_box_konfirmasi} box`} />
 
         <Card style={{ maxWidth: 460, marginBottom: 16 }}>
@@ -11472,6 +11486,31 @@ function PickingListPage({ token, role, userId }) {
   return (
     <div>
       <PageHeader title="Picking List" subtitle={`${orders.length} pesanan menunggu diambil barangnya`} />
+
+      {ordersTertunda.length > 0 && (
+        <>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#C0392B", margin: "0 0 12px" }}>Menunggu Upload Bukti Pengemasan ({ordersTertunda.length})</h2>
+          {ordersTertunda.map((o) => (
+            <Card key={o.id} style={{ marginBottom: 12, border: "1.5px solid #FBEAEA" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+                  <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                  <p style={{ fontSize: 11.5, color: "#C0392B", margin: "4px 0 0", fontWeight: 600 }}>Picking sudah selesai - {o.jumlah_box_konfirmasi} box, tinggal upload foto</p>
+                </div>
+                <button
+                  onClick={() => setPackingSelesaiOrder(o)}
+                  style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: "#C0392B", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+                >
+                  Lanjutkan
+                </button>
+              </div>
+            </Card>
+          ))}
+          <div style={{ height: 8 }} />
+        </>
+      )}
+
       {orders.length === 0 ? (
         <EmptyState text="Tidak ada pesanan yang perlu di-picking saat ini." />
       ) : (
