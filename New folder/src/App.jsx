@@ -72,7 +72,7 @@ function bukaTabPreviewBarcode(orders) {
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
     const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
     if (isPekanbaru) {
-      const totalBox = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) || 1;
+      const totalBox = o.jumlah_box_konfirmasi || (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) || 1;
       for (let b = 1; b <= totalBox; b++) {
         entries.push({ order: o, isPekanbaru: true, noBox: b, totalBox });
       }
@@ -11234,6 +11234,10 @@ function PickingListPage({ token, role, userId }) {
   const [selectedOrder, setSelectedOrder] = useState(null); // order yang lagi dipicking
   const [inputJumlah, setInputJumlah] = useState({}); // { order_item_id: string }
   const [saving, setSaving] = useState(false);
+  const [confirmingBoxOrder, setConfirmingBoxOrder] = useState(null); // order yang picking-nya baru selesai, nunggu konfirmasi jumlah box
+  const [jumlahBoxInput, setJumlahBoxInput] = useState("");
+  const [savingBox, setSavingBox] = useState(false);
+  const [orderSelesaiCetak, setOrderSelesaiCetak] = useState(null); // order yang siap ditawarkan cetak barcode
 
   async function load() {
     setLoading(true);
@@ -11241,7 +11245,7 @@ function PickingListPage({ token, role, userId }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,tujuan_kota,clients(nama,kode,kota),order_items(id,qty,products(kode,nama,satuan))&status=not.in.(menunggu_persetujuan,ditolak)&picking_selesai_at=is.null&order=created_at.asc"
+        "orders?select=id,no_nota,created_at,tujuan_kota,tujuan_telp,tujuan_alamat,tujuan_nama,is_dropship,nama_pengirim_dropship,metode_bayar,clients(nama,kode,kota,alamat,telp),order_items(id,qty,products(kode,nama,satuan))&status=not.in.(menunggu_persetujuan,ditolak)&picking_selesai_at=is.null&order=created_at.asc"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -11273,12 +11277,44 @@ function PickingListPage({ token, role, userId }) {
         body: JSON.stringify({ picking_selesai_at: new Date().toISOString(), picking_oleh: userId }),
       });
       setOrders((prev) => prev.filter((o) => o.id !== selectedOrder.id));
+      // Total qty sebagai perkiraan awal jumlah box - staff bisa ubah manual
+      // di popup kalau ternyata beda (misal digabung jadi lebih sedikit box)
+      const perkiraanBox = (selectedOrder.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) || 1;
+      setJumlahBoxInput(String(perkiraanBox));
+      setConfirmingBoxOrder(selectedOrder);
       setSelectedOrder(null);
       setInputJumlah({});
     } catch (e) {
       alert("Gagal konfirmasi picking: " + e.message);
     }
     setSaving(false);
+  }
+
+  async function simpanJumlahBox() {
+    const jumlahBox = Number(jumlahBoxInput);
+    if (!jumlahBox || jumlahBox < 1) {
+      alert("Isi jumlah box yang valid (minimal 1).");
+      return;
+    }
+    setSavingBox(true);
+    try {
+      await supabaseFetch(token, `orders?id=eq.${confirmingBoxOrder.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ jumlah_box_konfirmasi: jumlahBox }),
+      });
+      setOrderSelesaiCetak({ ...confirmingBoxOrder, jumlah_box_konfirmasi: jumlahBox });
+      setConfirmingBoxOrder(null);
+      setJumlahBoxInput("");
+    } catch (e) {
+      alert("Gagal simpan jumlah box: " + e.message);
+    }
+    setSavingBox(false);
+  }
+
+  function cetakBarcodeSelesaiPicking() {
+    if (!orderSelesaiCetak) return;
+    bukaTabPreviewBarcode([orderSelesaiCetak]);
+    setOrderSelesaiCetak(null);
   }
 
   if (loading) return <LoadingState />;
@@ -11398,6 +11434,59 @@ function PickingListPage({ token, role, userId }) {
             </Card>
           );
         })
+      )}
+
+      {/* MODAL KONFIRMASI JUMLAH BOX - muncul setelah picking dikonfirmasi */}
+      {confirmingBoxOrder && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, padding: 26 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+              <div style={{ width: 40, height: 40, borderRadius: "50%", background: "#D8E9E6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <Check size={20} color="#28685D" />
+              </div>
+              <div>
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0, fontWeight: 700, textTransform: "uppercase" }}>Picking Selesai</p>
+                <p className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: 0 }}>{confirmingBoxOrder.no_nota}</p>
+              </div>
+            </div>
+            <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 10px" }}>Konfirmasi jumlah box untuk order ini:</p>
+            <input
+              type="number"
+              value={jumlahBoxInput}
+              onChange={(e) => setJumlahBoxInput(e.target.value)}
+              style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: "1.5px solid #E4E1DA", fontSize: 18, fontWeight: 700, textAlign: "center", marginBottom: 8 }}
+            />
+            <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 20px", textAlign: "center" }}>Bisa diubah kalau barangnya digabung jadi lebih sedikit/lebih banyak box.</p>
+            <button
+              onClick={simpanJumlahBox}
+              disabled={savingBox}
+              style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: savingBox ? "#E4E1DA" : "#28685D", color: "#fff", fontWeight: 700, fontSize: 14 }}
+            >
+              {savingBox ? "Menyimpan..." : "Konfirmasi Jumlah Box"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* TAWARAN CETAK BARCODE - setelah jumlah box dikonfirmasi */}
+      {orderSelesaiCetak && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 380, padding: 26, textAlign: "center" }}>
+            <div style={{ width: 50, height: 50, borderRadius: "50%", background: "#FBF0D9", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <Barcode size={24} color="#8A6A1A" />
+            </div>
+            <p className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>{orderSelesaiCetak.no_nota}</p>
+            <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 22px" }}>{orderSelesaiCetak.jumlah_box_konfirmasi} box siap dicetak barcode-nya sekarang?</p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setOrderSelesaiCetak(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                Nanti Saja
+              </button>
+              <button onClick={cetakBarcodeSelesaiPicking} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                <Printer size={15} /> Cetak Sekarang
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
