@@ -11241,7 +11241,7 @@ function PickingListPage({ token, role, userId }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,clients(nama,kode),order_items(id,qty,products(kode,nama,satuan))&status=not.in.(menunggu_persetujuan,ditolak)&picking_selesai_at=is.null&order=created_at.asc"
+        "orders?select=id,no_nota,created_at,tujuan_kota,clients(nama,kode,kota),order_items(id,qty,products(kode,nama,satuan))&status=not.in.(menunggu_persetujuan,ditolak)&picking_selesai_at=is.null&order=created_at.asc"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -11288,12 +11288,36 @@ function PickingListPage({ token, role, userId }) {
 
   // ---------- TAMPILAN DETAIL PICKING SATU ORDER ----------
   if (selectedOrder) {
+    const kotaTujuanAsli = selectedOrder.tujuan_kota || selectedOrder.clients?.kota;
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const jumlahJenisBarang = (selectedOrder.order_items || []).length;
     return (
       <div>
         <button onClick={() => { setSelectedOrder(null); setInputJumlah({}); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
           <ChevronLeft size={16} /> Kembali
         </button>
-        <PageHeader title={`Picking List - ${selectedOrder.no_nota}`} subtitle={`${selectedOrder.clients?.nama} (${selectedOrder.clients?.kode})`} />
+        <PageHeader title="Picking List" subtitle="Isi jumlah aktual sesuai barang yang benar-benar diambil" />
+
+        <Card style={{ maxWidth: 520, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>No. Pesanan</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: 0 }}>{selectedOrder.no_nota}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Toko Tujuan</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: 0 }}>{selectedOrder.clients?.nama}, {kotaTujuanAsli || "-"}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Metode Pengiriman</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: isPekanbaru ? "#28685D" : "#8A6A1A", margin: 0 }}>{isPekanbaru ? "Kurir Toko" : "Baraka"}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Total Jenis Barang</p>
+              <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: 0 }}>{jumlahJenisBarang} jenis</p>
+            </div>
+          </div>
+        </Card>
 
         <Card style={{ maxWidth: 520 }}>
           {(selectedOrder.order_items || []).map((it, i) => {
@@ -11303,9 +11327,21 @@ function PickingListPage({ token, role, userId }) {
             const salah = sudahDiisi && Number(val) !== Number(it.qty);
             return (
               <div key={it.id} style={{ paddingBottom: 16, marginBottom: 16, borderBottom: i < selectedOrder.order_items.length - 1 ? "1px solid #EDEAE3" : "none" }}>
-                <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{it.products?.kode} - {it.products?.nama}</p>
-                <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 10px" }}>Wajib: {it.qty} {it.products?.satuan}</p>
-                <label style={labelStyle}>Jumlah Fisik Diambil</label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+                  <div>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 3px" }}>Nama Produk</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: 0 }}>{it.products?.nama}</p>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 3px" }}>Kode Produk</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: 0 }}>{it.products?.kode}</p>
+                  </div>
+                  <div>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 3px" }}>Jumlah Pesanan</p>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: 0 }}>{it.qty} {it.products?.satuan}</p>
+                  </div>
+                </div>
+                <label style={labelStyle}>Jumlah Aktual</label>
                 <input
                   type="number"
                   value={val}
