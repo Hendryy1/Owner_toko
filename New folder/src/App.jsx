@@ -11426,8 +11426,20 @@ function PickingListPage({ token, role, userId }) {
   // fisik di kemasan.
   function parseKode(kode) {
     const match = kode.match(/^(.+)-(\d{2,3})-(.+)$/);
-    if (match && match[1] === packingSelesaiOrder.no_nota) {
-      return { tipe: "barcode", nomorProduk: match[3] };
+    if (match) {
+      if (match[1] === packingSelesaiOrder.no_nota) {
+        return { tipe: "barcode", nomorProduk: match[3] };
+      }
+      // Formatnya persis format barcode kita, tapi nomor pesanannya BEDA -
+      // ini barcode dari order lain, harus ditolak jelas.
+      return { tipe: "barcode_lain", noNotaLain: match[1] };
+    }
+    // Bukan format barcode kita - anggap kode produk fisik. Tapi harus
+    // benar-benar salah satu produk yang ADA di pesanan ini, kalau tidak
+    // ada sama sekali berarti kode asing/salah scan.
+    const itemCocok = (packingSelesaiOrder.order_items || []).some((it) => it.products?.nomor_produk === kode);
+    if (!itemCocok) {
+      return { tipe: "tidak_dikenali" };
     }
     return { tipe: "produk", nomorProduk: kode };
   }
@@ -11436,6 +11448,16 @@ function PickingListPage({ token, role, userId }) {
     const kode = kodeScan.trim();
     if (!kode) return;
     const hasil = parseKode(kode);
+
+    if (hasil.tipe === "barcode_lain") {
+      setCheckerPesan({ type: "error", text: `Barcode ini untuk pesanan ${hasil.noNotaLain}, BUKAN untuk pesanan ${packingSelesaiOrder.no_nota} yang sedang diproses. Scan barcode/kode produk pesanan ini saja.` });
+      return;
+    }
+
+    if (hasil.tipe === "tidak_dikenali") {
+      setCheckerPesan({ type: "error", text: `Kode "${kode}" tidak dikenali - bukan barcode pesanan ini atau kode produk yang terdaftar di pesanan ini.` });
+      return;
+    }
 
     if (scanTerakhir === null) {
       // Scan PERTAMA dari satu pasangan (box) baru - simpan dulu, tunggu
