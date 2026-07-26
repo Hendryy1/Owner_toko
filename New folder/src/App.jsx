@@ -63,26 +63,30 @@ function bukaTabPreviewBarcode(orders) {
     return;
   }
 
-  // Ratakan daftar dulu - order Pekanbaru (Kurir Toko) dipecah PER PRODUK:
-  // tiap unit barang di tiap item dapat 1 label sendiri, dengan nomor box
-  // KHUSUS untuk produk itu (misal KZ-01 box 1/5, KZ-02 box 1/3), dan kode
-  // barcode-nya SUDAH menyertakan nomor produk (NONOTA-NN-NOMORPRODUK) -
-  // supaya checker bisa pastikan box ini benar-benar berisi produk yang
-  // seharusnya. Order luar kota tetap 1 label per order seperti biasa.
+  // Ratakan daftar dulu. Tiap order menghasilkan:
+  // - Label KEMASAN: per unit barang di tiap item (Pekanbaru MAUPUN luar
+  //   kota), nomor box KHUSUS produk itu (misal KZ-01 box 1/5), kode
+  //   barcode-nya menyertakan nomor produk (NONOTA-NN-NOMORPRODUK) - buat
+  //   ditempel di tiap kemasan fisik, dipakai Checker Produk.
+  // - Label INTI: cuma untuk order LUAR KOTA (Baraka) - 1 label per order,
+  //   barcode polos (CODE128 besar + QR kecil, tanpa nomor box/produk) -
+  //   dipakai buat serah terima ke kurir seperti biasa. Pekanbaru TIDAK
+  //   perlu label inti terpisah (kemasannya sudah dipakai langsung).
   const entries = [];
   orders.forEach((o) => {
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
     const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
-    if (isPekanbaru) {
-      (o.order_items || []).forEach((item) => {
-        const qty = Number(item.qty || 0) || 1;
-        for (let b = 1; b <= qty; b++) {
-          entries.push({ order: o, isPekanbaru: true, noBox: b, totalBox: qty, item });
-        }
-      });
-    } else {
-      entries.push({ order: o, isPekanbaru: false, noBox: null, totalBox: null, item: null });
+
+    if (!isPekanbaru) {
+      entries.push({ order: o, isPekanbaru: false, jenis: "inti", noBox: null, totalBox: null, item: null });
     }
+
+    (o.order_items || []).forEach((item) => {
+      const qty = Number(item.qty || 0) || 1;
+      for (let b = 1; b <= qty; b++) {
+        entries.push({ order: o, isPekanbaru, jenis: "kemasan", noBox: b, totalBox: qty, item });
+      }
+    });
   });
 
   const itemsHtml = entries.map((entry, i) => {
@@ -97,7 +101,7 @@ function bukaTabPreviewBarcode(orders) {
         <td style="padding:4px;color:#24272B">${it.products?.nama || "-"}</td>
         <td style="padding:4px;color:#24272B;font-weight:700;text-align:right">${it.qty}</td>
       </tr>`).join("");
-    const infoAtas = entry.isPekanbaru
+    const infoAtas = entry.jenis === "kemasan"
       ? `<p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 10px">Penerima: ${namaPenerima}</p>`
       : `
         ${o.is_dropship ? `<p style="font-size:12.5px;color:#8A6A1A;margin:0 0 4px;font-weight:700">Pengirim: ${o.nama_pengirim_dropship || o.clients?.nama}</p>` : ""}
@@ -113,7 +117,7 @@ function bukaTabPreviewBarcode(orders) {
         ${infoAtas}
         ${infoBox}
         <div style="display:flex;justify-content:center;align-items:flex-end;gap:20px;margin-bottom:16px">
-          ${entry.isPekanbaru
+          ${entry.jenis === "kemasan"
             ? `<div style="display:flex;flex-direction:column;align-items:center"><div id="qr-${i}"></div><p style="font-size:12px;font-weight:700;color:#24272B;margin-top:6px;font-family:monospace">${o.no_nota}</p></div>`
             : `<svg id="barcode-${i}"></svg><div style="display:flex;flex-direction:column;align-items:center"><div id="qr-kecil-${i}"></div></div>`}
         </div>
@@ -131,7 +135,7 @@ function bukaTabPreviewBarcode(orders) {
   }).join("");
 
   // Data yang dibutuhkan script inisialisasi (nomor nota + apakah Pekanbaru)
-  const dataBarcode = entries.map((entry, i) => ({ idx: i, noNota: entry.order.no_nota, isPekanbaru: entry.isPekanbaru, noBox: entry.noBox || null, nomorProduk: entry.item?.products?.nomor_produk || null }));
+  const dataBarcode = entries.map((entry, i) => ({ idx: i, noNota: entry.order.no_nota, jenis: entry.jenis, noBox: entry.noBox || null, nomorProduk: entry.item?.products?.nomor_produk || null }));
 
   win.document.write(`
     <!DOCTYPE html>
@@ -164,8 +168,8 @@ function bukaTabPreviewBarcode(orders) {
           window.onload = function () {
             var data = ${JSON.stringify(dataBarcode)};
             data.forEach(function (d) {
-              if (d.isPekanbaru) {
-                var kodeUnik = d.noBox ? (d.noNota + "-" + String(d.noBox).padStart(2, "0") + (d.nomorProduk ? ("-" + d.nomorProduk) : "")) : d.noNota;
+              if (d.jenis === "kemasan") {
+                var kodeUnik = d.noNota + "-" + String(d.noBox).padStart(2, "0") + (d.nomorProduk ? ("-" + d.nomorProduk) : "");
                 new QRCode(document.getElementById("qr-" + d.idx), { text: kodeUnik, width: 160, height: 160 });
               } else {
                 JsBarcode("#barcode-" + d.idx, d.noNota, { format: "CODE128", width: 3, height: 80, displayValue: true, fontSize: 14, margin: 6 });
