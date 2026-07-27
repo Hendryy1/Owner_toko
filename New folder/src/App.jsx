@@ -286,6 +286,16 @@ export default function OwnerDashboard() {
     setToken(accessToken);
     setProfile(profRows[0]);
     saveDashboardSession({ userId, token: accessToken, refreshToken });
+
+    // Catat log aktivitas login - diamkan kalau gagal (jangan sampai
+    // ganggu proses login utama gara-gara ini)
+    supabaseFetch(accessToken, "log_aktivitas", {
+      method: "POST",
+      body: JSON.stringify({
+        user_id: userId, nama_user: profRows[0].nama, role_user: profRows[0].role,
+        aksi: "login", deskripsi: `${profRows[0].nama} login ke Dashboard`,
+      }),
+    }).catch(() => {});
     // Kurir cuma bisa akses Proses Pengiriman - langsung arahkan ke situ,
     // karena halaman default (Ringkasan) tidak bisa diakses kurir.
     if (profRows[0].role === "kurir") setPage("proses_kirim");
@@ -362,6 +372,17 @@ export default function OwnerDashboard() {
   }
 
   function handleLogout() {
+    // Catat log aktivitas logout dulu SEBELUM token dihapus (kalau
+    // dihapus duluan, tidak akan punya akses buat insert log lagi)
+    if (token && profile) {
+      supabaseFetch(token, "log_aktivitas", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: profile.id, nama_user: profile.nama, role_user: profile.role,
+          aksi: "logout", deskripsi: `${profile.nama} logout dari Dashboard`,
+        }),
+      }).catch(() => {});
+    }
     clearDashboardSession();
     setToken(null);
     setProfile(null);
@@ -420,6 +441,7 @@ export default function OwnerDashboard() {
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "laporan_pesanan" && <LaporanPesananPage token={token} />}
         {page === "laporan_performa" && <LaporanPerformaPage token={token} />}
+        {page === "log_aktivitas" && <LogAktivitasPage token={token} />}
         {page === "picking_list" && <PickingListPage token={token} role={profile?.role} userId={profile?.id} />}
         {page === "pesanan_siap" && <SiapDikirimPage token={token} role={profile?.role} />}
         {page === "siap_dikirim_baru" && <SiapDikirimBaruPage token={token} role={profile?.role} />}
@@ -522,6 +544,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "konfirmasi_bayar", label: "Konfirmasi Pesanan Selesai", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
     { key: "laporan_pesanan", label: "Laporan Pesanan", icon: BarChart3, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "laporan_performa", label: "Laporan Performa", icon: TrendingUp, roles: ["owner"] },
+    { key: "log_aktivitas", label: "Log Aktivitas", icon: History, roles: ["owner"] },
     { key: "picking_list", label: "Picking List", icon: ClipboardCheck, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "pesanan_siap", label: "Pesanan", icon: PackagePlus, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "siap_dikirim_baru", label: "Siap Dikirim", icon: Truck, roles: ["owner", "admin_transaksi", "kurir", "staff_gudang"] },
@@ -12676,6 +12699,145 @@ function LaporanPerformaPage({ token }) {
       <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "20px 0 0", lineHeight: 1.6 }}>
         Catatan: data ini cuma dari pesanan yang statusnya sudah "Selesai" dalam rentang tanggal terpilih (berdasarkan tanggal selesai). Pesanan yang masih berjalan tidak dihitung supaya rata-ratanya tidak bias.
       </p>
+    </div>
+  );
+}
+
+// ============================================================
+// LOG AKTIVITAS - audit trail terpusat "siapa ngapain kapan"
+// ============================================================
+function LogAktivitasPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [logs, setLogs] = useState([]);
+  const [error, setError] = useState("");
+  const [filterAksi, setFilterAksi] = useState("semua");
+  const [filterUser, setFilterUser] = useState("semua");
+  const [tanggalMulai, setTanggalMulai] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().slice(0, 10);
+  });
+  const [tanggalSelesai, setTanggalSelesai] = useState(() => new Date().toISOString().slice(0, 10));
+  const [detailLog, setDetailLog] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(
+        token,
+        `log_aktivitas?select=*&created_at=gte.${tanggalMulai}T00:00:00&created_at=lte.${tanggalSelesai}T23:59:59&order=created_at.desc&limit=500`
+      );
+      setLogs(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [tanggalMulai, tanggalSelesai]);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const daftarAksi = [...new Set(logs.map((l) => l.aksi))];
+  const daftarUser = [...new Set(logs.map((l) => l.nama_user).filter(Boolean))];
+
+  const logTampil = logs
+    .filter((l) => filterAksi === "semua" || l.aksi === filterAksi)
+    .filter((l) => filterUser === "semua" || l.nama_user === filterUser);
+
+  const labelAksi = {
+    ubah_status_order: "Ubah Status Order",
+    ubah_harga_produk: "Ubah Harga Produk",
+    login: "Login",
+    logout: "Logout",
+  };
+
+  return (
+    <div>
+      <PageHeader title="Log Aktivitas" subtitle={`${logTampil.length} aktivitas tercatat dalam rentang tanggal terpilih`} />
+
+      <Card style={{ marginBottom: 20, padding: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Dari Tanggal</label>
+            <input type="date" value={tanggalMulai} onChange={(e) => setTanggalMulai(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Sampai Tanggal</label>
+            <input type="date" value={tanggalSelesai} onChange={(e) => setTanggalSelesai(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Jenis Aksi</label>
+            <select value={filterAksi} onChange={(e) => setFilterAksi(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13 }}>
+              <option value="semua">Semua Aksi</option>
+              {daftarAksi.map((a) => <option key={a} value={a}>{labelAksi[a] || a}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Staff</label>
+            <select value={filterUser} onChange={(e) => setFilterUser(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13 }}>
+              <option value="semua">Semua Staff</option>
+              {daftarUser.map((u) => <option key={u} value={u}>{u}</option>)}
+            </select>
+          </div>
+        </div>
+      </Card>
+
+      {logTampil.length === 0 ? (
+        <EmptyState text="Tidak ada aktivitas tercatat di rentang & filter ini." />
+      ) : (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#F7F5F1" }}>
+                <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Waktu</th>
+                <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Staff</th>
+                <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Aksi</th>
+                <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logTampil.map((l, i) => (
+                <tr key={l.id} style={{ borderTop: i > 0 ? "1px solid #EDEAE3" : "none", cursor: (l.data_sebelum || l.data_sesudah) ? "pointer" : "default" }} onClick={() => (l.data_sebelum || l.data_sesudah) && setDetailLog(l)}>
+                  <td style={{ padding: "10px 14px", fontSize: 12, color: "#6B6F75", whiteSpace: "nowrap" }}>
+                    {new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}
+                  </td>
+                  <td style={{ padding: "10px 14px", fontSize: 12.5, fontWeight: 700, color: "#24272B" }}>
+                    {l.nama_user || "-"}
+                    <span style={{ display: "block", fontSize: 10.5, color: "#9CA0A6", fontWeight: 600, textTransform: "capitalize" }}>{(l.role_user || "").replace("_", " ")}</span>
+                  </td>
+                  <td style={{ padding: "10px 14px" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#F7F5F1", color: "#6B6F75" }}>{labelAksi[l.aksi] || l.aksi}</span>
+                  </td>
+                  <td style={{ padding: "10px 14px", fontSize: 12.5, color: "#24272B" }}>{l.deskripsi}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      {/* MODAL DETAIL - tampilkan data sebelum/sesudah kalau ada */}
+      {detailLog && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 440, padding: 26 }}>
+            <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>{labelAksi[detailLog.aksi] || detailLog.aksi}</h2>
+            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 18px" }}>{detailLog.deskripsi}</p>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <div style={{ background: "#FBEAEA", borderRadius: 9, padding: 12 }}>
+                <p style={{ fontSize: 10.5, fontWeight: 700, color: "#C0392B", textTransform: "uppercase", margin: "0 0 6px" }}>Sebelum</p>
+                <pre style={{ fontSize: 11.5, color: "#C0392B", margin: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{JSON.stringify(detailLog.data_sebelum, null, 2)}</pre>
+              </div>
+              <div style={{ background: "#D8E9E6", borderRadius: 9, padding: 12 }}>
+                <p style={{ fontSize: 10.5, fontWeight: 700, color: "#28685D", textTransform: "uppercase", margin: "0 0 6px" }}>Sesudah</p>
+                <pre style={{ fontSize: 11.5, color: "#28685D", margin: 0, whiteSpace: "pre-wrap", fontFamily: "monospace" }}>{JSON.stringify(detailLog.data_sesudah, null, 2)}</pre>
+              </div>
+            </div>
+            <button onClick={() => setDetailLog(null)} style={{ width: "100%", marginTop: 18, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
