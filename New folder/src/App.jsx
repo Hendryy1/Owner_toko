@@ -3925,6 +3925,7 @@ function SiapDikirimPage({ token, role }) {
   const orderTerselesaikan = orders.filter((o) => o.status === "selesai");
 
   const tabLainMap = {
+    proses_pengemasan: orderPengemasanSemua,
     siap_kirim: orderSiapKirim,
     proses_kirim: orderProsesKirim,
     terlambat_diambil: orderTerlambatDiambil,
@@ -3957,6 +3958,12 @@ function SiapDikirimPage({ token, role }) {
           style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "terlambat" ? "1.5px solid #C0392B" : "1.5px solid #E4E1DA", background: activeTab === "terlambat" ? "#FBEAEA" : "#fff", color: activeTab === "terlambat" ? "#C0392B" : "#24272B", fontSize: 13, fontWeight: 700 }}
         >
           Keterlambatan Pengemasan ({orderTerlambat.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("proses_pengemasan")}
+          style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "proses_pengemasan" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "proses_pengemasan" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+        >
+          Proses Pengemasan ({orderPengemasanSemua.length})
         </button>
         <button
           onClick={() => setActiveTab("siap_kirim")}
