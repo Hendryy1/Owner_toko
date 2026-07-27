@@ -12195,23 +12195,21 @@ function LaporanPesananPage({ token }) {
   const orderPengemasan = orders.filter((o) => statusPengemasan.includes(o.status));
   const orderSiapKirim = orders.filter((o) => o.status === "siap_dikirim");
   const orderProsesKirim = orders.filter((o) => o.status === "proses_dikirim");
-  const orderSelesai = orders.filter((o) => o.status === "selesai" && !o.alasan_retur);
+  const orderSelesai = orders.filter((o) => o.status === "selesai");
   const orderTerlambatPengemasan = orderPengemasan.filter((o) => cekTerlambatPengemasan(o));
   const orderTerlambatDiambil = orderSiapKirim.filter((o) => cekTerlambatDikirim(o));
   const orderTerlambatDikirimKurir = orderProsesKirim.filter((o) => cekTerlambatDikirimKurir(o));
   const orderProsesRetur = orders.filter((o) => o.status === "diretur");
-  const orderReturSelesai = orders.filter((o) => o.status === "selesai" && !!o.alasan_retur);
 
   const kartu = [
     { label: "Total Pesanan Pengemasan", nilai: orderPengemasan.length, bg: "#F7F5F1", fg: "#24272B", icon: Package },
     { label: "Total Siap Kirim", nilai: orderSiapKirim.length, bg: "#D8E9E6", fg: "#28685D", icon: Truck },
     { label: "Total Proses Kirim", nilai: orderProsesKirim.length, bg: "#D8E9E6", fg: "#28685D", icon: Navigation },
-    { label: "Total Pesanan Terselesaikan", nilai: orderSelesai.length, bg: "#EFE1BE", fg: "#8A6A1A", icon: Check },
     { label: "Total Terlambat Pengemasan", nilai: orderTerlambatPengemasan.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
     { label: "Terlambat Diambil Kurir", nilai: orderTerlambatDiambil.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
     { label: "Terlambat Dikirim Kurir", nilai: orderTerlambatDikirimKurir.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
     { label: "Total Proses Retur", nilai: orderProsesRetur.length, bg: "#FBF0D9", fg: "#8A6A1A", icon: RefreshCw },
-    { label: "Total Retur Terselesaikan", nilai: orderReturSelesai.length, bg: "#FBEAEA", fg: "#C0392B", icon: Check },
+    { label: "Total Pesanan Terselesaikan", nilai: orderSelesai.length, bg: "#EFE1BE", fg: "#8A6A1A", icon: Check },
   ];
 
   return (
