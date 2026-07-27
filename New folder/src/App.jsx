@@ -12622,6 +12622,13 @@ function LaporanPerformaPage({ token }) {
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
   const [staffMap, setStaffMap] = useState({}); // { user_id: nama }
+  const [kunjunganList, setKunjunganList] = useState([]);
+  const [salesList, setSalesList] = useState([]);
+  const [clientsList, setClientsList] = useState([]);
+  const [ordersSemuaStatus, setOrdersSemuaStatus] = useState([]); // buat closing rate - order APAPUN statusnya (bukan cuma yg selesai)
+  const [laporanKurirList, setLaporanKurirList] = useState([]);
+  const [laporanKurirItemsList, setLaporanKurirItemsList] = useState([]);
+  const [ordersKurirMap, setOrdersKurirMap] = useState({}); // { order_id: order } - buat cek tepat waktu kurir
   const [tanggalMulai, setTanggalMulai] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
@@ -12643,6 +12650,34 @@ function LaporanPerformaPage({ token }) {
       const map = {};
       (staffRows || []).forEach((s) => { map[s.id] = s.nama; });
       setStaffMap(map);
+
+      // --- Data buat performa SALES (kunjungan + closing rate) ---
+      const kunjRows = await supabaseFetch(token, `kunjungan_sales?select=id,sales_id,client_id,created_at&created_at=gte.${tanggalMulai}T00:00:00&created_at=lte.${tanggalSelesai}T23:59:59`);
+      setKunjunganList(kunjRows);
+      const salesRows = await supabaseFetch(token, "sales?select=id,nama,kode&order=nama.asc");
+      setSalesList(salesRows);
+      const clientRows = await supabaseFetch(token, "clients?select=id,sales_id&sales_id=not.is.null");
+      setClientsList(clientRows);
+      const orderSemuaRows = await supabaseFetch(token, `orders?select=id,client_id,created_at&created_at=gte.${tanggalMulai}T00:00:00&created_at=lte.${tanggalSelesai}T23:59:59&status=not.in.(ditolak)`);
+      setOrdersSemuaStatus(orderSemuaRows);
+
+      // --- Data buat performa KURIR (persentase tepat waktu per kurir) ---
+      const lapKurirRows = await supabaseFetch(token, `laporan_kurir?select=id,dibuat_oleh,nama_kurir,jenis_kurir,jenis_laporan&created_at=gte.${tanggalMulai}T00:00:00&created_at=lte.${tanggalSelesai}T23:59:59&jenis_laporan=eq.serah_terima`);
+      setLaporanKurirList(lapKurirRows);
+      const idLapKurir = (lapKurirRows || []).map((l) => l.id);
+      let itemRows = [];
+      if (idLapKurir.length > 0) {
+        itemRows = await supabaseFetch(token, `laporan_kurir_items?select=laporan_kurir_id,order_id&laporan_kurir_id=in.(${idLapKurir.join(",")})`);
+      }
+      setLaporanKurirItemsList(itemRows);
+      const idOrderKurir = [...new Set((itemRows || []).map((it) => it.order_id))];
+      let orderKurirRows = [];
+      if (idOrderKurir.length > 0) {
+        orderKurirRows = await supabaseFetch(token, `orders?select=id,tanggal_dikirim,selesai_at,status,tujuan_kota,clients(kota)&id=in.(${idOrderKurir.join(",")})`);
+      }
+      const omap = {};
+      (orderKurirRows || []).forEach((o) => { omap[o.id] = o; });
+      setOrdersKurirMap(omap);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -12709,6 +12744,51 @@ function LaporanPerformaPage({ token }) {
   const daftarStaff = Object.entries(perStaff)
     .map(([userId, jamArr]) => ({ userId, nama: staffMap[userId] || "Staff (tidak diketahui)", jumlahOrder: jamArr.length, rataRata: rataRata(jamArr) }))
     .sort((a, b) => a.rataRata - b.rataRata);
+
+  // ---------- PERFORMA SALES: kunjungan + closing rate ----------
+  const daftarSales = salesList.map((s) => {
+    const kunjunganSales = kunjunganList.filter((k) => k.sales_id === s.id);
+    const tokoDikunjungi = [...new Set(kunjunganSales.map((k) => k.client_id))];
+    const idTokoSalesIni = new Set(clientsList.filter((c) => c.sales_id === s.id).map((c) => c.id));
+    // "Closing" = toko yang DIKUNJUNGI sales ini DAN punya order baru di
+    // rentang tanggal yang sama (proxy sederhana kunjungan efektif)
+    const tokoClosing = tokoDikunjungi.filter((clientId) =>
+      idTokoSalesIni.has(clientId) && ordersSemuaStatus.some((o) => o.client_id === clientId)
+    );
+    const closingRate = tokoDikunjungi.length > 0 ? (tokoClosing.length / tokoDikunjungi.length) * 100 : null;
+    return {
+      id: s.id, nama: s.nama, kode: s.kode,
+      totalKunjungan: kunjunganSales.length,
+      tokoDikunjungi: tokoDikunjungi.length,
+      tokoClosing: tokoClosing.length,
+      closingRate,
+    };
+  }).filter((s) => s.totalKunjungan > 0)
+    .sort((a, b) => (b.closingRate || 0) - (a.closingRate || 0));
+
+  // ---------- PERFORMA KURIR: persentase tepat waktu per kurir ----------
+  const perKurir = {};
+  laporanKurirList.forEach((lap) => {
+    const namaKey = lap.dibuat_oleh || lap.nama_kurir; // kurir toko pakai akun (dibuat_oleh), Baraka pakai nama manual
+    const itemsLaporanIni = laporanKurirItemsList.filter((it) => it.laporan_kurir_id === lap.id);
+    itemsLaporanIni.forEach((it) => {
+      const o = ordersKurirMap[it.order_id];
+      if (!o || !o.tanggal_dikirim || !o.selesai_at) return; // cuma hitung yang sudah benar-benar selesai
+      const kotaTujuan = o.tujuan_kota || o.clients?.kota;
+      const isPekanbaru = !!(kotaTujuan && kotaTujuan.trim().toLowerCase() === "pekanbaru");
+      const dikirim = new Date(o.tanggal_dikirim);
+      const selesai = new Date(o.selesai_at);
+      const tepatWaktu = isPekanbaru
+        ? dikirim.toDateString() === selesai.toDateString()
+        : (selesai - dikirim) / (1000 * 60 * 60 * 24) < 3;
+      if (!perKurir[namaKey]) perKurir[namaKey] = { nama: lap.dibuat_oleh ? (staffMap[lap.dibuat_oleh] || lap.nama_kurir) : lap.nama_kurir, jenis: lap.jenis_kurir, total: 0, tepat: 0 };
+      perKurir[namaKey].total += 1;
+      if (tepatWaktu) perKurir[namaKey].tepat += 1;
+    });
+  });
+  const daftarKurir = Object.values(perKurir)
+    .map((k) => ({ ...k, persentase: k.total > 0 ? (k.tepat / k.total) * 100 : null }))
+    .sort((a, b) => (b.persentase || 0) - (a.persentase || 0));
 
   function exportCSV() {
     const header = ["No Nota", "Dibuat", "Picking Selesai", "Outbound", "Dikirim", "Selesai", "Waktu Pengemasan (jam)", "Waktu Tunggu Kurir (jam)", "Waktu Pengiriman (jam)"];
@@ -12780,7 +12860,7 @@ function LaporanPerformaPage({ token }) {
       {daftarStaff.length > 0 && (
         <>
           <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Performa Picking per Staff Gudang</h2>
-          <Card style={{ padding: 0, overflow: "hidden" }}>
+          <Card style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ background: "#F7F5F1" }}>
@@ -12800,6 +12880,76 @@ function LaporanPerformaPage({ token }) {
               </tbody>
             </table>
           </Card>
+        </>
+      )}
+
+      {daftarSales.length > 0 && (
+        <>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Performa Sales - Kunjungan & Closing Rate</h2>
+          <Card style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#F7F5F1" }}>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Sales</th>
+                  <th style={{ padding: "12px 16px", textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Total Kunjungan</th>
+                  <th style={{ padding: "12px 16px", textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Toko Dikunjungi</th>
+                  <th style={{ padding: "12px 16px", textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Toko Closing</th>
+                  <th style={{ padding: "12px 16px", textAlign: "right", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Closing Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {daftarSales.map((s, i) => (
+                  <tr key={s.id} style={{ borderTop: i > 0 ? "1px solid #EDEAE3" : "none" }}>
+                    <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700, color: "#24272B" }}>{s.nama} <span style={{ color: "#9CA0A6", fontWeight: 600 }}>({s.kode})</span></td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, textAlign: "center", color: "#6B6F75" }}>{s.totalKunjungan}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, textAlign: "center", color: "#6B6F75" }}>{s.tokoDikunjungi}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, textAlign: "center", color: "#6B6F75" }}>{s.tokoClosing}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, textAlign: "right", fontWeight: 700, color: s.closingRate >= 50 ? "#28685D" : "#C0392B" }}>
+                      {s.closingRate !== null ? s.closingRate.toFixed(0) + "%" : "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+          <p style={{ fontSize: 11, color: "#9CA0A6", margin: "-16px 0 24px", lineHeight: 1.6 }}>
+            Closing Rate = persentase toko yang dikunjungi DAN memesan (order apapun statusnya, kecuali ditolak) dalam rentang tanggal yang sama - perkiraan sederhana kunjungan efektif, bukan sebab-akibat pasti.
+          </p>
+        </>
+      )}
+
+      {daftarKurir.length > 0 && (
+        <>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Performa Kurir - Persentase Tepat Waktu</h2>
+          <Card style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#F7F5F1" }}>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Kurir</th>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Jenis</th>
+                  <th style={{ padding: "12px 16px", textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Total Kirim</th>
+                  <th style={{ padding: "12px 16px", textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Tepat Waktu</th>
+                  <th style={{ padding: "12px 16px", textAlign: "right", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Persentase</th>
+                </tr>
+              </thead>
+              <tbody>
+                {daftarKurir.map((k, i) => (
+                  <tr key={i} style={{ borderTop: i > 0 ? "1px solid #EDEAE3" : "none" }}>
+                    <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700, color: "#24272B" }}>{k.nama}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 12.5, color: "#6B6F75", textTransform: "capitalize" }}>{k.jenis}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, textAlign: "center", color: "#6B6F75" }}>{k.total}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, textAlign: "center", color: "#6B6F75" }}>{k.tepat}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, textAlign: "right", fontWeight: 700, color: k.persentase >= 80 ? "#28685D" : "#C0392B" }}>
+                      {k.persentase !== null ? k.persentase.toFixed(0) + "%" : "-"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+          <p style={{ fontSize: 11, color: "#9CA0A6", margin: "-16px 0 24px", lineHeight: 1.6 }}>
+            Tepat waktu = Pekanbaru selesai di hari yang sama saat dikirim; luar kota selesai dalam waktu kurang dari 3 hari. Cuma menghitung pengiriman yang sudah benar-benar Selesai.
+          </p>
         </>
       )}
 
