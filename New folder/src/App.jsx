@@ -3087,7 +3087,7 @@ function RekapNotaPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
+        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -3124,15 +3124,16 @@ function RekapNotaPage({ token }) {
   // Status perjalanan pesanan - satu label yang mewakili semua tahap
   function statusPerjalanan(o) {
     if (o.status === "ditolak") return { label: "Ditolak", bg: "#FBEAEA", fg: "#C0392B" };
-    if (o.status === "menunggu_persetujuan") return { label: "Menunggu Pengecekan Stock", bg: "#F7F5F1", fg: "#6B6F75" };
-    // COD tidak perlu tunggu bukti transfer/VA - begitu masuk tahap ini,
-    // langsung dianggap siap lanjut kirim (uangnya diterima pas barang sampai)
-    if (o.metode_bayar === "cod" && o.status === "menunggu_pembayaran") return { label: "COD - Siap Kirim", bg: "#FBF0D9", fg: "#8A6A1A" };
-    if (o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas") return { label: "Menunggu Pembayaran", bg: "#FBEAEA", fg: "#C0392B" };
-    if (o.status === "menunggu_pembayaran" && o.status_bayar === "lunas") return { label: "Bisa Cetak Nota", bg: "#FBF0D9", fg: "#8A6A1A" };
-    if (o.status === "menunggu_pengiriman") return { label: "Menunggu Pengiriman", bg: "#D8E9E6", fg: "#28685D" };
+    if (o.status === "menunggu_persetujuan") return { label: "Menunggu Persetujuan", bg: "#F7F5F1", fg: "#6B6F75" };
+    if (o.status === "menunggu_pembayaran" && o.metode_bayar !== "cod" && o.status_bayar !== "lunas") return { label: "Menunggu Pembayaran", bg: "#FBEAEA", fg: "#C0392B" };
+    // Sudah lunas (atau COD, yang tidak perlu tunggu bukti transfer) tapi
+    // belum masuk Picking List sama sekali - masih di antrean pengemasan.
+    if ((o.status === "menunggu_pembayaran" || o.status === "menunggu_pengiriman") && !o.picking_selesai_at) return { label: "Menunggu Pengemasan", bg: "#FBF0D9", fg: "#8A6A1A" };
+    // Sudah picking selesai tapi belum upload bukti pengemasan (masih di
+    // Picking List, tinggal upload foto).
+    if ((o.status === "menunggu_pembayaran" || o.status === "menunggu_pengiriman") && o.picking_selesai_at && !o.outbound_verified_at) return { label: "Menunggu Upload Bukti Pengemasan", bg: "#FBF0D9", fg: "#8A6A1A" };
     if (o.status === "siap_dikirim") return { label: "Siap Dikirim", bg: "#D8E9E6", fg: "#28685D" };
-    if (o.status === "proses_dikirim" || o.status === "dikirim") return { label: "Proses Dikirim", bg: "#D8E9E6", fg: "#28685D" };
+    if (o.status === "proses_dikirim" || o.status === "dikirim") return { label: "Proses Pengiriman", bg: "#D8E9E6", fg: "#28685D" };
     if (o.status === "diretur") return { label: "Diretur", bg: "#FBEAEA", fg: "#C0392B" };
     if (o.status === "selesai" && o.alasan_retur) return { label: "Retur Selesai", bg: "#FBEAEA", fg: "#C0392B" };
     if (o.status === "selesai") return { label: "Telah Diselesaikan", bg: "#EFE1BE", fg: "#8A6A1A" };
@@ -3209,11 +3210,11 @@ function RekapNotaPage({ token }) {
         {activeTab === "nota" && (
           <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
             <option value="semua">Semua Status</option>
-            <option value="menunggu_persetujuan">Menunggu Pengecekan Stock</option>
-            <option value="menunggu_pembayaran">Menunggu Pembayaran / Bisa Cetak</option>
-            <option value="menunggu_pengiriman">Menunggu Pengiriman</option>
+            <option value="menunggu_persetujuan">Menunggu Persetujuan</option>
+            <option value="menunggu_pembayaran">Menunggu Pembayaran / Pengemasan</option>
+            <option value="menunggu_pengiriman">Menunggu Pengemasan</option>
             <option value="siap_dikirim">Siap Dikirim</option>
-            <option value="proses_dikirim">Proses Dikirim</option>
+            <option value="proses_dikirim">Proses Pengiriman</option>
             <option value="diretur">Diretur</option>
             <option value="selesai">Telah Diselesaikan</option>
             <option value="ditolak">Ditolak</option>
