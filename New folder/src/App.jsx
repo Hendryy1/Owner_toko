@@ -12391,11 +12391,26 @@ function LaporanPerformaPage({ token }) {
   const waktuPengiriman = orders.map((o) => selisihJam(o.tanggal_dikirim, o.selesai_at));
   const waktuTotal = orders.map((o) => selisihJam(o.created_at, o.selesai_at));
 
+  // Menilai rata-rata terhadap target: "baik" (hijau, di bawah target sangat
+  // baik), "cukup" (kuning, di bawah target cukup baik), "perhatian" (merah,
+  // di atas keduanya) - buat bantu baca cepat tanpa perlu hitung manual.
+  function nilaiStatus(rataRataJam, targetSangatBaik, targetCukupBaik) {
+    if (rataRataJam === null) return { warna: "#9CA0A6", teks: "Belum ada data" };
+    if (rataRataJam <= targetSangatBaik) return { warna: "#28685D", teks: "Sangat Baik" };
+    if (rataRataJam <= targetCukupBaik) return { warna: "#8A6A1A", teks: "Cukup Baik" };
+    return { warna: "#C0392B", teks: "Perlu Perhatian" };
+  }
+
+  const rrPengemasan = rataRata(waktuPengemasan);
+  const rrTungguKurir = rataRata(waktuTungguKurir);
+  const rrPengiriman = rataRata(waktuPengiriman);
+  const rrTotal = rataRata(waktuTotal);
+
   const kartu = [
-    { label: "Rata-rata Waktu Pengemasan", nilai: formatJam(rataRata(waktuPengemasan)), sub: "dari pesanan dibuat sampai selesai di-picking", icon: Package, fg: "#24272B", bg: "#F7F5F1" },
-    { label: "Rata-rata Tunggu Diambil Kurir", nilai: formatJam(rataRata(waktuTungguKurir)), sub: "dari siap dikirim sampai diambil kurir", icon: Clock, fg: "#8A6A1A", bg: "#FBF0D9" },
-    { label: "Rata-rata Waktu Pengiriman", nilai: formatJam(rataRata(waktuPengiriman)), sub: "dari diambil kurir sampai selesai", icon: Truck, fg: "#28685D", bg: "#D8E9E6" },
-    { label: "Rata-rata Total (Ujung ke Ujung)", nilai: formatJam(rataRata(waktuTotal)), sub: "dari pesanan dibuat sampai benar-benar selesai", icon: TrendingUp, fg: "#24272B", bg: "#EFE1BE" },
+    { label: "Rata-rata Waktu Pengemasan", nilai: formatJam(rrPengemasan), sub: "dari pesanan dibuat sampai selesai di-picking", icon: Package, bg: "#F7F5F1", target: "Target: < 4 jam (sangat baik), < 12 jam (cukup baik)", status: nilaiStatus(rrPengemasan, 4, 12) },
+    { label: "Rata-rata Tunggu Diambil Kurir", nilai: formatJam(rrTungguKurir), sub: "dari siap dikirim sampai diambil kurir", icon: Clock, bg: "#FBF0D9", target: "Target: < 2 jam (sangat baik), < 6 jam (cukup baik)", status: nilaiStatus(rrTungguKurir, 2, 6) },
+    { label: "Rata-rata Waktu Pengiriman", nilai: formatJam(rrPengiriman), sub: "dari diambil kurir sampai selesai", icon: Truck, bg: "#D8E9E6", target: "Target: < 24 jam (sangat baik), < 72 jam (cukup baik)", status: nilaiStatus(rrPengiriman, 24, 72) },
+    { label: "Rata-rata Total (Ujung ke Ujung)", nilai: formatJam(rrTotal), sub: "dari pesanan dibuat sampai benar-benar selesai", icon: TrendingUp, bg: "#EFE1BE", target: "Target: < 1-2 hari (sangat baik), < 3-4 hari (cukup baik)", status: nilaiStatus(rrTotal, 48, 96) },
   ];
 
   // Breakdown per staff gudang - buat evaluasi performa individual
@@ -12431,12 +12446,16 @@ function LaporanPerformaPage({ token }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14, marginBottom: 24 }}>
         {kartu.map((k, i) => (
           <Card key={i} style={{ padding: 20 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 10, background: k.bg, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
-              <k.icon size={19} color={k.fg} />
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: k.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <k.icon size={19} color={k.status.warna} />
+              </div>
+              <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: k.status.warna + "22", color: k.status.warna }}>{k.status.teks}</span>
             </div>
             <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>{k.nilai}</p>
             <p style={{ fontSize: 12.5, color: "#24272B", margin: "0 0 4px", fontWeight: 700 }}>{k.label}</p>
-            <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>{k.sub}</p>
+            <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 8px" }}>{k.sub}</p>
+            <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: 0, fontStyle: "italic", borderTop: "1px solid #EDEAE3", paddingTop: 8 }}>{k.target}</p>
           </Card>
         ))}
       </div>
