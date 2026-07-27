@@ -278,7 +278,7 @@ export default function OwnerDashboard() {
   const [loggingIn, setLoggingIn] = useState(false);
   const [restoringSession, setRestoringSession] = useState(true);
 
-  async function loadProfileAndEnter(userId, accessToken, refreshToken) {
+  async function loadProfileAndEnter(userId, accessToken, refreshToken, isManualLogin) {
     const profRows = await supabaseFetch(accessToken, `profiles?select=*&id=eq.${userId}`);
     if (!profRows || profRows.length === 0) {
       throw new Error("Akun ini belum terhubung sebagai staff (cek tabel profiles).");
@@ -287,15 +287,18 @@ export default function OwnerDashboard() {
     setProfile(profRows[0]);
     saveDashboardSession({ userId, token: accessToken, refreshToken });
 
-    // Catat log aktivitas login - diamkan kalau gagal (jangan sampai
-    // ganggu proses login utama gara-gara ini)
-    supabaseFetch(accessToken, "log_aktivitas", {
-      method: "POST",
-      body: JSON.stringify({
-        user_id: userId, nama_user: profRows[0].nama, role_user: profRows[0].role,
-        aksi: "login", deskripsi: `${profRows[0].nama} login ke Dashboard`,
-      }),
-    }).catch(() => {});
+    // Catat log aktivitas login - CUMA kalau ini benar-benar login manual
+    // (isi email+password), BUKAN saat sesi dipulihkan otomatis karena
+    // refresh halaman - diamkan kalau gagal simpan.
+    if (isManualLogin) {
+      supabaseFetch(accessToken, "log_aktivitas", {
+        method: "POST",
+        body: JSON.stringify({
+          user_id: userId, nama_user: profRows[0].nama, role_user: profRows[0].role,
+          aksi: "login", deskripsi: `${profRows[0].nama} login ke Dashboard`,
+        }),
+      }).catch(() => {});
+    }
     // Kurir cuma bisa akses Proses Pengiriman - langsung arahkan ke situ,
     // karena halaman default (Ringkasan) tidak bisa diakses kurir.
     if (profRows[0].role === "kurir") setPage("proses_kirim");
@@ -364,7 +367,7 @@ export default function OwnerDashboard() {
     setLoggingIn(true);
     try {
       const auth = await supabaseAuth(loginForm.email, loginForm.password);
-      await loadProfileAndEnter(auth.user.id, auth.access_token, auth.refresh_token);
+      await loadProfileAndEnter(auth.user.id, auth.access_token, auth.refresh_token, true);
     } catch (e) {
       setLoginError(e.message);
     }
