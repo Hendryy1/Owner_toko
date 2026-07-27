@@ -3854,7 +3854,7 @@ function SiapDikirimPage({ token, role }) {
         </button>
       </div>
 
-      {orderTampil.length > 0 && role !== "kurir" && role !== "staff_gudang" && (
+      {activeTab === "siap_kirim" && orderTampil.length > 0 && role !== "kurir" && role !== "staff_gudang" && (
         <Card style={{ marginBottom: 16, padding: 14 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#24272B", cursor: "pointer" }}>
@@ -3929,7 +3929,7 @@ function SiapDikirimPage({ token, role }) {
               <Card key={o.id} style={{ marginBottom: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                    {role !== "kurir" && role !== "staff_gudang" && (
+                    {activeTab === "siap_kirim" && role !== "kurir" && role !== "staff_gudang" && (
                       <input
                         type="checkbox" checked={selectedIds.has(o.id)} onChange={() => toggleSelect(o.id)}
                         style={{ width: 16, height: 16, marginTop: 4 }}
@@ -3973,12 +3973,6 @@ function SiapDikirimPage({ token, role }) {
             <Card key={o.id} style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  {role !== "kurir" && role !== "staff_gudang" && (
-                    <input
-                      type="checkbox" checked={selectedIds.has(o.id)} onChange={() => toggleSelect(o.id)}
-                      style={{ width: 16, height: 16, marginTop: 4 }}
-                    />
-                  )}
                   <div>
                   <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
                     {o.no_nota}
