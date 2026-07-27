@@ -2892,7 +2892,7 @@ function StockItemPage({ token, role }) {
     setError("");
     try {
       const [products, stock] = await Promise.all([
-        supabaseFetch(token, "products?select=id,kode,nama,kategori,satuan,harga_modal&aktif=eq.true&order=kode.asc"),
+        supabaseFetch(token, "products?select=id,kode,nama,kategori,satuan,harga_modal,stock_minimum&aktif=eq.true&order=kode.asc"),
         supabaseFetch(token, "v_stock_akhir?select=product_id,stock_akhir"),
       ]);
       const stockMap = {};
@@ -2914,17 +2914,26 @@ function StockItemPage({ token, role }) {
   const grandTotal = rows.reduce((sum, r) => sum + r.total_modal, 0);
   const sembunyikanModal = role === "admin_transaksi";
   const kolomTabel = sembunyikanModal ? ["Kode", "Nama Barang", "Kategori", "Satuan", "Stock"] : ["Kode", "Nama Barang", "Kategori", "Satuan", "Stock", "Harga Modal", "Total Modal"];
+  const rowsMenipis = rows.filter((r) => Number(r.stock_minimum) > 0 && r.stock_akhir <= Number(r.stock_minimum));
 
   return (
     <div>
       <PageHeader title="Stock Item" subtitle={sembunyikanModal ? "Stock akhir tiap barang" : "Nilai modal barang berdasarkan stock akhir - data rahasia, hanya Owner"} />
 
-      {!sembunyikanModal && (
-        <Card style={{ marginBottom: 16, display: "inline-block" }}>
-          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Total Modal Seluruh Stock</p>
-          <p className="disp" style={{ fontSize: 26, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(grandTotal)}</p>
-        </Card>
-      )}
+      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 16 }}>
+        {!sembunyikanModal && (
+          <Card style={{ display: "inline-block" }}>
+            <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Total Modal Seluruh Stock</p>
+            <p className="disp" style={{ fontSize: 26, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(grandTotal)}</p>
+          </Card>
+        )}
+        {rowsMenipis.length > 0 && (
+          <Card style={{ display: "inline-block", background: "#FBEAEA", border: "1.5px solid #F0CFC7" }}>
+            <p style={{ fontSize: 11.5, color: "#C0392B", margin: "0 0 6px", fontWeight: 700 }}>⚠️ Stock Menipis</p>
+            <p className="disp" style={{ fontSize: 26, fontWeight: 700, color: "#C0392B", margin: 0 }}>{rowsMenipis.length} produk</p>
+          </Card>
+        )}
+      </div>
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -2936,14 +2945,23 @@ function StockItemPage({ token, role }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {[...rows].sort((a, b) => {
+              const aMenipis = Number(a.stock_minimum) > 0 && a.stock_akhir <= Number(a.stock_minimum);
+              const bMenipis = Number(b.stock_minimum) > 0 && b.stock_akhir <= Number(b.stock_minimum);
+              if (aMenipis === bMenipis) return 0;
+              return aMenipis ? -1 : 1;
+            }).map((r) => {
+              const menipis = Number(r.stock_minimum) > 0 && r.stock_akhir <= Number(r.stock_minimum) && r.stock_akhir >= 0;
+              return (
               <tr key={r.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                 <td style={{ padding: "12px 14px", fontWeight: 700 }}>{r.kode}</td>
                 <td style={{ padding: "12px 14px" }}>{r.nama}</td>
                 <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{r.kategori}</td>
                 <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{r.satuan}</td>
                 <td style={{ padding: "12px 14px", fontWeight: 600, color: r.stock_akhir < 0 ? "#C0392B" : "#24272B" }}>
-                  {r.stock_akhir}{r.stock_akhir < 0 && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#C0392B" }}>MINUS!</span>}
+                  {r.stock_akhir}
+                  {r.stock_akhir < 0 && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: "#C0392B" }}>MINUS!</span>}
+                  {menipis && <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B" }}>Stock Menipis</span>}
                 </td>
                 {!sembunyikanModal && (
                   <>
@@ -2952,7 +2970,8 @@ function StockItemPage({ token, role }) {
                   </>
                 )}
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
         {rows.length === 0 && <EmptyState text="Belum ada data barang." />}
@@ -5983,7 +6002,7 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
   const [form, setForm] = useState({
     kode: product.kode || "", nama: product.nama || "", kategori: product.kategori || "", satuan: product.satuan || "",
     hargaJual: product.harga_jual || "", hargaAsli: product.harga_asli || "", hargaModal: product.harga_modal || "",
-    stockAwal: product.stock_awal ?? 0, isiPerKoli: product.isi_per_koli || "", diskonKoliPct: product.diskon_koli_pct ? Number(product.diskon_koli_pct) * 100 : "",
+    stockAwal: product.stock_awal ?? 0, stockMinimum: product.stock_minimum ?? 0, isiPerKoli: product.isi_per_koli || "", diskonKoliPct: product.diskon_koli_pct ? Number(product.diskon_koli_pct) * 100 : "",
     cashbackPerKoli: product.cashback_per_koli || "", deskripsi: product.deskripsi || "", aktif: product.aktif ?? true,
   });
   const [gambarUrl, setGambarUrl] = useState(product.gambar_url || "");
@@ -6090,6 +6109,10 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
       setError("Stock Awal tidak boleh negatif.");
       return;
     }
+    if (Number(form.stockMinimum) < 0) {
+      setError("Stock Minimum tidak boleh negatif.");
+      return;
+    }
     if (Number(form.isiPerKoli) < 0) {
       setError("Isi Per Koli tidak boleh negatif.");
       return;
@@ -6109,6 +6132,7 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
         kode: form.kode.trim().toUpperCase(), nama: form.nama.trim(), kategori: form.kategori || null, satuan: form.satuan.trim(),
         harga_jual: Number(form.hargaJual), harga_asli: form.hargaAsli ? Number(form.hargaAsli) : null,
         harga_modal: form.hargaModal ? Number(form.hargaModal) : null, stock_awal: Number(form.stockAwal) || 0,
+        stock_minimum: Number(form.stockMinimum) || 0,
         isi_per_koli: Number(form.isiPerKoli) || 0, diskon_koli_pct: (Number(form.diskonKoliPct) || 0) / 100,
         cashback_per_koli: Number(form.cashbackPerKoli) || 0, deskripsi: form.deskripsi || null,
         gambar_url: gambarUrl || null, aktif: form.aktif,
@@ -6247,6 +6271,10 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
           <div>
             <label style={labelStyle}>Stock Awal</label>
             <input type="number" min="0" value={form.stockAwal} onChange={set("stockAwal")} style={fieldStyle} />
+          </div>
+          <div>
+            <label style={labelStyle}>Stock Minimum (peringatan)</label>
+            <input type="number" min="0" value={form.stockMinimum} onChange={set("stockMinimum")} style={fieldStyle} />
           </div>
         </div>
 
