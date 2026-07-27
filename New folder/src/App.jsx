@@ -264,7 +264,15 @@ export default function OwnerDashboard() {
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
   }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    supabaseFetch(token, "pengaturan_urutan_menu?select=urutan&id=eq.1")
+      .then((rows) => setUrutanMenu(rows?.[0]?.urutan || []))
+      .catch(() => {});
+  }, [token]);
   const [page, setPage] = useState("overview");
+  const [urutanMenu, setUrutanMenu] = useState([]);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
@@ -385,7 +393,7 @@ export default function OwnerDashboard() {
         .disp { font-family: 'Barlow Condensed', sans-serif; }
         button { font-family: inherit; cursor: pointer; }
       `}</style>
-      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} isMobile={isMobile} salesTerverifikasi={salesTerverifikasi} />
+      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} isMobile={isMobile} salesTerverifikasi={salesTerverifikasi} urutanMenu={urutanMenu} setUrutanMenu={setUrutanMenu} token={token} />
       <div style={{ flex: 1, padding: isMobile ? "16px 16px 28px" : "28px 36px", overflowY: "auto", overflowX: "hidden", minWidth: 0 }}>
         {isMobile && (
           <button
@@ -498,7 +506,8 @@ function LoginScreen({ form, setForm, onLogin, error, loading }) {
 // ============================================================
 // SIDEBAR
 // ============================================================
-function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, isMobile, salesTerverifikasi }) {
+function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, isMobile, salesTerverifikasi, urutanMenu, setUrutanMenu, token }) {
+  const [modeAturUrutan, setModeAturUrutan] = useState(false);
   const allItems = [
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_keuangan"] },
     { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "sales"] },
@@ -552,6 +561,54 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     // semua menu lain disembunyikan sampai Owner approve verifikasinya.
     .filter((it) => !(profile?.role === "sales" && !salesTerverifikasi) || it.key === "profil_sales");
 
+  // Urutkan sesuai pengaturan tersimpan (berlaku global, semua akun) - menu
+  // yang belum ada di pengaturan (misal menu baru) taruh di paling bawah,
+  // urutan aslinya dipertahankan di antara sesama menu baru itu.
+  const itemsUrut = urutanMenu && urutanMenu.length > 0
+    ? [...items].sort((a, b) => {
+        const idxA = urutanMenu.indexOf(a.key);
+        const idxB = urutanMenu.indexOf(b.key);
+        if (idxA === -1 && idxB === -1) return 0;
+        if (idxA === -1) return 1;
+        if (idxB === -1) return -1;
+        return idxA - idxB;
+      })
+    : items;
+
+  // Buat mode "Atur Urutan" (khusus Owner) - urutkan SEMUA menu yang owner
+  // bisa lihat (allItems yang cocok role owner), simpan urutan key-nya.
+  const itemsUntukAtur = modeAturUrutan
+    ? (urutanMenu && urutanMenu.length > 0
+        ? [...allItems.filter((it) => it.roles.includes("owner"))].sort((a, b) => {
+            const idxA = urutanMenu.indexOf(a.key);
+            const idxB = urutanMenu.indexOf(b.key);
+            if (idxA === -1 && idxB === -1) return 0;
+            if (idxA === -1) return 1;
+            if (idxB === -1) return -1;
+            return idxA - idxB;
+          })
+        : allItems.filter((it) => it.roles.includes("owner")))
+    : [];
+
+  async function simpanUrutan(urutanBaru) {
+    setUrutanMenu(urutanBaru);
+    try {
+      await supabaseFetch(token, "pengaturan_urutan_menu?id=eq.1", {
+        method: "PATCH",
+        body: JSON.stringify({ urutan: urutanBaru, updated_at: new Date().toISOString() }),
+      });
+    } catch (e) { /* diamkan - tampilan lokal tetap berubah walau simpan gagal */ }
+  }
+
+  function geserMenu(index, arah) {
+    const semuaKey = itemsUntukAtur.map((it) => it.key);
+    const tujuan = index + arah;
+    if (tujuan < 0 || tujuan >= semuaKey.length) return;
+    const baru = [...semuaKey];
+    [baru[index], baru[tujuan]] = [baru[tujuan], baru[index]];
+    simpanUrutan(baru);
+  }
+
   if (collapsed) {
     if (isMobile) return null; // di HP, pakai tombol "Menu" terpisah di konten, bukan strip
     return (
@@ -598,18 +655,55 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
         </button>
       </div>
 
-      {items.map((it) => {
-        const Icon = it.icon;
-        const active = page === it.key;
-        return (
-          <button
-            key={it.key} onClick={() => { setPage(it.key); if (isMobile) setCollapsed(true); }}
-            style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 10, border: "none", background: active ? "#E8A426" : "none", color: active ? "#24272B" : "#9CA0A6", fontSize: 13.5, fontWeight: 600, marginBottom: 4, textAlign: "left" }}
-          >
-            <Icon size={17} /> {it.label}
-          </button>
-        );
-      })}
+      {profile?.role === "owner" && (
+        <button
+          onClick={() => setModeAturUrutan((prev) => !prev)}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid #3A3E44", background: modeAturUrutan ? "#E8A426" : "none", color: modeAturUrutan ? "#24272B" : "#9CA0A6", fontSize: 11.5, fontWeight: 700, marginBottom: 12 }}
+        >
+          {modeAturUrutan ? <Check size={13} /> : <FileEdit size={13} />} {modeAturUrutan ? "Selesai Atur Urutan" : "Atur Urutan Menu"}
+        </button>
+      )}
+
+      {modeAturUrutan ? (
+        <div style={{ overflowY: "auto" }}>
+          {itemsUntukAtur.map((it, i) => {
+            const Icon = it.icon;
+            return (
+              <div key={it.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", borderRadius: 9, background: "#2C3035", marginBottom: 4 }}>
+                <Icon size={15} color="#9CA0A6" style={{ flexShrink: 0 }} />
+                <span style={{ flex: 1, color: "#fff", fontSize: 12.5, fontWeight: 600 }}>{it.label}</span>
+                <button
+                  onClick={() => geserMenu(i, -1)}
+                  disabled={i === 0}
+                  style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#3A3E44", color: i === 0 ? "#5A5E64" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                >
+                  <ChevronLeft size={13} style={{ transform: "rotate(90deg)" }} />
+                </button>
+                <button
+                  onClick={() => geserMenu(i, 1)}
+                  disabled={i === itemsUntukAtur.length - 1}
+                  style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#3A3E44", color: i === itemsUntukAtur.length - 1 ? "#5A5E64" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                >
+                  <ChevronRight size={13} style={{ transform: "rotate(90deg)" }} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        itemsUrut.map((it) => {
+          const Icon = it.icon;
+          const active = page === it.key;
+          return (
+            <button
+              key={it.key} onClick={() => { setPage(it.key); if (isMobile) setCollapsed(true); }}
+              style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 10, border: "none", background: active ? "#E8A426" : "none", color: active ? "#24272B" : "#9CA0A6", fontSize: 13.5, fontWeight: 600, marginBottom: 4, textAlign: "left" }}
+            >
+              <Icon size={17} /> {it.label}
+            </button>
+          );
+        })
+      )}
 
       <div style={{ flex: 1 }} />
       <div style={{ padding: "12px 8px", borderTop: "1px solid #3A3E44" }}>
