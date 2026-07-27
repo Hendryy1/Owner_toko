@@ -555,42 +555,28 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "buat_laporan_kurir", label: "Buat Laporan Kurir", icon: ScanLine, roles: ["owner", "admin_transaksi", "kurir"] },
     { key: "banner_promo", label: "Banner Promo", icon: ImageIcon, roles: ["owner"] },
   ];
-  const items = allItems
-    .filter((it) => it.roles.includes(profile?.role))
+  const daftarSemuaRole = ["owner", "admin_keuangan", "admin_transaksi", "sales", "kurir", "staff_gudang"];
+  const [roleTabAktif, setRoleTabAktif] = useState(profile?.role || "owner");
+
+  // Daftar key menu untuk role TERTENTU - pakai pengaturan tersimpan kalau
+  // ADA, kalau belum diatur sama sekali pakai default bawaan kode (roles
+  // array di masing-masing item).
+  function keyUntukRole(role) {
+    if (urutanMenu && urutanMenu[role] && urutanMenu[role].length > 0) return urutanMenu[role];
+    return allItems.filter((it) => it.roles.includes(role)).map((it) => it.key);
+  }
+
+  const items = keyUntukRole(profile?.role)
+    .map((key) => allItems.find((it) => it.key === key))
+    .filter(Boolean)
     // Sales yang BELUM terverifikasi cuma boleh lihat menu Profil Saya -
     // semua menu lain disembunyikan sampai Owner approve verifikasinya.
     .filter((it) => !(profile?.role === "sales" && !salesTerverifikasi) || it.key === "profil_sales");
 
-  // Urutkan sesuai pengaturan tersimpan (berlaku global, semua akun) - menu
-  // yang belum ada di pengaturan (misal menu baru) taruh di paling bawah,
-  // urutan aslinya dipertahankan di antara sesama menu baru itu.
-  const itemsUrut = urutanMenu && urutanMenu.length > 0
-    ? [...items].sort((a, b) => {
-        const idxA = urutanMenu.indexOf(a.key);
-        const idxB = urutanMenu.indexOf(b.key);
-        if (idxA === -1 && idxB === -1) return 0;
-        if (idxA === -1) return 1;
-        if (idxB === -1) return -1;
-        return idxA - idxB;
-      })
-    : items;
+  const itemsUrut = items; // sudah terurut dari keyUntukRole
 
-  // Buat mode "Atur Urutan" (khusus Owner) - urutkan SEMUA menu yang owner
-  // bisa lihat (allItems yang cocok role owner), simpan urutan key-nya.
-  const itemsUntukAtur = modeAturUrutan
-    ? (urutanMenu && urutanMenu.length > 0
-        ? [...allItems.filter((it) => it.roles.includes("owner"))].sort((a, b) => {
-            const idxA = urutanMenu.indexOf(a.key);
-            const idxB = urutanMenu.indexOf(b.key);
-            if (idxA === -1 && idxB === -1) return 0;
-            if (idxA === -1) return 1;
-            if (idxB === -1) return -1;
-            return idxA - idxB;
-          })
-        : allItems.filter((it) => it.roles.includes("owner")))
-    : [];
-
-  async function simpanUrutan(urutanBaru) {
+  async function simpanUrutanRole(role, keyArrayBaru) {
+    const urutanBaru = { ...(urutanMenu || {}), [role]: keyArrayBaru };
     setUrutanMenu(urutanBaru);
     try {
       await supabaseFetch(token, "pengaturan_urutan_menu?id=eq.1", {
@@ -601,13 +587,21 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
   }
 
   function geserMenu(index, arah) {
-    const semuaKey = itemsUntukAtur.map((it) => it.key);
+    const key = keyUntukRole(roleTabAktif);
     const tujuan = index + arah;
-    if (tujuan < 0 || tujuan >= semuaKey.length) return;
-    const baru = [...semuaKey];
+    if (tujuan < 0 || tujuan >= key.length) return;
+    const baru = [...key];
     [baru[index], baru[tujuan]] = [baru[tujuan], baru[index]];
-    simpanUrutan(baru);
+    simpanUrutanRole(roleTabAktif, baru);
   }
+
+  function toggleMenuUntukRole(menuKey) {
+    const key = keyUntukRole(roleTabAktif);
+    const sudahAda = key.includes(menuKey);
+    const baru = sudahAda ? key.filter((k) => k !== menuKey) : [...key, menuKey];
+    simpanUrutanRole(roleTabAktif, baru);
+  }
+
 
   if (collapsed) {
     if (isMobile) return null; // di HP, pakai tombol "Menu" terpisah di konten, bukan strip
@@ -666,29 +660,65 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
 
       {modeAturUrutan ? (
         <div style={{ overflowY: "auto" }}>
-          {itemsUntukAtur.map((it, i) => {
-            const Icon = it.icon;
+          <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 10 }}>
+            {daftarSemuaRole.map((r) => (
+              <button
+                key={r}
+                onClick={() => setRoleTabAktif(r)}
+                style={{ padding: "5px 9px", borderRadius: 6, border: "none", background: roleTabAktif === r ? "#E8A426" : "#3A3E44", color: roleTabAktif === r ? "#24272B" : "#9CA0A6", fontSize: 10.5, fontWeight: 700, textTransform: "capitalize" }}
+              >
+                {r.replace("_", " ")}
+              </button>
+            ))}
+          </div>
+          {(() => {
+            const keyAktif = keyUntukRole(roleTabAktif);
+            const itemTermasuk = keyAktif.map((k) => allItems.find((it) => it.key === k)).filter(Boolean);
+            const itemBelumTermasuk = allItems.filter((it) => !keyAktif.includes(it.key));
             return (
-              <div key={it.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 10px", borderRadius: 9, background: "#2C3035", marginBottom: 4 }}>
-                <Icon size={15} color="#9CA0A6" style={{ flexShrink: 0 }} />
-                <span style={{ flex: 1, color: "#fff", fontSize: 12.5, fontWeight: 600 }}>{it.label}</span>
-                <button
-                  onClick={() => geserMenu(i, -1)}
-                  disabled={i === 0}
-                  style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#3A3E44", color: i === 0 ? "#5A5E64" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-                >
-                  <ChevronLeft size={13} style={{ transform: "rotate(90deg)" }} />
-                </button>
-                <button
-                  onClick={() => geserMenu(i, 1)}
-                  disabled={i === itemsUntukAtur.length - 1}
-                  style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#3A3E44", color: i === itemsUntukAtur.length - 1 ? "#5A5E64" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
-                >
-                  <ChevronRight size={13} style={{ transform: "rotate(90deg)" }} />
-                </button>
-              </div>
+              <>
+                {itemTermasuk.map((it, i) => {
+                  const Icon = it.icon;
+                  return (
+                    <div key={it.key} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 9px", borderRadius: 9, background: "#2C3035", marginBottom: 4 }}>
+                      <input type="checkbox" checked={true} onChange={() => toggleMenuUntukRole(it.key)} style={{ width: 14, height: 14, flexShrink: 0 }} />
+                      <Icon size={14} color="#9CA0A6" style={{ flexShrink: 0 }} />
+                      <span style={{ flex: 1, color: "#fff", fontSize: 12, fontWeight: 600 }}>{it.label}</span>
+                      <button
+                        onClick={() => geserMenu(i, -1)}
+                        disabled={i === 0}
+                        style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "#3A3E44", color: i === 0 ? "#5A5E64" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                      >
+                        <ChevronLeft size={12} style={{ transform: "rotate(90deg)" }} />
+                      </button>
+                      <button
+                        onClick={() => geserMenu(i, 1)}
+                        disabled={i === itemTermasuk.length - 1}
+                        style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "#3A3E44", color: i === itemTermasuk.length - 1 ? "#5A5E64" : "#fff", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                      >
+                        <ChevronRight size={12} style={{ transform: "rotate(90deg)" }} />
+                      </button>
+                    </div>
+                  );
+                })}
+                {itemBelumTermasuk.length > 0 && (
+                  <>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: "#5A5E64", textTransform: "uppercase", margin: "10px 0 6px", paddingTop: 8, borderTop: "1px solid #3A3E44" }}>Belum ditampilkan untuk role ini</p>
+                    {itemBelumTermasuk.map((it) => {
+                      const Icon = it.icon;
+                      return (
+                        <div key={it.key} style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 9px", borderRadius: 9, marginBottom: 4, opacity: 0.55 }}>
+                          <input type="checkbox" checked={false} onChange={() => toggleMenuUntukRole(it.key)} style={{ width: 14, height: 14, flexShrink: 0 }} />
+                          <Icon size={14} color="#6B6F75" style={{ flexShrink: 0 }} />
+                          <span style={{ flex: 1, color: "#9CA0A6", fontSize: 12, fontWeight: 600 }}>{it.label}</span>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </>
             );
-          })}
+          })()}
         </div>
       ) : (
         itemsUrut.map((it) => {
