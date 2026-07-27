@@ -3286,12 +3286,12 @@ function RekapNotaPage({ token }) {
                   </td>
                   <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", gap: 6 }}>
-                      {o.status !== "ditolak" && o.status !== "menunggu_persetujuan" && (
+                      {["siap_dikirim", "proses_dikirim", "diretur", "selesai"].includes(o.status) && (
                         <button onClick={() => openPrint(o, "nota")} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
                           <Printer size={12} /> Nota
                         </button>
                       )}
-                      {o.status_bayar === "lunas" && (
+                      {["siap_dikirim", "proses_dikirim", "diretur", "selesai"].includes(o.status) && (
                         <button onClick={() => openPrint(o, "surat_jalan")} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
                           <Printer size={12} /> Surat Jalan
                         </button>
