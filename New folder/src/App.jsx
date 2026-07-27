@@ -6074,6 +6074,10 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
       setError("Harga Jual harus lebih besar dari 0.");
       return;
     }
+    if (product.harga_minimum && Number(form.hargaJual) < Number(product.harga_minimum)) {
+      setError(`Harga Jual untuk ${product.kode || form.kode} tidak boleh kurang dari ${rupiah(product.harga_minimum)}.`);
+      return;
+    }
     if (form.hargaAsli && Number(form.hargaAsli) < 0) {
       setError("Harga Coret tidak boleh negatif.");
       return;
