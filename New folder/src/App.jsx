@@ -8854,11 +8854,25 @@ function AkunStaffPage({ token }) {
     setError("");
     try {
       const rows = await supabaseFetch(token, "profiles?select=id,nama,email,role,sales(kode,nama)&role=neq.owner&order=role.asc");
-      setStaffList(rows);
+
+      // Ambil waktu login TERAKHIR tiap staff, buat pengingat "akun tidak
+      // aktif" - bukan auto-nonaktifkan, cuma peringatan buat Owner.
+      const loginRows = await supabaseFetch(token, "log_aktivitas?select=user_id,created_at&aksi=eq.login&order=created_at.desc&limit=2000");
+      const loginTerakhirMap = {};
+      (loginRows || []).forEach((l) => {
+        if (!loginTerakhirMap[l.user_id]) loginTerakhirMap[l.user_id] = l.created_at; // yang pertama ketemu = paling baru (sudah diurutkan desc)
+      });
+      const rowsWithLogin = rows.map((s) => ({ ...s, loginTerakhir: loginTerakhirMap[s.id] || null }));
+      setStaffList(rowsWithLogin);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  function hariSejakLogin(loginTerakhir) {
+    if (!loginTerakhir) return null;
+    return Math.floor((new Date() - new Date(loginTerakhir)) / (1000 * 60 * 60 * 24));
+  }
 
   async function panggilFungsi(body) {
     const res = await fetch(`${SUPABASE_URL}/functions/v1/kelola-akun-staff`, {
@@ -8945,7 +8959,7 @@ function AkunStaffPage({ token }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
-              {["Nama", "Email", "Role", "Kode Sales", ""].map((h) => (
+              {["Nama", "Email", "Role", "Kode Sales", "Login Terakhir", ""].map((h) => (
                 <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
               ))}
             </tr>
@@ -8957,6 +8971,24 @@ function AkunStaffPage({ token }) {
                 <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{s.email || "-"}</td>
                 <td style={{ padding: "12px 14px" }}>{ROLE_LABEL[s.role] || s.role}</td>
                 <td style={{ padding: "12px 14px" }}>{s.sales?.kode || "-"}</td>
+                <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
+                  {(() => {
+                    const hari = hariSejakLogin(s.loginTerakhir);
+                    const tidakAktif = hari === null || hari >= 60;
+                    return (
+                      <div>
+                        <p style={{ margin: 0, color: "#6B6F75", fontSize: 12 }}>
+                          {s.loginTerakhir ? new Date(s.loginTerakhir).toLocaleDateString("id-ID", { dateStyle: "medium" }) : "Belum pernah login"}
+                        </p>
+                        {tidakAktif && (
+                          <span style={{ display: "inline-block", marginTop: 3, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B" }}>
+                            {hari === null ? "Pertimbangkan nonaktifkan" : `${hari} hari tidak aktif`}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </td>
                 <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                   <button
                     onClick={() => { setResetTargetId(s.id); setPasswordBaru(""); }}
