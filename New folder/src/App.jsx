@@ -12206,7 +12206,7 @@ function LaporanPesananPage({ token }) {
     { label: "Total Pesanan Pengemasan", nilai: orderPengemasan.length, bg: "#F7F5F1", fg: "#24272B", icon: Package },
     { label: "Total Siap Kirim", nilai: orderSiapKirim.length, bg: "#D8E9E6", fg: "#28685D", icon: Truck },
     { label: "Total Proses Kirim", nilai: orderProsesKirim.length, bg: "#D8E9E6", fg: "#28685D", icon: Navigation },
-    { label: "Total Terselesaikan", nilai: orderSelesai.length, bg: "#EFE1BE", fg: "#8A6A1A", icon: Check },
+    { label: "Total Pesanan Terselesaikan", nilai: orderSelesai.length, bg: "#EFE1BE", fg: "#8A6A1A", icon: Check },
     { label: "Total Terlambat Pengemasan", nilai: orderTerlambatPengemasan.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
     { label: "Terlambat Diambil Kurir", nilai: orderTerlambatDiambil.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
     { label: "Terlambat Dikirim Kurir", nilai: orderTerlambatDikirimKurir.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
