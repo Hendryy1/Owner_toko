@@ -3925,6 +3925,9 @@ function SiapDikirimPage({ token, role }) {
         ) : (
           orderTampil.map((o) => {
             const isCod = o.metode_bayar === "cod";
+            const terlambatDiambil = o.status === "siap_dikirim" && cekTerlambatDiambilKurir(o);
+            const terlambatDikirimKurir = o.status === "proses_dikirim" && cekTerlambatDikirimKurir(o);
+            const isRetur = o.status === "diretur" || !!o.alasan_retur;
             return (
               <Card key={o.id} style={{ marginBottom: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
@@ -3940,6 +3943,15 @@ function SiapDikirimPage({ token, role }) {
                         {o.no_nota}
                         {isCod && (
                           <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                        )}
+                        {terlambatDiambil && (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B", verticalAlign: "middle" }}>Terlambat Diambil Kurir</span>
+                        )}
+                        {terlambatDikirimKurir && (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B", verticalAlign: "middle" }}>Terlambat Dikirim Kurir</span>
+                        )}
+                        {isRetur && (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>Retur</span>
                         )}
                       </p>
                       <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
