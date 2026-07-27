@@ -411,6 +411,7 @@ export default function OwnerDashboard() {
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "laporan_pesanan" && <LaporanPesananPage token={token} />}
+        {page === "laporan_performa" && <LaporanPerformaPage token={token} />}
         {page === "picking_list" && <PickingListPage token={token} role={profile?.role} userId={profile?.id} />}
         {page === "pesanan_siap" && <SiapDikirimPage token={token} role={profile?.role} />}
         {page === "siap_dikirim_baru" && <SiapDikirimBaruPage token={token} role={profile?.role} />}
@@ -511,6 +512,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
     { key: "laporan_pesanan", label: "Laporan Pesanan", icon: BarChart3, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
+    { key: "laporan_performa", label: "Laporan Performa", icon: TrendingUp, roles: ["owner"] },
     { key: "picking_list", label: "Picking List", icon: ClipboardCheck, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "pesanan_siap", label: "Pesanan", icon: PackagePlus, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "siap_dikirim_baru", label: "Siap Dikirim", icon: Truck, roles: ["owner", "admin_transaksi", "kurir", "staff_gudang"] },
@@ -12323,6 +12325,151 @@ function LaporanPesananPage({ token }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// LAPORAN PERFORMA - waktu penyelesaian tiap tahap (pengemasan,
+// tunggu diambil kurir, pengiriman) - buat evaluasi kebutuhan tim
+// ============================================================
+function LaporanPerformaPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [orders, setOrders] = useState([]);
+  const [error, setError] = useState("");
+  const [staffMap, setStaffMap] = useState({}); // { user_id: nama }
+  const [tanggalMulai, setTanggalMulai] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [tanggalSelesai, setTanggalSelesai] = useState(() => new Date().toISOString().slice(0, 10));
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(
+        token,
+        `orders?select=id,no_nota,created_at,picking_selesai_at,picking_oleh,outbound_verified_at,tanggal_dikirim,selesai_at,tujuan_kota,clients(kota)&status=eq.selesai&selesai_at=gte.${tanggalMulai}T00:00:00&selesai_at=lte.${tanggalSelesai}T23:59:59&order=selesai_at.desc&limit=3000`
+      );
+      setOrders(rows);
+
+      const staffRows = await supabaseFetch(token, "profiles?select=id,nama&role=eq.staff_gudang");
+      const map = {};
+      (staffRows || []).forEach((s) => { map[s.id] = s.nama; });
+      setStaffMap(map);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [tanggalMulai, tanggalSelesai]);
+
+  // Hitung selisih waktu dalam JAM antara 2 timestamp
+  function selisihJam(dari, sampai) {
+    if (!dari || !sampai) return null;
+    return (new Date(sampai) - new Date(dari)) / (1000 * 60 * 60);
+  }
+
+  function rataRata(arr) {
+    const valid = arr.filter((v) => v !== null && !isNaN(v));
+    if (valid.length === 0) return null;
+    return valid.reduce((sum, v) => sum + v, 0) / valid.length;
+  }
+
+  function formatJam(jam) {
+    if (jam === null) return "-";
+    if (jam < 1) return `${Math.round(jam * 60)} menit`;
+    if (jam < 24) return `${jam.toFixed(1)} jam`;
+    return `${(jam / 24).toFixed(1)} hari`;
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const waktuPengemasan = orders.map((o) => selisihJam(o.created_at, o.picking_selesai_at));
+  const waktuTungguKurir = orders.map((o) => selisihJam(o.outbound_verified_at, o.tanggal_dikirim));
+  const waktuPengiriman = orders.map((o) => selisihJam(o.tanggal_dikirim, o.selesai_at));
+  const waktuTotal = orders.map((o) => selisihJam(o.created_at, o.selesai_at));
+
+  const kartu = [
+    { label: "Rata-rata Waktu Pengemasan", nilai: formatJam(rataRata(waktuPengemasan)), sub: "dari pesanan dibuat sampai selesai di-picking", icon: Package, fg: "#24272B", bg: "#F7F5F1" },
+    { label: "Rata-rata Tunggu Diambil Kurir", nilai: formatJam(rataRata(waktuTungguKurir)), sub: "dari siap dikirim sampai diambil kurir", icon: Clock, fg: "#8A6A1A", bg: "#FBF0D9" },
+    { label: "Rata-rata Waktu Pengiriman", nilai: formatJam(rataRata(waktuPengiriman)), sub: "dari diambil kurir sampai selesai", icon: Truck, fg: "#28685D", bg: "#D8E9E6" },
+    { label: "Rata-rata Total (Ujung ke Ujung)", nilai: formatJam(rataRata(waktuTotal)), sub: "dari pesanan dibuat sampai benar-benar selesai", icon: TrendingUp, fg: "#24272B", bg: "#EFE1BE" },
+  ];
+
+  // Breakdown per staff gudang - buat evaluasi performa individual
+  const perStaff = {};
+  orders.forEach((o) => {
+    if (!o.picking_oleh) return;
+    const jam = selisihJam(o.created_at, o.picking_selesai_at);
+    if (jam === null) return;
+    if (!perStaff[o.picking_oleh]) perStaff[o.picking_oleh] = [];
+    perStaff[o.picking_oleh].push(jam);
+  });
+  const daftarStaff = Object.entries(perStaff)
+    .map(([userId, jamArr]) => ({ userId, nama: staffMap[userId] || "Staff (tidak diketahui)", jumlahOrder: jamArr.length, rataRata: rataRata(jamArr) }))
+    .sort((a, b) => a.rataRata - b.rataRata);
+
+  return (
+    <div>
+      <PageHeader title="Laporan Performa" subtitle={`Berdasarkan ${orders.length} pesanan selesai dalam rentang tanggal terpilih`} />
+
+      <Card style={{ marginBottom: 20, padding: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Dari Tanggal</label>
+            <input type="date" value={tanggalMulai} onChange={(e) => setTanggalMulai(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Sampai Tanggal</label>
+            <input type="date" value={tanggalSelesai} onChange={(e) => setTanggalSelesai(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
+          </div>
+        </div>
+      </Card>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 14, marginBottom: 24 }}>
+        {kartu.map((k, i) => (
+          <Card key={i} style={{ padding: 20 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: k.bg, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+              <k.icon size={19} color={k.fg} />
+            </div>
+            <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>{k.nilai}</p>
+            <p style={{ fontSize: 12.5, color: "#24272B", margin: "0 0 4px", fontWeight: 700 }}>{k.label}</p>
+            <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>{k.sub}</p>
+          </Card>
+        ))}
+      </div>
+
+      {daftarStaff.length > 0 && (
+        <>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Performa Picking per Staff Gudang</h2>
+          <Card style={{ padding: 0, overflow: "hidden" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ background: "#F7F5F1" }}>
+                  <th style={{ padding: "12px 16px", textAlign: "left", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Nama Staff</th>
+                  <th style={{ padding: "12px 16px", textAlign: "center", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Jumlah Order</th>
+                  <th style={{ padding: "12px 16px", textAlign: "right", fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase" }}>Rata-rata Waktu Picking</th>
+                </tr>
+              </thead>
+              <tbody>
+                {daftarStaff.map((s, i) => (
+                  <tr key={s.userId} style={{ borderTop: i > 0 ? "1px solid #EDEAE3" : "none" }}>
+                    <td style={{ padding: "12px 16px", fontSize: 13, fontWeight: 700, color: "#24272B" }}>{s.nama}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, textAlign: "center", color: "#6B6F75" }}>{s.jumlahOrder}</td>
+                    <td style={{ padding: "12px 16px", fontSize: 13, textAlign: "right", fontWeight: 700, color: "#24272B" }}>{formatJam(s.rataRata)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </>
+      )}
+
+      <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "20px 0 0", lineHeight: 1.6 }}>
+        Catatan: data ini cuma dari pesanan yang statusnya sudah "Selesai" dalam rentang tanggal terpilih (berdasarkan tanggal selesai). Pesanan yang masih berjalan tidak dihitung supaya rata-ratanya tidak bias.
+      </p>
     </div>
   );
 }
