@@ -3148,6 +3148,33 @@ function RekapNotaPage({ token }) {
   }
 
   // Status perjalanan pesanan - satu label yang mewakili semua tahap
+  function exportCSV() {
+    const header = ["No Nota", "Tanggal", "Kode Toko", "Nama Toko", "Status", "Metode Bayar", "Status Bayar", "Total"];
+    const rows = filtered.map((o) => {
+      const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+      return [
+        o.no_nota,
+        new Date(o.created_at).toLocaleDateString("id-ID"),
+        o.clients?.kode || "",
+        o.clients?.nama || "",
+        statusPerjalanan(o).label,
+        o.metode_bayar || "",
+        o.status_bayar || "",
+        total,
+      ];
+    });
+    const csvContent = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\r\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `rekap-nota-${filterYear}${filterMonth ? "-" + String(filterMonth).padStart(2, "0") : ""}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   function statusPerjalanan(o) {
     if (o.status === "ditolak") return { label: "Ditolak", bg: "#FBEAEA", fg: "#C0392B" };
     if (o.status === "menunggu_persetujuan") return { label: "Menunggu Persetujuan", bg: "#F7F5F1", fg: "#6B6F75" };
@@ -3245,6 +3272,16 @@ function RekapNotaPage({ token }) {
             <option value="selesai">Telah Diselesaikan</option>
             <option value="ditolak">Ditolak</option>
           </select>
+        )}
+        <div style={{ flex: 1 }} />
+        {activeTab === "nota" && (
+          <button
+            onClick={exportCSV}
+            disabled={filtered.length === 0}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "none", background: "#24272B", color: "#fff", fontSize: 13, fontWeight: 700 }}
+          >
+            <Download size={14} /> Export CSV
+          </button>
         )}
       </div>
 
@@ -12431,6 +12468,28 @@ function LaporanPesananPage({ token }) {
 
   const kartuAktif = selectedKartu !== null ? kartu[selectedKartu] : null;
 
+  function exportCSVKartu() {
+    if (!kartuAktif) return;
+    const header = ["No Nota", "Tanggal", "Toko", "Status", "Tujuan"];
+    const rows = kartuAktif.data.map((o) => [
+      o.no_nota,
+      new Date(o.created_at).toLocaleDateString("id-ID"),
+      o.clients?.nama || "",
+      o.status,
+      o.tujuan_alamat || o.clients?.alamat || "",
+    ]);
+    const csvContent = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\r\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `laporan-pesanan-${kartuAktif.label.toLowerCase().replace(/\s+/g, "-")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div>
       <PageHeader title="Laporan Pesanan" subtitle={`Ringkasan dari ${orders.length} pesanan (2000 terakhir)`} />
@@ -12454,7 +12513,17 @@ function LaporanPesananPage({ token }) {
 
       {kartuAktif && (
         <div>
-          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>{kartuAktif.label} ({kartuAktif.data.length})</h2>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: 0 }}>{kartuAktif.label} ({kartuAktif.data.length})</h2>
+            {kartuAktif.data.length > 0 && (
+              <button
+                onClick={exportCSVKartu}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 9, border: "none", background: "#24272B", color: "#fff", fontSize: 12.5, fontWeight: 700 }}
+              >
+                <Download size={13} /> Export CSV
+              </button>
+            )}
+          </div>
           {kartuAktif.data.length === 0 ? (
             <EmptyState text="Tidak ada pesanan di kategori ini." />
           ) : (
@@ -12639,6 +12708,31 @@ function LaporanPerformaPage({ token }) {
     .map(([userId, jamArr]) => ({ userId, nama: staffMap[userId] || "Staff (tidak diketahui)", jumlahOrder: jamArr.length, rataRata: rataRata(jamArr) }))
     .sort((a, b) => a.rataRata - b.rataRata);
 
+  function exportCSV() {
+    const header = ["No Nota", "Dibuat", "Picking Selesai", "Outbound", "Dikirim", "Selesai", "Waktu Pengemasan (jam)", "Waktu Tunggu Kurir (jam)", "Waktu Pengiriman (jam)"];
+    const rows = orders.map((o, i) => [
+      o.no_nota,
+      o.created_at ? new Date(o.created_at).toLocaleString("id-ID") : "",
+      o.picking_selesai_at ? new Date(o.picking_selesai_at).toLocaleString("id-ID") : "",
+      o.outbound_verified_at ? new Date(o.outbound_verified_at).toLocaleString("id-ID") : "",
+      o.tanggal_dikirim ? new Date(o.tanggal_dikirim).toLocaleString("id-ID") : "",
+      o.selesai_at ? new Date(o.selesai_at).toLocaleString("id-ID") : "",
+      waktuPengemasan[i] !== null ? waktuPengemasan[i].toFixed(1) : "",
+      waktuTungguKurir[i] !== null ? waktuTungguKurir[i].toFixed(1) : "",
+      waktuPengiriman[i] !== null ? waktuPengiriman[i].toFixed(1) : "",
+    ]);
+    const csvContent = [header, ...rows]
+      .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+      .join("\r\n");
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `laporan-performa-${tanggalMulai}-${tanggalSelesai}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div>
       <PageHeader title="Laporan Performa" subtitle={`Berdasarkan ${orders.length} pesanan selesai dalam rentang tanggal terpilih`} />
@@ -12653,6 +12747,14 @@ function LaporanPerformaPage({ token }) {
             <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Sampai Tanggal</label>
             <input type="date" value={tanggalSelesai} onChange={(e) => setTanggalSelesai(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
           </div>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={exportCSV}
+            disabled={orders.length === 0}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "none", background: "#24272B", color: "#fff", fontSize: 13, fontWeight: 700, alignSelf: "flex-end" }}
+          >
+            <Download size={14} /> Export CSV
+          </button>
         </div>
       </Card>
 
@@ -12782,6 +12884,33 @@ function LogAktivitasPage({ token }) {
               {daftarUser.map((u) => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
+          <div style={{ flex: 1 }} />
+          <button
+            onClick={() => {
+              const header = ["Waktu", "Staff", "Role", "Aksi", "Deskripsi"];
+              const rows = logTampil.map((l) => [
+                new Date(l.created_at).toLocaleString("id-ID"),
+                l.nama_user || "",
+                l.role_user || "",
+                labelAksi[l.aksi] || l.aksi,
+                l.deskripsi,
+              ]);
+              const csvContent = [header, ...rows]
+                .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+                .join("\r\n");
+              const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `log-aktivitas-${tanggalMulai}-${tanggalSelesai}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            disabled={logTampil.length === 0}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "none", background: "#24272B", color: "#fff", fontSize: 13, fontWeight: 700, alignSelf: "flex-end" }}
+          >
+            <Download size={14} /> Export CSV
+          </button>
         </div>
       </Card>
 
