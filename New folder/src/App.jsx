@@ -833,8 +833,8 @@ function BulkBarcodeModal({ orders, onClose, onSelesaiCetak }) {
   );
 }
 
-function Card({ children, style }) {
-  return <div style={{ background: "#fff", border: "1px solid #EDEAE3", borderRadius: 14, padding: 18, ...style }}>{children}</div>;
+function Card({ children, style, onClick }) {
+  return <div onClick={onClick} style={{ background: "#fff", border: "1px solid #EDEAE3", borderRadius: 14, padding: 18, ...style }}>{children}</div>;
 }
 
 // ============================================================
@@ -12122,6 +12122,8 @@ function LaporanPesananPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
   const [error, setError] = useState("");
+  const [selectedKartu, setSelectedKartu] = useState(null); // index kartu yang lagi dibuka daftarnya
+  const [detailOrder, setDetailOrder] = useState(null);
 
   async function load() {
     setLoading(true);
@@ -12129,7 +12131,7 @@ function LaporanPesananPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,status,created_at,tanggal_dikirim,picking_selesai_at,outbound_verified_at,alasan_retur,tujuan_kota,clients(kota)&order=created_at.desc&limit=2000"
+        "orders?select=id,no_nota,status,created_at,tanggal_dikirim,picking_selesai_at,outbound_verified_at,alasan_retur,tujuan_kota,tujuan_alamat,tujuan_telp,metode_bayar,clients(nama,kode,alamat,telp,kota),order_items(qty,products(kode,nama,satuan))&order=created_at.desc&limit=2000"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -12202,22 +12204,28 @@ function LaporanPesananPage({ token }) {
   const orderProsesRetur = orders.filter((o) => o.status === "diretur");
 
   const kartu = [
-    { label: "Total Pesanan Pengemasan", nilai: orderPengemasan.length, bg: "#F7F5F1", fg: "#24272B", icon: Package },
-    { label: "Total Siap Kirim", nilai: orderSiapKirim.length, bg: "#D8E9E6", fg: "#28685D", icon: Truck },
-    { label: "Total Proses Kirim", nilai: orderProsesKirim.length, bg: "#D8E9E6", fg: "#28685D", icon: Navigation },
-    { label: "Total Terlambat Pengemasan", nilai: orderTerlambatPengemasan.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
-    { label: "Terlambat Diambil Kurir", nilai: orderTerlambatDiambil.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
-    { label: "Terlambat Dikirim Kurir", nilai: orderTerlambatDikirimKurir.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
-    { label: "Total Proses Retur", nilai: orderProsesRetur.length, bg: "#FBF0D9", fg: "#8A6A1A", icon: RefreshCw },
-    { label: "Total Pesanan Terselesaikan", nilai: orderSelesai.length, bg: "#EFE1BE", fg: "#8A6A1A", icon: Check },
+    { label: "Total Pesanan Pengemasan", nilai: orderPengemasan.length, bg: "#F7F5F1", fg: "#24272B", icon: Package, data: orderPengemasan },
+    { label: "Total Siap Kirim", nilai: orderSiapKirim.length, bg: "#D8E9E6", fg: "#28685D", icon: Truck, data: orderSiapKirim },
+    { label: "Total Proses Kirim", nilai: orderProsesKirim.length, bg: "#D8E9E6", fg: "#28685D", icon: Navigation, data: orderProsesKirim },
+    { label: "Total Terlambat Pengemasan", nilai: orderTerlambatPengemasan.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock, data: orderTerlambatPengemasan },
+    { label: "Terlambat Diambil Kurir", nilai: orderTerlambatDiambil.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock, data: orderTerlambatDiambil },
+    { label: "Terlambat Dikirim Kurir", nilai: orderTerlambatDikirimKurir.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock, data: orderTerlambatDikirimKurir },
+    { label: "Total Proses Retur", nilai: orderProsesRetur.length, bg: "#FBF0D9", fg: "#8A6A1A", icon: RefreshCw, data: orderProsesRetur },
+    { label: "Total Pesanan Terselesaikan", nilai: orderSelesai.length, bg: "#EFE1BE", fg: "#8A6A1A", icon: Check, data: orderSelesai },
   ];
+
+  const kartuAktif = selectedKartu !== null ? kartu[selectedKartu] : null;
 
   return (
     <div>
       <PageHeader title="Laporan Pesanan" subtitle={`Ringkasan dari ${orders.length} pesanan (2000 terakhir)`} />
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginBottom: 20 }}>
         {kartu.map((k, i) => (
-          <Card key={i} style={{ padding: 20 }}>
+          <Card
+            key={i}
+            onClick={() => setSelectedKartu(selectedKartu === i ? null : i)}
+            style={{ padding: 20, cursor: "pointer", border: selectedKartu === i ? "1.5px solid #E8A426" : "1.5px solid transparent" }}
+          >
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
               <div style={{ width: 40, height: 40, borderRadius: 10, background: k.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <k.icon size={19} color={k.fg} />
@@ -12228,6 +12236,93 @@ function LaporanPesananPage({ token }) {
           </Card>
         ))}
       </div>
+
+      {kartuAktif && (
+        <div>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>{kartuAktif.label} ({kartuAktif.data.length})</h2>
+          {kartuAktif.data.length === 0 ? (
+            <EmptyState text="Tidak ada pesanan di kategori ini." />
+          ) : (
+            kartuAktif.data.map((o) => (
+              <Card key={o.id} style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                  <div>
+                    <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+                    <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                  </div>
+                  <button
+                    onClick={() => setDetailOrder(o)}
+                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                  >
+                    <Eye size={15} /> Lihat Detail
+                  </button>
+                </div>
+              </Card>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* MODAL LIHAT DETAIL */}
+      {detailOrder && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
+            <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>{detailOrder.no_nota}</h2>
+            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 20px" }}>
+              {new Date(detailOrder.created_at).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
+              <div>
+                <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Toko</p>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{detailOrder.clients?.nama} ({detailOrder.clients?.kode})</p>
+              </div>
+              <div>
+                <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Metode Bayar</p>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0, textTransform: "capitalize" }}>{detailOrder.metode_bayar}</p>
+              </div>
+              <div>
+                <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Tujuan</p>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{detailOrder.tujuan_alamat || detailOrder.clients?.alamat}</p>
+              </div>
+              <div>
+                <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Status</p>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>
+                  {{
+                    menunggu_pembayaran: "Menunggu Pembayaran",
+                    menunggu_pengiriman: "Menunggu Pengiriman",
+                    siap_dikirim: "Siap Dikirim",
+                    proses_dikirim: "Proses Dikirim",
+                    diretur: "Diretur",
+                    selesai: "Selesai",
+                  }[detailOrder.status] || detailOrder.status}
+                </p>
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Barang Dipesan</p>
+              {(detailOrder.order_items || []).map((it, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, padding: "6px 0", borderBottom: "1px solid #EDEAE3" }}>
+                  <span style={{ color: "#24272B" }}>{it.products?.kode} - {it.products?.nama}</span>
+                  <span style={{ fontWeight: 700, color: "#24272B" }}>{it.qty} {it.products?.satuan}</span>
+                </div>
+              ))}
+            </div>
+
+            {detailOrder.alasan_retur && (
+              <div style={{ background: "#FBEAEA", borderRadius: 9, padding: 12, marginBottom: 20 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#C0392B", textTransform: "uppercase", margin: "0 0 4px" }}>Alasan Retur</p>
+                <p style={{ fontSize: 12.5, color: "#C0392B", margin: 0 }}>{detailOrder.alasan_retur}</p>
+              </div>
+            )}
+
+            <button onClick={() => setDetailOrder(null)} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+              Tutup
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
