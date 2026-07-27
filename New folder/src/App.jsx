@@ -3610,7 +3610,7 @@ function SiapDikirimPage({ token, role }) {
     setSelectedIds((prev) => (prev.size === orders.length ? new Set() : new Set(orders.map((o) => o.id))));
   }
 
-  function cetakMassal(jenisType) {
+  function cetakMassal(jenisType, isUlang) {
     let dipilih = orders.filter((o) => selectedIds.has(o.id));
     if (jenisType === "nota" || jenisType === "surat_jalan") {
       // Nota & Surat Jalan cuma berlaku untuk pesanan yang statusnya
@@ -3623,18 +3623,34 @@ function SiapDikirimPage({ token, role }) {
         return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
       });
     }
+
+    const totalTerpilihAwal = dipilih.length;
+    const kolom = jenisType === "nota" ? "nota_dicetak_at" : "surat_jalan_dicetak_at";
+    if (!isUlang) {
+      // Bukan cetak ulang - lewati diam-diam pesanan yang SUDAH pernah
+      // dicetak, walau tetap kecentang.
+      dipilih = dipilih.filter((o) => !o[kolom]);
+    }
+
     if (dipilih.length === 0) {
-      alert(jenisType === "surat_jalan" ? "Tidak ada pesanan terpilih yang berstatus Siap Kirim & tujuannya Pekanbaru." : jenisType === "nota" ? "Tidak ada pesanan terpilih yang berstatus Siap Kirim." : "Pilih dulu minimal 1 pesanan.");
+      const namaDokumen = jenisType === "nota" ? "Nota" : "Surat Jalan";
+      if (totalTerpilihAwal > 0 && !isUlang) {
+        alert(`Semua pesanan terpilih sudah pernah dicetak ${namaDokumen}-nya. Pakai "Cetak Ulang ${namaDokumen}" kalau tetap mau cetak lagi.`);
+      } else {
+        alert(jenisType === "surat_jalan" ? "Tidak ada pesanan terpilih yang berstatus Siap Kirim & tujuannya Pekanbaru." : "Tidak ada pesanan terpilih yang berstatus Siap Kirim.");
+      }
       return;
     }
-    setBulkPrint({ orders: dipilih, type: jenisType });
-    if (jenisType === "nota" || jenisType === "surat_jalan") {
-      const now = new Date().toISOString();
-      const kolom = jenisType === "nota" ? "nota_dicetak_at" : "surat_jalan_dicetak_at";
-      const ids = dipilih.map((o) => o.id);
-      supabaseFetch(token, `orders?id=in.(${ids.join(",")})`, { method: "PATCH", body: JSON.stringify({ [kolom]: now }) }).catch(() => {});
-      setOrders((prev) => prev.map((o) => (ids.includes(o.id) ? { ...o, [kolom]: now } : o)));
+    if (!isUlang && dipilih.length < totalTerpilihAwal) {
+      const namaDokumen = jenisType === "nota" ? "Nota" : "Surat Jalan";
+      alert(`${totalTerpilihAwal - dipilih.length} pesanan dilewati karena sudah pernah dicetak ${namaDokumen}-nya. Cuma ${dipilih.length} pesanan baru yang akan dicetak.`);
     }
+
+    setBulkPrint({ orders: dipilih, type: jenisType });
+    const now = new Date().toISOString();
+    const ids = dipilih.map((o) => o.id);
+    supabaseFetch(token, `orders?id=in.(${ids.join(",")})`, { method: "PATCH", body: JSON.stringify({ [kolom]: now }) }).catch(() => {});
+    setOrders((prev) => prev.map((o) => (ids.includes(o.id) ? { ...o, [kolom]: now } : o)));
   }
 
   useEffect(() => {
@@ -3884,34 +3900,73 @@ function SiapDikirimPage({ token, role }) {
             </button>
           </div>
 
-          <div style={{ maxHeight: showCetakOptions ? 200 : 0, overflow: "hidden", transition: "max-height 0.25s ease" }}>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12, paddingTop: 12, borderTop: "1px solid #EDEAE3" }}>
-              <button
-                onClick={() => cetakMassal("nota")}
-                disabled={selectedIds.size === 0}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
-              >
-                <Receipt size={14} /> Cetak Nota Terpilih
-              </button>
-              <button
-                onClick={() => cetakMassal("surat_jalan")}
-                disabled={selectedIds.size === 0}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
-              >
-                <FileEdit size={14} /> Cetak Surat Jalan Terpilih
-              </button>
-              {role !== "staff_gudang" && (
+          <div style={{ maxHeight: showCetakOptions ? 400 : 0, overflow: "hidden", transition: "max-height 0.25s ease" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid #EDEAE3" }}>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
-                  onClick={() => {
-                    const dipilih = orders.filter((o) => selectedIds.has(o.id));
-                    if (dipilih.length === 0) { alert("Pilih dulu minimal 1 pesanan."); return; }
-                    setBulkBarcode(dipilih);
-                  }}
+                  onClick={() => cetakMassal("nota", false)}
                   disabled={selectedIds.size === 0}
                   style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
                 >
-                  <Barcode size={14} /> Cetak Barcode Terpilih
+                  <Receipt size={14} /> Cetak Nota Terpilih
                 </button>
+                <button
+                  onClick={() => { if (confirm("Cetak ulang Nota untuk semua pesanan terpilih (termasuk yang sudah pernah dicetak)?")) cetakMassal("nota", true); }}
+                  disabled={selectedIds.size === 0}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#FBF0D9", color: selectedIds.size === 0 ? "#9CA0A6" : "#8A6A1A", fontSize: 12.5, fontWeight: 700 }}
+                >
+                  <RefreshCw size={14} /> Cetak Ulang Nota
+                </button>
+              </div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => cetakMassal("surat_jalan", false)}
+                  disabled={selectedIds.size === 0}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                >
+                  <FileEdit size={14} /> Cetak Surat Jalan Terpilih
+                </button>
+                <button
+                  onClick={() => { if (confirm("Cetak ulang Surat Jalan untuk semua pesanan terpilih (termasuk yang sudah pernah dicetak)?")) cetakMassal("surat_jalan", true); }}
+                  disabled={selectedIds.size === 0}
+                  style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#FBF0D9", color: selectedIds.size === 0 ? "#9CA0A6" : "#8A6A1A", fontSize: 12.5, fontWeight: 700 }}
+                >
+                  <RefreshCw size={14} /> Cetak Ulang Surat Jalan
+                </button>
+              </div>
+              {role !== "staff_gudang" && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => {
+                      const totalTerpilihAwal = orders.filter((o) => selectedIds.has(o.id)).length;
+                      const dipilih = orders.filter((o) => selectedIds.has(o.id) && !o.barcode_dicetak_at);
+                      if (dipilih.length === 0) {
+                        alert(totalTerpilihAwal > 0 ? 'Semua pesanan terpilih sudah pernah dicetak Barcode-nya. Pakai "Cetak Ulang Barcode" kalau tetap mau cetak lagi.' : "Pilih dulu minimal 1 pesanan.");
+                        return;
+                      }
+                      if (dipilih.length < totalTerpilihAwal) {
+                        alert(`${totalTerpilihAwal - dipilih.length} pesanan dilewati karena sudah pernah dicetak Barcode-nya. Cuma ${dipilih.length} pesanan baru yang akan dicetak.`);
+                      }
+                      setBulkBarcode(dipilih);
+                    }}
+                    disabled={selectedIds.size === 0}
+                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#fff", color: selectedIds.size === 0 ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                  >
+                    <Barcode size={14} /> Cetak Barcode Terpilih
+                  </button>
+                  <button
+                    onClick={() => {
+                      const dipilih = orders.filter((o) => selectedIds.has(o.id));
+                      if (dipilih.length === 0) { alert("Pilih dulu minimal 1 pesanan."); return; }
+                      if (!confirm("Cetak ulang Barcode untuk semua pesanan terpilih (termasuk yang sudah pernah dicetak)?")) return;
+                      setBulkBarcode(dipilih);
+                    }}
+                    disabled={selectedIds.size === 0}
+                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: selectedIds.size === 0 ? "#F7F5F1" : "#FBF0D9", color: selectedIds.size === 0 ? "#9CA0A6" : "#8A6A1A", fontSize: 12.5, fontWeight: 700 }}
+                  >
+                    <RefreshCw size={14} /> Cetak Ulang Barcode
+                  </button>
+                </div>
               )}
             </div>
           </div>
