@@ -445,6 +445,7 @@ export default function OwnerDashboard() {
         {page === "laporan_pesanan" && <LaporanPesananPage token={token} />}
         {page === "laporan_performa" && <LaporanPerformaPage token={token} />}
         {page === "log_aktivitas" && <LogAktivitasPage token={token} />}
+        {page === "kelola_gudang" && <KelolaGudangPage token={token} />}
         {page === "picking_list" && <PickingListPage token={token} role={profile?.role} userId={profile?.id} />}
         {page === "pesanan_siap" && <SiapDikirimPage token={token} role={profile?.role} />}
         {page === "siap_dikirim_baru" && <SiapDikirimBaruPage token={token} role={profile?.role} />}
@@ -548,6 +549,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "laporan_pesanan", label: "Laporan Pesanan", icon: BarChart3, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "laporan_performa", label: "Laporan Performa", icon: TrendingUp, roles: ["owner"] },
     { key: "log_aktivitas", label: "Log Aktivitas", icon: History, roles: ["owner"] },
+    { key: "kelola_gudang", label: "Kelola Gudang", icon: Boxes, roles: ["owner"] },
     { key: "picking_list", label: "Picking List", icon: ClipboardCheck, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "pesanan_siap", label: "Pesanan", icon: PackagePlus, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "siap_dikirim_baru", label: "Siap Dikirim", icon: Truck, roles: ["owner", "admin_transaksi", "kurir", "staff_gudang"] },
@@ -12967,6 +12969,145 @@ function LogAktivitasPage({ token }) {
             <button onClick={() => setDetailLog(null)} style={{ width: "100%", marginTop: 18, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
               Tutup
             </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// KELOLA GUDANG - fondasi dasar multi gudang (persiapan jangka panjang,
+// belum terhubung ke alur stock/order - cuma kelola daftar gudang dulu)
+// ============================================================
+function KelolaGudangPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [gudangList, setGudangList] = useState([]);
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [form, setForm] = useState({ nama: "", kota: "", alamat: "" });
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "gudang?select=*&order=created_at.asc");
+      setGudangList(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  function bukaTambah() {
+    setForm({ nama: "", kota: "", alamat: "" });
+    setEditingId(null);
+    setShowForm(true);
+  }
+
+  function bukaEdit(g) {
+    setForm({ nama: g.nama, kota: g.kota || "", alamat: g.alamat || "" });
+    setEditingId(g.id);
+    setShowForm(true);
+  }
+
+  async function simpan() {
+    if (!form.nama.trim()) { alert("Isi dulu nama gudang."); return; }
+    setSaving(true);
+    try {
+      if (editingId) {
+        await supabaseFetch(token, `gudang?id=eq.${editingId}`, { method: "PATCH", body: JSON.stringify(form) });
+      } else {
+        await supabaseFetch(token, "gudang", { method: "POST", body: JSON.stringify(form) });
+      }
+      setShowForm(false);
+      load();
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function toggleAktif(g) {
+    try {
+      await supabaseFetch(token, `gudang?id=eq.${g.id}`, { method: "PATCH", body: JSON.stringify({ aktif: !g.aktif }) });
+      load();
+    } catch (e) {
+      alert("Gagal ubah status: " + e.message);
+    }
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  return (
+    <div>
+      <PageHeader title="Kelola Gudang" subtitle="Fondasi dasar untuk persiapan multi gudang di masa depan" />
+
+      <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBF0D9", borderRadius: 10, padding: 12, marginBottom: 20 }}>
+        <AlertCircle size={15} color="#8A6A1A" style={{ flexShrink: 0, marginTop: 1 }} />
+        <p style={{ fontSize: 12, color: "#8A6A1A", margin: 0, lineHeight: 1.5 }}>
+          Menu ini baru fondasi dasar - data gudang di sini <strong>belum terhubung otomatis</strong> ke stock/picking/order. Kalau nanti benar-benar buka gudang kedua, hubungi saya lagi untuk kembangkan integrasinya sesuai kebutuhan operasional saat itu.
+        </p>
+      </div>
+
+      <button
+        onClick={bukaTambah}
+        style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, marginBottom: 20 }}
+      >
+        + Tambah Gudang
+      </button>
+
+      {gudangList.map((g) => (
+        <Card key={g.id} style={{ marginBottom: 12 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+            <div>
+              <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
+                {g.nama}
+                {!g.aktif && (
+                  <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#F7F5F1", color: "#9CA0A6", verticalAlign: "middle" }}>Nonaktif</span>
+                )}
+              </p>
+              <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{g.kota || "-"}</p>
+              {g.alamat && <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>{g.alamat}</p>}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => bukaEdit(g)} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}>
+                Edit
+              </button>
+              <button onClick={() => toggleAktif(g)} style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: g.aktif ? "#C0392B" : "#28685D", fontSize: 12.5, fontWeight: 700 }}>
+                {g.aktif ? "Nonaktifkan" : "Aktifkan"}
+              </button>
+            </div>
+          </div>
+        </Card>
+      ))}
+
+      {showForm && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 400, padding: 26 }}>
+            <h2 className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 20px" }}>{editingId ? "Edit Gudang" : "Tambah Gudang"}</h2>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Nama Gudang</label>
+              <input value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5 }} />
+            </div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Kota</label>
+              <input value={form.kota} onChange={(e) => setForm({ ...form, kota: e.target.value })} style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5 }} />
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Alamat</label>
+              <textarea value={form.alamat} onChange={(e) => setForm({ ...form, alamat: e.target.value })} rows={2} style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, resize: "vertical" }} />
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setShowForm(false)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                Batal
+              </button>
+              <button onClick={simpan} disabled={saving} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
+                {saving ? "Menyimpan..." : "Simpan"}
+              </button>
+            </div>
           </div>
         </div>
       )}
