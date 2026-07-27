@@ -3610,6 +3610,11 @@ function SiapDikirimPage({ token, role }) {
 
   function cetakMassal(jenisType) {
     let dipilih = orders.filter((o) => selectedIds.has(o.id));
+    if (jenisType === "nota" || jenisType === "surat_jalan") {
+      // Nota & Surat Jalan cuma berlaku untuk pesanan yang statusnya
+      // sudah "Siap Kirim" - selain itu dilewati diam-diam dari bulk ini.
+      dipilih = dipilih.filter((o) => o.status === "siap_dikirim");
+    }
     if (jenisType === "surat_jalan") {
       dipilih = dipilih.filter((o) => {
         const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
@@ -3617,10 +3622,17 @@ function SiapDikirimPage({ token, role }) {
       });
     }
     if (dipilih.length === 0) {
-      alert(jenisType === "surat_jalan" ? "Tidak ada pesanan terpilih yang tujuannya Pekanbaru." : "Pilih dulu minimal 1 pesanan.");
+      alert(jenisType === "surat_jalan" ? "Tidak ada pesanan terpilih yang berstatus Siap Kirim & tujuannya Pekanbaru." : jenisType === "nota" ? "Tidak ada pesanan terpilih yang berstatus Siap Kirim." : "Pilih dulu minimal 1 pesanan.");
       return;
     }
     setBulkPrint({ orders: dipilih, type: jenisType });
+    if (jenisType === "nota" || jenisType === "surat_jalan") {
+      const now = new Date().toISOString();
+      const kolom = jenisType === "nota" ? "nota_dicetak_at" : "surat_jalan_dicetak_at";
+      const ids = dipilih.map((o) => o.id);
+      supabaseFetch(token, `orders?id=in.(${ids.join(",")})`, { method: "PATCH", body: JSON.stringify({ [kolom]: now }) }).catch(() => {});
+      setOrders((prev) => prev.map((o) => (ids.includes(o.id) ? { ...o, [kolom]: now } : o)));
+    }
   }
 
   useEffect(() => {
@@ -3670,24 +3682,6 @@ function SiapDikirimPage({ token, role }) {
       alert("Gagal tandai sudah dicetak: " + e.message);
     }
     setMarkingPrinted(false);
-  }
-
-  async function tandaiNotaDicetak(orderId) {
-    try {
-      const now = new Date().toISOString();
-      await supabaseFetch(token, `orders?id=eq.${orderId}`, { method: "PATCH", body: JSON.stringify({ nota_dicetak_at: now }) });
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, nota_dicetak_at: now } : o)));
-      setDetailOrder((prev) => (prev && prev.id === orderId ? { ...prev, nota_dicetak_at: now } : prev));
-    } catch (e) { /* diamkan - jangan ganggu proses cetak kalau tanda gagal disimpan */ }
-  }
-
-  async function tandaiSuratJalanDicetak(orderId) {
-    try {
-      const now = new Date().toISOString();
-      await supabaseFetch(token, `orders?id=eq.${orderId}`, { method: "PATCH", body: JSON.stringify({ surat_jalan_dicetak_at: now }) });
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, surat_jalan_dicetak_at: now } : o)));
-      setDetailOrder((prev) => (prev && prev.id === orderId ? { ...prev, surat_jalan_dicetak_at: now } : prev));
-    } catch (e) { /* diamkan - jangan ganggu proses cetak kalau tanda gagal disimpan */ }
   }
 
   // Aturan 1: order masuk SEBELUM jam 13:00 - wajib upload bukti pengiriman
@@ -3860,38 +3854,7 @@ function SiapDikirimPage({ token, role }) {
         </button>
       </div>
 
-      {isTabLain ? (
-        orderTampil.length === 0 ? (
-          <EmptyState text="Tidak ada pesanan di kategori ini." />
-        ) : (
-          orderTampil.map((o) => {
-            const isCod = o.metode_bayar === "cod";
-            return (
-              <Card key={o.id} style={{ marginBottom: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
-                  <div>
-                    <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
-                      {o.no_nota}
-                      {isCod && (
-                        <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
-                      )}
-                    </p>
-                    <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
-                  </div>
-                  <button
-                    onClick={() => setDetailOrder(o)}
-                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
-                  >
-                    <Eye size={15} /> Lihat Detail
-                  </button>
-                </div>
-              </Card>
-            );
-          })
-        )
-      ) : null}
-
-      {!isTabLain && orderPengemasanSemua.length > 0 && role !== "kurir" && role !== "staff_gudang" && (
+      {orderTampil.length > 0 && role !== "kurir" && role !== "staff_gudang" && (
         <Card style={{ marginBottom: 16, padding: 14 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#24272B", cursor: "pointer" }}>
@@ -3955,6 +3918,46 @@ function SiapDikirimPage({ token, role }) {
           </p>
         </Card>
       )}
+
+      {isTabLain ? (
+        orderTampil.length === 0 ? (
+          <EmptyState text="Tidak ada pesanan di kategori ini." />
+        ) : (
+          orderTampil.map((o) => {
+            const isCod = o.metode_bayar === "cod";
+            return (
+              <Card key={o.id} style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    {role !== "kurir" && role !== "staff_gudang" && (
+                      <input
+                        type="checkbox" checked={selectedIds.has(o.id)} onChange={() => toggleSelect(o.id)}
+                        style={{ width: 16, height: 16, marginTop: 4 }}
+                      />
+                    )}
+                    <div>
+                      <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
+                        {o.no_nota}
+                        {isCod && (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                        )}
+                      </p>
+                      <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setDetailOrder(o)}
+                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                  >
+                    <Eye size={15} /> Lihat Detail
+                  </button>
+                </div>
+              </Card>
+            );
+          })
+        )
+      ) : null}
+
 
       {!isTabLain && (orderTampil.length === 0 ? (
         <EmptyState text={activeTab === "terlambat" ? "Tidak ada pesanan yang terlambat pengemasannya. Kerja bagus!" : "Tidak ada pesanan baru yang siap dikirim saat ini."} />
@@ -4062,43 +4065,6 @@ function SiapDikirimPage({ token, role }) {
                 <p style={{ fontSize: 12.5, color: "#C0392B", margin: 0 }}>{detailOrder.alasan_retur}</p>
               </div>
             )}
-
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-              {detailOrder.status === "siap_dikirim" && (
-                <>
-                  <button
-                    onClick={() => {
-                      if (detailOrder.nota_dicetak_at && !confirm("Nota ini sudah pernah dicetak. Cetak ulang?")) return;
-                      setPrintingOrder(detailOrder); setPrintingType("nota"); tandaiNotaDicetak(detailOrder.id);
-                    }}
-                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
-                  >
-                    <Receipt size={15} /> {detailOrder.nota_dicetak_at ? "Cetak Nota Ulang" : "Cetak Nota"}
-                  </button>
-                  {(() => {
-                    const kotaTujuanAsli = detailOrder.tujuan_kota || detailOrder.clients?.kota;
-                    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
-                    return isPekanbaru && (
-                      <button
-                        onClick={() => {
-                          if (detailOrder.surat_jalan_dicetak_at && !confirm("Surat Jalan ini sudah pernah dicetak. Cetak ulang?")) return;
-                          setPrintingOrder(detailOrder); setPrintingType("surat_jalan"); tandaiSuratJalanDicetak(detailOrder.id);
-                        }}
-                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
-                      >
-                        <FileEdit size={15} /> {detailOrder.surat_jalan_dicetak_at ? "Cetak Surat Jalan Ulang" : "Cetak Surat Jalan"}
-                      </button>
-                    );
-                  })()}
-                </>
-              )}
-              <button
-                onClick={() => setShowBarcode(detailOrder.id)}
-                style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
-              >
-                <Barcode size={15} /> Cetak Barcode
-              </button>
-            </div>
 
             <button onClick={() => setDetailOrder(null)} style={{ width: "100%", padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
               Tutup
