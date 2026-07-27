@@ -6068,6 +6068,36 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
       setError("Kode, Nama, Satuan, dan Harga Jual wajib diisi.");
       return;
     }
+    // Validasi angka dasar - cegah kesalahan input umum (harga negatif/nol,
+    // stock negatif, diskon di luar rentang wajar)
+    if (Number(form.hargaJual) <= 0) {
+      setError("Harga Jual harus lebih besar dari 0.");
+      return;
+    }
+    if (form.hargaAsli && Number(form.hargaAsli) < 0) {
+      setError("Harga Coret tidak boleh negatif.");
+      return;
+    }
+    if (form.hargaModal && Number(form.hargaModal) < 0) {
+      setError("Harga Modal tidak boleh negatif.");
+      return;
+    }
+    if (Number(form.stockAwal) < 0) {
+      setError("Stock Awal tidak boleh negatif.");
+      return;
+    }
+    if (Number(form.isiPerKoli) < 0) {
+      setError("Isi Per Koli tidak boleh negatif.");
+      return;
+    }
+    if (Number(form.diskonKoliPct) < 0 || Number(form.diskonKoliPct) > 100) {
+      setError("Diskon Koli harus di antara 0-100%.");
+      return;
+    }
+    if (Number(form.cashbackPerKoli) < 0) {
+      setError("Cashback Per Koli tidak boleh negatif.");
+      return;
+    }
     setError("");
     setSaving(true);
     try {
@@ -6197,37 +6227,37 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
           </div>
           <div>
             <label style={labelStyle}>Harga Jual (Rp)</label>
-            <input type="number" value={form.hargaJual} onChange={set("hargaJual")} style={fieldStyle} />
+            <input type="number" min="1" value={form.hargaJual} onChange={set("hargaJual")} style={fieldStyle} />
           </div>
           <div>
             <label style={labelStyle}>Harga Asli (opsional)</label>
-            <input type="number" value={form.hargaAsli} onChange={set("hargaAsli")} style={fieldStyle} />
+            <input type="number" min="0" value={form.hargaAsli} onChange={set("hargaAsli")} style={fieldStyle} />
           </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
           <div>
             <label style={labelStyle}>Harga Modal (Rp) - rahasia</label>
-            <input type="number" value={form.hargaModal} onChange={set("hargaModal")} style={fieldStyle} />
+            <input type="number" min="0" value={form.hargaModal} onChange={set("hargaModal")} style={fieldStyle} />
           </div>
           <div>
             <label style={labelStyle}>Stock Awal</label>
-            <input type="number" value={form.stockAwal} onChange={set("stockAwal")} style={fieldStyle} />
+            <input type="number" min="0" value={form.stockAwal} onChange={set("stockAwal")} style={fieldStyle} />
           </div>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
           <div>
             <label style={labelStyle}>Jumlah 1 Koli</label>
-            <input type="number" value={form.isiPerKoli} onChange={set("isiPerKoli")} style={fieldStyle} />
+            <input type="number" min="0" value={form.isiPerKoli} onChange={set("isiPerKoli")} style={fieldStyle} />
           </div>
           <div>
             <label style={labelStyle}>Diskon Koli (%)</label>
-            <input type="number" value={form.diskonKoliPct} onChange={set("diskonKoliPct")} style={fieldStyle} />
+            <input type="number" min="0" max="100" value={form.diskonKoliPct} onChange={set("diskonKoliPct")} style={fieldStyle} />
           </div>
           <div>
             <label style={labelStyle}>Cashback/Koli (Rp)</label>
-            <input type="number" value={form.cashbackPerKoli} onChange={set("cashbackPerKoli")} style={fieldStyle} />
+            <input type="number" min="0" value={form.cashbackPerKoli} onChange={set("cashbackPerKoli")} style={fieldStyle} />
           </div>
         </div>
 
