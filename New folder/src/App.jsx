@@ -519,7 +519,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "request_area", label: "Request Area Sales", icon: MapPin, roles: ["owner"] },
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
-    { key: "konfirmasi_bayar", label: "Konfirmasi Pembayaran", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
+    { key: "konfirmasi_bayar", label: "Konfirmasi Pesanan Selesai", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
     { key: "laporan_pesanan", label: "Laporan Pesanan", icon: BarChart3, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "laporan_performa", label: "Laporan Performa", icon: TrendingUp, roles: ["owner"] },
     { key: "picking_list", label: "Picking List", icon: ClipboardCheck, roles: ["owner", "admin_transaksi", "staff_gudang"] },
@@ -3493,7 +3493,7 @@ function KonfirmasiPembayaranPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Konfirmasi Pembayaran" subtitle={`${menunggu.length} pesanan menunggu konfirmasi pembayaran`} />
+      <PageHeader title="Konfirmasi Pesanan Selesai" subtitle={`${menunggu.length} pesanan menunggu konfirmasi`} />
 
       {returReviewList.length > 0 && (
         <>
