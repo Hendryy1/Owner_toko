@@ -3398,6 +3398,7 @@ function KonfirmasiPembayaranPage({ token }) {
   const [reviewingCod, setReviewingCod] = useState(null); // order id yang lagi direview
   const [infoKurirOrder, setInfoKurirOrder] = useState(null); // { nama_kurir, jenis_kurir } | null | "loading"
   const [returReviewList, setReturReviewList] = useState([]);
+  const [refundMetodeTerpilih, setRefundMetodeTerpilih] = useState(null); // "saldo" | "manual" | null
   const [viewingRetur, setViewingRetur] = useState(null);
   const [processingReturId, setProcessingReturId] = useState(null);
 
@@ -3421,7 +3422,7 @@ function KonfirmasiPembayaranPage({ token }) {
 
       // Order retur yang SUDAH dikonfirmasi (ada bukti+alasan) di Proses
       // Pengiriman - tinggal direview Owner sebelum ditutup
-      const returRows = await supabaseFetch(token, "orders?select=id,no_nota,alasan_retur,bukti_retur_url,tanggal_retur,clients(nama,kode)&status=eq.diretur&bukti_retur_url=not.is.null&order=tanggal_retur.desc");
+      const returRows = await supabaseFetch(token, "orders?select=id,no_nota,alasan_retur,bukti_retur_url,tanggal_retur,status_bayar,metode_bayar,client_id,refund_metode,refund_diproses_at,clients(nama,kode),order_items(qty,subtotal_setelah_diskon)&status=eq.diretur&bukti_retur_url=not.is.null&order=tanggal_retur.desc");
       setReturReviewList(returRows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -3445,6 +3446,7 @@ function KonfirmasiPembayaranPage({ token }) {
 
   async function bukaViewRetur(order) {
     setViewingRetur(order);
+    setRefundMetodeTerpilih(order.refund_metode || null);
     setInfoKurirOrder("loading");
     try {
       const itemRows = await supabaseFetch(token, `laporan_kurir_items?select=laporan_kurir(nama_kurir,jenis_kurir,jenis_laporan)&order_id=eq.${order.id}&order=created_at.desc&limit=1`);
@@ -3458,10 +3460,22 @@ function KonfirmasiPembayaranPage({ token }) {
     }
   }
 
-  async function selesaikanRetur(orderId) {
+  async function selesaikanRetur(orderId, refundMetode, totalRefund, clientId) {
     setProcessingReturId(orderId);
     try {
-      await supabaseFetch(token, `orders?id=eq.${orderId}`, { method: "PATCH", body: JSON.stringify({ status: "selesai" }) });
+      if (refundMetode === "saldo") {
+        await supabaseFetch(token, "saldo_ledger", {
+          method: "POST",
+          body: JSON.stringify({ client_id: clientId, jenis: "refund", jumlah: totalRefund, order_id: orderId, keterangan: "Refund otomatis dari retur pesanan" }),
+        });
+      }
+      await supabaseFetch(token, `orders?id=eq.${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          status: "selesai",
+          ...(refundMetode ? { refund_metode: refundMetode, refund_diproses_at: new Date().toISOString() } : {}),
+        }),
+      });
       setReturReviewList((prev) => prev.filter((o) => o.id !== orderId));
       setViewingRetur(null);
     } catch (e) {
@@ -3746,12 +3760,47 @@ function KonfirmasiPembayaranPage({ token }) {
             <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Alasan Retur</p>
             <p style={{ fontSize: 13.5, color: "#24272B", margin: "0 0 22px", lineHeight: 1.5 }}>{viewingRetur.alasan_retur}</p>
 
+            {(() => {
+              const sudahDibayar = viewingRetur.status_bayar === "lunas";
+              const totalRefund = (viewingRetur.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+              if (!sudahDibayar) return null;
+              return (
+                <div style={{ background: "#FBF0D9", borderRadius: 10, padding: 14, marginBottom: 22 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "#8A6A1A", textTransform: "uppercase", margin: "0 0 4px" }}>Pesanan Ini Sudah Dibayar - Perlu Refund</p>
+                  <p className="disp" style={{ fontSize: 20, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>{rupiah(totalRefund)}</p>
+                  <p style={{ fontSize: 12, color: "#8A6A1A", margin: "0 0 10px" }}>Pilih cara pengembalian dana ke toko:</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => setRefundMetodeTerpilih("saldo")}
+                      style={{ flex: 1, padding: 10, borderRadius: 9, border: refundMetodeTerpilih === "saldo" ? "1.5px solid #28685D" : "1.5px solid #E4E1DA", background: refundMetodeTerpilih === "saldo" ? "#D8E9E6" : "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                    >
+                      Refund ke Saldo Toko
+                    </button>
+                    <button
+                      onClick={() => setRefundMetodeTerpilih("manual")}
+                      style={{ flex: 1, padding: 10, borderRadius: 9, border: refundMetodeTerpilih === "manual" ? "1.5px solid #28685D" : "1.5px solid #E4E1DA", background: refundMetodeTerpilih === "manual" ? "#D8E9E6" : "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                    >
+                      Sudah Dikembalikan Manual (Tunai/Transfer)
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
             <div style={{ display: "flex", gap: 10 }}>
-              <button onClick={() => { setViewingRetur(null); setInfoKurirOrder(null); }} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+              <button onClick={() => { setViewingRetur(null); setInfoKurirOrder(null); setRefundMetodeTerpilih(null); }} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
                 Tutup
               </button>
               <button
-                onClick={() => selesaikanRetur(viewingRetur.id)}
+                onClick={() => {
+                  const sudahDibayar = viewingRetur.status_bayar === "lunas";
+                  const totalRefund = (viewingRetur.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+                  if (sudahDibayar && !refundMetodeTerpilih) {
+                    alert("Pilih dulu cara pengembalian dana sebelum menyelesaikan retur ini.");
+                    return;
+                  }
+                  selesaikanRetur(viewingRetur.id, sudahDibayar ? refundMetodeTerpilih : null, totalRefund, viewingRetur.client_id);
+                }}
                 disabled={processingReturId === viewingRetur.id}
                 style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
               >
