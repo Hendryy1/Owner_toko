@@ -12172,6 +12172,22 @@ function LaporanPesananPage({ token }) {
     }
   }
 
+  // Order yang SEDANG "Proses Dikirim" - Pekanbaru harus selesai hari
+  // yang sama, luar kota toleransi minimal 3 hari.
+  function cekTerlambatDikirimKurir(o) {
+    if (o.status !== "proses_dikirim" || !o.tanggal_dikirim) return false;
+    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const dikirim = new Date(o.tanggal_dikirim);
+    const sekarang = new Date();
+    if (isPekanbaru) {
+      const sameDay = dikirim.getFullYear() === sekarang.getFullYear() && dikirim.getMonth() === sekarang.getMonth() && dikirim.getDate() === sekarang.getDate();
+      return !sameDay;
+    }
+    const elapsedDays = (sekarang - dikirim) / (1000 * 60 * 60 * 24);
+    return elapsedDays >= 3;
+  }
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
@@ -12181,7 +12197,8 @@ function LaporanPesananPage({ token }) {
   const orderProsesKirim = orders.filter((o) => o.status === "proses_dikirim");
   const orderSelesai = orders.filter((o) => o.status === "selesai" && !o.alasan_retur);
   const orderTerlambatPengemasan = orderPengemasan.filter((o) => cekTerlambatPengemasan(o));
-  const orderTerlambatDikirim = orderSiapKirim.filter((o) => cekTerlambatDikirim(o));
+  const orderTerlambatDiambil = orderSiapKirim.filter((o) => cekTerlambatDikirim(o));
+  const orderTerlambatDikirimKurir = orderProsesKirim.filter((o) => cekTerlambatDikirimKurir(o));
   const orderProsesRetur = orders.filter((o) => o.status === "diretur");
   const orderReturSelesai = orders.filter((o) => o.status === "selesai" && !!o.alasan_retur);
 
@@ -12191,7 +12208,8 @@ function LaporanPesananPage({ token }) {
     { label: "Total Proses Kirim", nilai: orderProsesKirim.length, bg: "#D8E9E6", fg: "#28685D", icon: Navigation },
     { label: "Total Terselesaikan", nilai: orderSelesai.length, bg: "#EFE1BE", fg: "#8A6A1A", icon: Check },
     { label: "Total Terlambat Pengemasan", nilai: orderTerlambatPengemasan.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
-    { label: "Total Terlambat Dikirim", nilai: orderTerlambatDikirim.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
+    { label: "Terlambat Diambil Kurir", nilai: orderTerlambatDiambil.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
+    { label: "Terlambat Dikirim Kurir", nilai: orderTerlambatDikirimKurir.length, bg: "#FBEAEA", fg: "#C0392B", icon: Clock },
     { label: "Total Proses Retur", nilai: orderProsesRetur.length, bg: "#FBF0D9", fg: "#8A6A1A", icon: RefreshCw },
     { label: "Total Retur Terselesaikan", nilai: orderReturSelesai.length, bg: "#FBEAEA", fg: "#C0392B", icon: Check },
   ];
