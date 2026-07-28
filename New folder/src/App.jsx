@@ -5946,6 +5946,7 @@ function ProductPage({ token }) {
   const [error, setError] = useState("");
   const [editingProduct, setEditingProduct] = useState(null); // null = tutup modal, {} = tambah baru, {...} = edit
   const [deletingId, setDeletingId] = useState(null);
+  const [showImport, setShowImport] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -5986,12 +5987,20 @@ function ProductPage({ token }) {
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 22 }}>
         <PageHeader title="Product" subtitle={`${products.length} produk terdaftar`} />
-        <button
-          onClick={() => setEditingProduct({})}
-          style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}
-        >
-          <PackagePlus size={16} /> Tambah Produk
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={() => setShowImport(true)}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}
+          >
+            <UploadCloud size={16} /> Import CSV
+          </button>
+          <button
+            onClick={() => setEditingProduct({})}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}
+          >
+            <PackagePlus size={16} /> Tambah Produk
+          </button>
+        </div>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 14 }}>
@@ -6021,6 +6030,10 @@ function ProductPage({ token }) {
 
       {editingProduct !== null && (
         <ProductFormModal token={token} product={editingProduct} onClose={() => setEditingProduct(null)} onSaved={handleSaved} />
+      )}
+
+      {showImport && (
+        <ImportCSVModal token={token} onClose={() => setShowImport(false)} onSelesai={() => { setShowImport(false); load(); }} />
       )}
     </div>
   );
@@ -6346,6 +6359,207 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
             {saving ? "Menyimpan..." : isNew ? "Tambah Produk" : "Simpan Perubahan"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================
+// IMPORT CSV - tambah banyak produk sekaligus dari file CSV/Excel
+// ============================================================
+function parseCSVSederhana(text) {
+  const lines = text.replace(/^\uFEFF/, "").trim().split(/\r?\n/);
+  function parseBaris(line) {
+    const result = [];
+    let current = "";
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+        else inQuotes = !inQuotes;
+      } else if (char === "," && !inQuotes) {
+        result.push(current);
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    result.push(current);
+    return result.map((v) => v.trim());
+  }
+  const headers = parseBaris(lines[0]).map((h) => h.toLowerCase());
+  return lines.slice(1).filter((l) => l.trim()).map((line) => {
+    const values = parseBaris(line);
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = values[i] || ""; });
+    return obj;
+  });
+}
+
+function ImportCSVModal({ token, onClose, onSelesai }) {
+  const [dataParsed, setDataParsed] = useState([]); // [{ ...kolom, _valid, _error }]
+  const [namaFile, setNamaFile] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [hasilImport, setHasilImport] = useState(null); // { berhasil, gagal }
+
+  function unduhTemplate() {
+    const template = [
+      "kode,nama,kategori,satuan,harga_jual,harga_asli,harga_modal,stock_awal,isi_per_koli,diskon_koli_pct,cashback_per_koli",
+      "KZ-99,Contoh Produk Baru,Kategori Contoh,pcs,50000,60000,35000,100,12,5,2000",
+    ].join("\r\n");
+    const blob = new Blob(["\uFEFF" + template], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "template-import-produk.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function handleFile(file) {
+    setNamaFile(file.name);
+    setHasilImport(null);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const rows = parseCSVSederhana(e.target.result);
+        const kodeTerlihat = new Set();
+        const divalidasi = rows.map((r) => {
+          let error = null;
+          if (!r.kode) error = "Kode kosong";
+          else if (kodeTerlihat.has(r.kode.toUpperCase())) error = "Kode duplikat di file ini";
+          else if (!r.nama) error = "Nama kosong";
+          else if (!r.satuan) error = "Satuan kosong";
+          else if (!r.harga_jual || isNaN(Number(r.harga_jual)) || Number(r.harga_jual) <= 0) error = "Harga Jual harus angka > 0";
+          else if (r.harga_asli && (isNaN(Number(r.harga_asli)) || Number(r.harga_asli) < 0)) error = "Harga Asli tidak valid";
+          else if (r.harga_modal && (isNaN(Number(r.harga_modal)) || Number(r.harga_modal) < 0)) error = "Harga Modal tidak valid";
+          else if (r.stock_awal && (isNaN(Number(r.stock_awal)) || Number(r.stock_awal) < 0)) error = "Stock Awal tidak valid";
+          if (!error) kodeTerlihat.add(r.kode.toUpperCase());
+          return { ...r, _valid: !error, _error: error };
+        });
+        setDataParsed(divalidasi);
+      } catch (err) {
+        alert("Gagal baca file: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  async function prosesImport() {
+    const validRows = dataParsed.filter((r) => r._valid);
+    if (validRows.length === 0) return;
+    setImporting(true);
+    try {
+      const body = validRows.map((r) => ({
+        kode: r.kode.trim().toUpperCase(),
+        nama: r.nama.trim(),
+        kategori: r.kategori?.trim() || null,
+        satuan: r.satuan.trim(),
+        harga_jual: Number(r.harga_jual),
+        harga_asli: r.harga_asli ? Number(r.harga_asli) : null,
+        harga_modal: r.harga_modal ? Number(r.harga_modal) : null,
+        stock_awal: r.stock_awal ? Number(r.stock_awal) : 0,
+        isi_per_koli: r.isi_per_koli ? Number(r.isi_per_koli) : 0,
+        diskon_koli_pct: r.diskon_koli_pct ? Number(r.diskon_koli_pct) / 100 : 0,
+        cashback_per_koli: r.cashback_per_koli ? Number(r.cashback_per_koli) : 0,
+        aktif: true,
+      }));
+      const inserted = await supabaseFetch(token, "products", { method: "POST", body: JSON.stringify(body) });
+      setHasilImport({ berhasil: inserted.length, gagal: dataParsed.length - validRows.length });
+    } catch (e) {
+      alert("Gagal import: " + e.message + "\n\nKemungkinan ada Kode yang sudah dipakai produk lain yang sudah ada di sistem.");
+    }
+    setImporting(false);
+  }
+
+  const jumlahValid = dataParsed.filter((r) => r._valid).length;
+  const jumlahError = dataParsed.length - jumlahValid;
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 720, maxHeight: "88vh", overflowY: "auto", padding: 26 }}>
+        <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Import Produk dari CSV</h2>
+        <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 20px" }}>Tambah banyak produk sekaligus - buka file di Excel, "Save As" jadi CSV, lalu upload di sini.</p>
+
+        {hasilImport ? (
+          <div style={{ textAlign: "center", padding: 30 }}>
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#D8E9E6", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 16px" }}>
+              <Check size={26} color="#28685D" />
+            </div>
+            <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>Import Selesai</p>
+            <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 24px" }}>
+              {hasilImport.berhasil} produk berhasil ditambahkan{hasilImport.gagal > 0 && `, ${hasilImport.gagal} dilewati karena error`}.
+            </p>
+            <button onClick={onSelesai} style={{ padding: "12px 28px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+              Selesai
+            </button>
+          </div>
+        ) : (
+          <>
+            <button
+              onClick={unduhTemplate}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700, marginBottom: 16 }}
+            >
+              <Download size={14} /> Unduh Template CSV
+            </button>
+
+            <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: 24, borderRadius: 12, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", cursor: "pointer", marginBottom: 18 }}>
+              <UploadCloud size={24} />
+              <span style={{ fontSize: 13, fontWeight: 700 }}>{namaFile || "Tap untuk Pilih File CSV"}</span>
+              <input type="file" accept=".csv" style={{ display: "none" }} onChange={(e) => { if (e.target.files[0]) handleFile(e.target.files[0]); }} />
+            </label>
+
+            {dataParsed.length > 0 && (
+              <>
+                <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 999, background: "#D8E9E6", color: "#28685D" }}>{jumlahValid} valid</span>
+                  {jumlahError > 0 && (
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B" }}>{jumlahError} error</span>
+                  )}
+                </div>
+
+                <div style={{ maxHeight: 280, overflowY: "auto", border: "1px solid #EDEAE3", borderRadius: 10, marginBottom: 20 }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: "#F7F5F1", position: "sticky", top: 0 }}>
+                        <th style={{ padding: "8px 10px", textAlign: "left" }}>Kode</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left" }}>Nama</th>
+                        <th style={{ padding: "8px 10px", textAlign: "right" }}>Harga Jual</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left" }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dataParsed.map((r, i) => (
+                        <tr key={i} style={{ borderTop: "1px solid #EDEAE3", background: r._valid ? "transparent" : "#FBEAEA" }}>
+                          <td style={{ padding: "8px 10px", fontWeight: 700 }}>{r.kode || "-"}</td>
+                          <td style={{ padding: "8px 10px" }}>{r.nama || "-"}</td>
+                          <td style={{ padding: "8px 10px", textAlign: "right" }}>{r.harga_jual || "-"}</td>
+                          <td style={{ padding: "8px 10px", color: r._valid ? "#28685D" : "#C0392B", fontWeight: 600 }}>
+                            {r._valid ? "Valid" : r._error}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                Batal
+              </button>
+              <button
+                onClick={prosesImport}
+                disabled={jumlahValid === 0 || importing}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: jumlahValid === 0 ? "#E4E1DA" : "#28685D", color: jumlahValid === 0 ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 13.5 }}
+              >
+                {importing ? "Mengimpor..." : `Import ${jumlahValid} Produk`}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
