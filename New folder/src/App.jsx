@@ -499,6 +499,11 @@ function LoginScreen({ form, setForm, onLogin, error, loading }) {
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&family=Inter:wght@400;600;700&display=swap');
         @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
         .spin { animation: spin 0.8s linear infinite; }
+        .sidebar-scroll::-webkit-scrollbar { width: 5px; }
+        .sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+        .sidebar-scroll::-webkit-scrollbar-thumb { background: #454951; border-radius: 999px; }
+        .sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #565b64; }
+        .sidebar-scroll { scrollbar-width: thin; scrollbar-color: #454951 transparent; }
       `}</style>
       <div style={{ width: 360, padding: 32, background: "#2E3237", borderRadius: 18 }}>
         <div style={{ width: 48, height: 48, background: "#E8A426", borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
@@ -665,10 +670,11 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
         />
       )}
       <div
+        className="sidebar-scroll"
         style={
           isMobile
             ? { position: "fixed", top: 0, left: 0, bottom: 0, width: 240, background: "#24272B", padding: "24px 16px", display: "flex", flexDirection: "column", zIndex: 100, overflowY: "auto" }
-            : { width: 240, background: "#24272B", padding: "24px 16px", display: "flex", flexDirection: "column", flexShrink: 0 }
+            : { width: 240, height: "100vh", background: "#24272B", padding: "24px 16px", display: "flex", flexDirection: "column", flexShrink: 0, overflowY: "auto", position: "sticky", top: 0 }
         }
       >
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 28, padding: "0 8px" }}>
