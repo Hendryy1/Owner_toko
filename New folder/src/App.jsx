@@ -448,6 +448,8 @@ export default function OwnerDashboard() {
         {page === "log_aktivitas" && <LogAktivitasPage token={token} />}
         {page === "rating_komplain" && <RatingKomplainPage token={token} />}
         {page === "backup_data" && <BackupDataPage token={token} />}
+        {page === "permintaan_hapus_akun" && <PermintaanHapusAkunPage token={token} />}
+        {page === "program_loyalitas" && <ProgramLoyalitasPage token={token} />}
         {page === "kelola_gudang" && <KelolaGudangPage token={token} />}
         {page === "picking_list" && <PickingListPage token={token} role={profile?.role} userId={profile?.id} />}
         {page === "pesanan_siap" && <SiapDikirimPage token={token} role={profile?.role} />}
@@ -555,6 +557,8 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "log_aktivitas", label: "Log Aktivitas", icon: History, roles: ["owner"] },
     { key: "rating_komplain", label: "Rating & Komplain Toko", icon: Star, roles: ["owner", "admin_transaksi"] },
     { key: "backup_data", label: "Backup Data", icon: Download, roles: ["owner"] },
+    { key: "permintaan_hapus_akun", label: "Permintaan Hapus Akun", icon: X, roles: ["owner", "admin_transaksi"] },
+    { key: "program_loyalitas", label: "Program Loyalitas", icon: Gift, roles: ["owner"] },
     { key: "kelola_gudang", label: "Kelola Gudang", icon: Boxes, roles: ["owner"] },
     { key: "picking_list", label: "Picking List", icon: ClipboardCheck, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "pesanan_siap", label: "Pesanan", icon: PackagePlus, roles: ["owner", "admin_transaksi", "staff_gudang"] },
@@ -13961,6 +13965,264 @@ function BackupDataPage({ token }) {
       <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "20px 0 0", lineHeight: 1.6 }}>
         Backup berisi data tabel-tabel penting (pesanan, toko, produk, saldo, dll) dalam format JSON. Ini bukan pengganti backup Supabase bawaan, tapi lapis tambahan yang bisa Anda unduh dan simpan sendiri kapan saja.
       </p>
+    </div>
+  );
+}
+
+// ============================================================
+// PERMINTAAN HAPUS AKUN - toko ajukan, Owner/Admin proses
+// ============================================================
+function PermintaanHapusAkunPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [permintaanList, setPermintaanList] = useState([]);
+  const [error, setError] = useState("");
+  const [prosesId, setProsesId] = useState(null);
+  const [catatanInput, setCatatanInput] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "permintaan_hapus_akun?select=*,clients(nama,kode,telp)&order=created_at.desc");
+      setPermintaanList(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function prosesPermintaan(id, statusBaru) {
+    setSaving(true);
+    try {
+      await supabaseFetch(token, `permintaan_hapus_akun?id=eq.${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: statusBaru, catatan_admin: catatanInput || null, diproses_at: new Date().toISOString() }),
+      });
+      setProsesId(null);
+      setCatatanInput("");
+      load();
+    } catch (e) {
+      alert("Gagal proses: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const STATUS_LABEL = {
+    menunggu: { label: "Menunggu", bg: "#FBF0D9", fg: "#8A6A1A" },
+    diproses: { label: "Sudah Diproses", bg: "#D8E9E6", fg: "#28685D" },
+    ditolak: { label: "Ditolak", bg: "#FBEAEA", fg: "#C0392B" },
+  };
+
+  const menunggu = permintaanList.filter((p) => p.status === "menunggu");
+  const selesai = permintaanList.filter((p) => p.status !== "menunggu");
+
+  return (
+    <div>
+      <PageHeader title="Permintaan Hapus Akun" subtitle={`${menunggu.length} permintaan menunggu diproses`} />
+
+      {menunggu.length === 0 ? (
+        <EmptyState text="Tidak ada permintaan hapus akun yang menunggu." />
+      ) : (
+        menunggu.map((p) => (
+          <Card key={p.id} style={{ marginBottom: 12, border: "1.5px solid #E8A426" }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{p.clients?.nama} ({p.clients?.kode})</p>
+            <p style={{ fontSize: 12, color: "#6B6F75", margin: "0 0 10px" }}>{p.clients?.telp} - diajukan {new Date(p.created_at).toLocaleDateString("id-ID", { dateStyle: "medium" })}</p>
+            {p.alasan && (
+              <div style={{ background: "#F7F5F1", borderRadius: 9, padding: 10, marginBottom: 12 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Alasan</p>
+                <p style={{ fontSize: 12.5, color: "#24272B", margin: 0 }}>{p.alasan}</p>
+              </div>
+            )}
+
+            {prosesId === p.id ? (
+              <>
+                <textarea
+                  value={catatanInput} onChange={(e) => setCatatanInput(e.target.value)}
+                  placeholder="Catatan (opsional)..." rows={2}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, resize: "vertical", marginBottom: 10 }}
+                />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setProsesId(null)} style={{ flex: 1, padding: 10, borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 12.5 }}>
+                    Batal
+                  </button>
+                  <button onClick={() => prosesPermintaan(p.id, "ditolak")} disabled={saving} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", background: "#FBEAEA", color: "#C0392B", fontWeight: 700, fontSize: 12.5 }}>
+                    Tolak
+                  </button>
+                  <button onClick={() => prosesPermintaan(p.id, "diproses")} disabled={saving} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 12.5 }}>
+                    {saving ? "Menyimpan..." : "Setujui & Proses"}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <button
+                onClick={() => setProsesId(p.id)}
+                style={{ padding: "9px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+              >
+                Proses Permintaan
+              </button>
+            )}
+          </Card>
+        ))
+      )}
+
+      {selesai.length > 0 && (
+        <>
+          <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "24px 0 12px" }}>Riwayat</h2>
+          {selesai.map((p) => (
+            <Card key={p.id} style={{ marginBottom: 10, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{p.clients?.nama} ({p.clients?.kode})</p>
+                  {p.catatan_admin && <p style={{ fontSize: 11.5, color: "#6B6F75", margin: 0 }}>{p.catatan_admin}</p>}
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: STATUS_LABEL[p.status].bg, color: STATUS_LABEL[p.status].fg }}>
+                  {STATUS_LABEL[p.status].label}
+                </span>
+              </div>
+            </Card>
+          ))}
+        </>
+      )}
+
+      <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "20px 0 0", lineHeight: 1.6 }}>
+        Catatan: menekan "Setujui & Proses" cuma mencatat status permintaan ini sebagai selesai - TIDAK otomatis menghapus data toko dari sistem (data pesanan/transaksi harus tetap tersimpan untuk keperluan pembukuan). Untuk nonaktifkan akun tokonya, lakukan itu terpisah lewat menu Kelola Toko.
+      </p>
+    </div>
+  );
+}
+
+// ============================================================
+// PROGRAM LOYALITAS - overview poin, spin ticket, daily check-in
+// ============================================================
+function ProgramLoyalitasPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [pointsList, setPointsList] = useState([]);
+  const [spinList, setSpinList] = useState([]);
+  const [checkinList, setCheckinList] = useState([]);
+  const [tanggalMulai, setTanggalMulai] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [tanggalSelesai, setTanggalSelesai] = useState(() => new Date().toISOString().slice(0, 10));
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [points, spin, checkin] = await Promise.all([
+        supabaseFetch(token, `points_ledger?select=*,clients(nama,kode)&created_at=gte.${tanggalMulai}T00:00:00&created_at=lte.${tanggalSelesai}T23:59:59&order=created_at.desc&limit=1000`),
+        supabaseFetch(token, `spin_tickets?select=*,clients(nama,kode)&created_at=gte.${tanggalMulai}T00:00:00&created_at=lte.${tanggalSelesai}T23:59:59&order=created_at.desc&limit=1000`),
+        supabaseFetch(token, `daily_checkins?select=*,clients(nama,kode)&tanggal=gte.${tanggalMulai}&tanggal=lte.${tanggalSelesai}&order=tanggal.desc&limit=1000`),
+      ]);
+      setPointsList(points);
+      setSpinList(spin);
+      setCheckinList(checkin);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [tanggalMulai, tanggalSelesai]);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const poinDiperoleh = pointsList.filter((p) => p.poin > 0).reduce((sum, p) => sum + p.poin, 0);
+  const poinDipakai = Math.abs(pointsList.filter((p) => p.poin < 0).reduce((sum, p) => sum + p.poin, 0));
+  const totalSpinDipakai = spinList.filter((s) => s.dipakai).length;
+  const totalSpinBelumDipakai = spinList.filter((s) => !s.dipakai).length;
+  const totalCheckin = checkinList.length;
+  const tokoAktifCheckin = new Set(checkinList.map((c) => c.client_id)).size;
+
+  const bySumber = {};
+  pointsList.forEach((p) => {
+    if (!bySumber[p.sumber]) bySumber[p.sumber] = 0;
+    bySumber[p.sumber] += p.poin;
+  });
+
+  const SUMBER_LABEL = { checkin: "Daily Check-in", lucky_wheel: "Lucky Wheel/Spin", redeem: "Penukaran Hadiah" };
+
+  return (
+    <div>
+      <PageHeader title="Program Loyalitas" subtitle="Ringkasan poin, spin ticket, dan daily check-in toko" />
+
+      <Card style={{ marginBottom: 20, padding: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Dari Tanggal</label>
+            <input type="date" value={tanggalMulai} onChange={(e) => setTanggalMulai(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", display: "block", marginBottom: 4 }}>Sampai Tanggal</label>
+            <input type="date" value={tanggalSelesai} onChange={(e) => setTanggalSelesai(e.target.value)} style={{ padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
+          </div>
+        </div>
+      </Card>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 24 }}>
+        <Card style={{ padding: 18 }}>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Poin Diperoleh</p>
+          <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#28685D", margin: 0 }}>+{poinDiperoleh}</p>
+        </Card>
+        <Card style={{ padding: 18 }}>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Poin Ditukar/Dipakai</p>
+          <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#C0392B", margin: 0 }}>-{poinDipakai}</p>
+        </Card>
+        <Card style={{ padding: 18 }}>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Spin Ticket Dipakai</p>
+          <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#24272B", margin: 0 }}>{totalSpinDipakai} <span style={{ fontSize: 13, color: "#9CA0A6", fontWeight: 600 }}>/ {totalSpinDipakai + totalSpinBelumDipakai}</span></p>
+        </Card>
+        <Card style={{ padding: 18 }}>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Toko Aktif Check-in</p>
+          <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#24272B", margin: 0 }}>{tokoAktifCheckin} <span style={{ fontSize: 13, color: "#9CA0A6", fontWeight: 600 }}>({totalCheckin}x)</span></p>
+        </Card>
+      </div>
+
+      <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Poin per Sumber</h2>
+      <Card style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              <th style={{ padding: "10px 14px", textAlign: "left", fontSize: 11, fontWeight: 700, color: "#6B6F75" }}>Sumber</th>
+              <th style={{ padding: "10px 14px", textAlign: "right", fontSize: 11, fontWeight: 700, color: "#6B6F75" }}>Total Poin</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(bySumber).map(([sumber, total], i) => (
+              <tr key={sumber} style={{ borderTop: i > 0 ? "1px solid #EDEAE3" : "none" }}>
+                <td style={{ padding: "10px 14px", fontWeight: 600 }}>{SUMBER_LABEL[sumber] || sumber}</td>
+                <td style={{ padding: "10px 14px", textAlign: "right", fontWeight: 700, color: total >= 0 ? "#28685D" : "#C0392B" }}>{total >= 0 ? "+" : ""}{total}</td>
+              </tr>
+            ))}
+            {Object.keys(bySumber).length === 0 && (
+              <tr><td colSpan={2} style={{ padding: 20, textAlign: "center", color: "#9CA0A6" }}>Belum ada data.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </Card>
+
+      <h2 className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Riwayat Poin Terbaru</h2>
+      {pointsList.length === 0 ? (
+        <EmptyState text="Belum ada aktivitas poin di rentang ini." />
+      ) : (
+        pointsList.slice(0, 50).map((p) => (
+          <Card key={p.id} style={{ marginBottom: 8, padding: 12 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{p.clients?.nama} ({p.clients?.kode})</p>
+                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: 0 }}>
+                  {SUMBER_LABEL[p.sumber] || p.sumber} - {new Date(p.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+                  {p.keterangan && ` - ${p.keterangan}`}
+                </p>
+              </div>
+              <span style={{ fontSize: 14, fontWeight: 700, color: p.poin >= 0 ? "#28685D" : "#C0392B" }}>{p.poin >= 0 ? "+" : ""}{p.poin}</span>
+            </div>
+          </Card>
+        ))
+      )}
     </div>
   );
 }
