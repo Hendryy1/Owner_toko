@@ -9651,6 +9651,15 @@ function AbsenSalesPage({ token, profile }) {
   const isMinggu = now.getDay() === 0;
 
   async function load() {
+    // Menu ini KHUSUS buat akun Sales (butuh profile.sales_id buat tahu
+    // toko mana yang ditangani). Kalau diakses akun lain (misal Owner yang
+    // menambahkan menu ini lewat "Atur Urutan Menu"), sales_id-nya kosong -
+    // hentikan di sini, jangan sampai query jalan dengan nilai kosong dan
+    // bikin error mentah dari database.
+    if (!profile?.sales_id) {
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError("");
     try {
@@ -9669,6 +9678,18 @@ function AbsenSalesPage({ token, profile }) {
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  // Tampilkan pesan jelas kalau akun ini bukan akun Sales (tidak punya
+  // sales_id) - taruh SETELAH semua hook dipanggil, supaya urutan hook
+  // tetap konsisten di setiap render (aturan Hooks React).
+  if (!profile?.sales_id) {
+    return (
+      <div>
+        <PageHeader title="Absen" subtitle="Menu ini khusus untuk akun Sales" />
+        <EmptyState text="Menu ini cuma bisa dipakai oleh akun dengan role Sales (butuh data toko yang ditangani). Akun Anda saat ini tidak punya data Sales terkait." />
+      </div>
+    );
+  }
 
   function mulaiAbsen(client) {
     setSelectedClient(client);
