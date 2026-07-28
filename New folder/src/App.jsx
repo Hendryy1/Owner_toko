@@ -1968,7 +1968,20 @@ function PiutangPage({ token }) {
     setError("");
     try {
       const data = await supabaseFetch(token, "v_piutang_client?select=*&total_piutang=gt.0&order=total_piutang.desc");
-      setRows(data);
+      // Ambil SEMUA order COD yang jadi piutang sekaligus di awal (bukan
+      // pas expand doang) - supaya bisa tahu toko mana yang SUDAH lewat
+      // jatuh tempo tanpa perlu klik buka dulu.
+      const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,client_id,jatuh_tempo&metode_bayar=eq.cod&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&jatuh_tempo=not.is.null");
+      const sekarang = new Date();
+      const terlambatMap = {}; // { client_id: hari paling lama terlambat }
+      (semuaOrderPiutang || []).forEach((o) => {
+        const jt = new Date(o.jatuh_tempo);
+        if (jt < sekarang) {
+          const hari = Math.floor((sekarang - jt) / (1000 * 60 * 60 * 24));
+          if (!terlambatMap[o.client_id] || hari > terlambatMap[o.client_id]) terlambatMap[o.client_id] = hari;
+        }
+      });
+      setRows(data.map((r) => ({ ...r, hariTerlambat: terlambatMap[r.client_id] || null })));
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -1985,7 +1998,7 @@ function PiutangPage({ token }) {
       try {
         const orders = await supabaseFetch(
           token,
-          `orders?select=id,no_nota,created_at,order_items(subtotal_setelah_diskon)&client_id=eq.${clientId}&metode_bayar=eq.cod&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc`
+          `orders?select=id,no_nota,created_at,jatuh_tempo,order_items(subtotal_setelah_diskon)&client_id=eq.${clientId}&metode_bayar=eq.cod&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc`
         );
         setDetailMap((prev) => ({ ...prev, [clientId]: orders }));
       } catch (e) {
@@ -2070,11 +2083,18 @@ function PiutangPage({ token }) {
                   )}
                 </td>
                 <td style={{ padding: "12px 14px" }}>
-                  {r.melebihi_limit ? (
-                    <span style={{ background: "#FBEAEA", color: "#C0392B", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>MELEBIHI LIMIT</span>
-                  ) : (
-                    <span style={{ background: "#D8E9E6", color: "#28685D", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>Aman</span>
-                  )}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                    {r.melebihi_limit ? (
+                      <span style={{ background: "#FBEAEA", color: "#C0392B", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>MELEBIHI LIMIT</span>
+                    ) : (
+                      <span style={{ background: "#D8E9E6", color: "#28685D", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>Aman</span>
+                    )}
+                    {r.hariTerlambat !== null && (
+                      <span style={{ background: "#FBEAEA", color: "#C0392B", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                        Terlambat Bayar {r.hariTerlambat} hari
+                      </span>
+                    )}
+                  </div>
                 </td>
               </tr>
               {expandedId === r.client_id && (
@@ -2092,7 +2112,7 @@ function PiutangPage({ token }) {
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                           <thead>
                             <tr>
-                              {["No. Nota", "Tanggal Dibuat", "Nilai"].map((h) => (
+                              {["No. Nota", "Tanggal Dibuat", "Jatuh Tempo", "Nilai"].map((h) => (
                                 <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: "#9CA0A6", fontWeight: 700, fontSize: 10.5 }}>{h}</th>
                               ))}
                             </tr>
@@ -2100,11 +2120,23 @@ function PiutangPage({ token }) {
                           <tbody>
                             {(detailMap[r.client_id] || []).map((o) => {
                               const nilai = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+                              const jt = o.jatuh_tempo ? new Date(o.jatuh_tempo) : null;
+                              const hariTerlambatOrder = jt && jt < new Date() ? Math.floor((new Date() - jt) / (1000 * 60 * 60 * 24)) : null;
                               return (
                                 <tr key={o.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                                   <td style={{ padding: "6px 10px", fontWeight: 700 }}>{o.no_nota}</td>
                                   <td style={{ padding: "6px 10px", color: "#6B6F75" }}>
                                     {new Date(o.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                                  </td>
+                                  <td style={{ padding: "6px 10px" }}>
+                                    {jt ? (
+                                      <span style={{ color: hariTerlambatOrder !== null ? "#C0392B" : "#6B6F75", fontWeight: hariTerlambatOrder !== null ? 700 : 400 }}>
+                                        {jt.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                                        {hariTerlambatOrder !== null && (
+                                          <span style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#C0392B" }}>Terlambat {hariTerlambatOrder} hari</span>
+                                        )}
+                                      </span>
+                                    ) : "-"}
                                   </td>
                                   <td style={{ padding: "6px 10px", fontWeight: 600 }}>{rupiah(nilai)}</td>
                                 </tr>
