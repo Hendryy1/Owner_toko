@@ -13082,6 +13082,7 @@ function LaporanPerformaPage({ token }) {
   const [laporanKurirList, setLaporanKurirList] = useState([]);
   const [laporanKurirItemsList, setLaporanKurirItemsList] = useState([]);
   const [ordersKurirMap, setOrdersKurirMap] = useState({}); // { order_id: order } - buat cek tepat waktu kurir
+  const [hariLiburSet, setHariLiburSet] = useState(new Set()); // Set of "YYYY-MM-DD" - buat skip Minggu & tanggal merah
   const [tanggalMulai, setTanggalMulai] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
@@ -13131,15 +13132,44 @@ function LaporanPerformaPage({ token }) {
       const omap = {};
       (orderKurirRows || []).forEach((o) => { omap[o.id] = o; });
       setOrdersKurirMap(omap);
+
+      // Ambil SEMUA tanggal merah (tidak dibatasi rentang filter) - karena
+      // order bisa saja MULAI (created_at) jauh sebelum rentang tanggal
+      // yang difilter, jadi butuh data hari libur yang lebih luas.
+      const liburRows = await supabaseFetch(token, "hari_libur?select=tanggal");
+      setHariLiburSet(new Set((liburRows || []).map((h) => h.tanggal)));
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, [tanggalMulai, tanggalSelesai]);
 
-  // Hitung selisih waktu dalam JAM antara 2 timestamp
+  // Hitung selisih waktu dalam JAM antara 2 timestamp - TAPI skip jam yang
+  // jatuh di hari Minggu atau tanggal merah, karena hari itu toko/staff
+  // memang tidak kerja, jadi tidak adil dihitung sebagai "lambat".
   function selisihJam(dari, sampai) {
     if (!dari || !sampai) return null;
-    return (new Date(sampai) - new Date(dari)) / (1000 * 60 * 60);
+    const mulai = new Date(dari);
+    const akhir = new Date(sampai);
+    if (akhir <= mulai) return 0;
+
+    function tglStr(d) {
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    }
+    function hariLiburAtauMinggu(d) {
+      return d.getDay() === 0 || hariLiburSet.has(tglStr(d));
+    }
+
+    let totalJam = 0;
+    let kursor = new Date(mulai);
+    while (kursor < akhir) {
+      const akhirHariIni = new Date(kursor.getFullYear(), kursor.getMonth(), kursor.getDate(), 23, 59, 59, 999);
+      const batasSegmen = akhir < akhirHariIni ? akhir : akhirHariIni;
+      if (!hariLiburAtauMinggu(kursor)) {
+        totalJam += (batasSegmen - kursor) / (1000 * 60 * 60);
+      }
+      kursor = new Date(kursor.getFullYear(), kursor.getMonth(), kursor.getDate() + 1, 0, 0, 0, 0);
+    }
+    return totalJam;
   }
 
   function rataRata(arr) {
@@ -13270,7 +13300,7 @@ function LaporanPerformaPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Laporan Performa" subtitle={`Berdasarkan ${orders.length} pesanan selesai dalam rentang tanggal terpilih`} />
+      <PageHeader title="Laporan Performa" subtitle={`Berdasarkan ${orders.length} pesanan selesai - jam Minggu & tanggal merah tidak ikut dihitung`} />
 
       <Card style={{ marginBottom: 20, padding: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
