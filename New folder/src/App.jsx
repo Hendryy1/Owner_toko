@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import ReactDOMServer from "react-dom/server";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3
+  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3, Star
 } from "lucide-react";
 
 const COMPANY_NAME = "PT INDO GARUDA ABADI";
@@ -445,6 +445,7 @@ export default function OwnerDashboard() {
         {page === "laporan_pesanan" && <LaporanPesananPage token={token} />}
         {page === "laporan_performa" && <LaporanPerformaPage token={token} />}
         {page === "log_aktivitas" && <LogAktivitasPage token={token} />}
+        {page === "rating_komplain" && <RatingKomplainPage token={token} />}
         {page === "kelola_gudang" && <KelolaGudangPage token={token} />}
         {page === "picking_list" && <PickingListPage token={token} role={profile?.role} userId={profile?.id} />}
         {page === "pesanan_siap" && <SiapDikirimPage token={token} role={profile?.role} />}
@@ -549,6 +550,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "laporan_pesanan", label: "Laporan Pesanan", icon: BarChart3, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "laporan_performa", label: "Laporan Performa", icon: TrendingUp, roles: ["owner"] },
     { key: "log_aktivitas", label: "Log Aktivitas", icon: History, roles: ["owner"] },
+    { key: "rating_komplain", label: "Rating & Komplain Toko", icon: Star, roles: ["owner", "admin_transaksi"] },
     { key: "kelola_gudang", label: "Kelola Gudang", icon: Boxes, roles: ["owner"] },
     { key: "picking_list", label: "Picking List", icon: ClipboardCheck, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "pesanan_siap", label: "Pesanan", icon: PackagePlus, roles: ["owner", "admin_transaksi", "staff_gudang"] },
@@ -13649,6 +13651,117 @@ function KelolaGudangPage({ token }) {
             </div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// RATING & KOMPLAIN TOKO - lihat ulasan/keluhan yang masuk dari toko
+// ============================================================
+function RatingKomplainPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [ratingList, setRatingList] = useState([]);
+  const [error, setError] = useState("");
+  const [filterKategori, setFilterKategori] = useState("semua");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "rating_pesanan?select=*,orders(no_nota),clients(nama,kode)&order=created_at.desc&limit=500");
+      setRatingList(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function tandaiDibaca(id) {
+    try {
+      await supabaseFetch(token, `rating_pesanan?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ dibaca_owner: true }) });
+      setRatingList((prev) => prev.map((r) => (r.id === id ? { ...r, dibaca_owner: true } : r)));
+    } catch (e) { /* diamkan */ }
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const KATEGORI_LABEL = {
+    kualitas_barang: "Kualitas Barang", salah_kirim: "Salah Kirim", kemasan_rusak: "Kemasan Rusak",
+    pengiriman_lambat: "Pengiriman Lambat", lainnya: "Lainnya",
+  };
+
+  const rataRata = ratingList.length > 0 ? ratingList.reduce((sum, r) => sum + r.rating, 0) / ratingList.length : null;
+  const totalKomplain = ratingList.filter((r) => r.rating <= 3).length;
+  const belumDibaca = ratingList.filter((r) => !r.dibaca_owner).length;
+
+  const listTampil = filterKategori === "semua" ? ratingList : ratingList.filter((r) => r.kategori_komplain === filterKategori);
+
+  return (
+    <div>
+      <PageHeader title="Rating & Komplain Toko" subtitle={`${ratingList.length} ulasan masuk`} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 14, marginBottom: 20 }}>
+        <Card style={{ padding: 18 }}>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Rata-rata Rating</p>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <p className="disp" style={{ fontSize: 26, fontWeight: 700, color: "#24272B", margin: 0 }}>{rataRata !== null ? rataRata.toFixed(1) : "-"}</p>
+            <Star size={18} fill="#E8A426" color="#E8A426" />
+          </div>
+        </Card>
+        <Card style={{ padding: 18, background: totalKomplain > 0 ? "#FBEAEA" : "#fff" }}>
+          <p style={{ fontSize: 11.5, color: totalKomplain > 0 ? "#C0392B" : "#9CA0A6", margin: "0 0 6px", fontWeight: 700 }}>Total Komplain (≤3 bintang)</p>
+          <p className="disp" style={{ fontSize: 26, fontWeight: 700, color: totalKomplain > 0 ? "#C0392B" : "#24272B", margin: 0 }}>{totalKomplain}</p>
+        </Card>
+        <Card style={{ padding: 18 }}>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Belum Dibaca</p>
+          <p className="disp" style={{ fontSize: 26, fontWeight: 700, color: "#24272B", margin: 0 }}>{belumDibaca}</p>
+        </Card>
+      </div>
+
+      <select value={filterKategori} onChange={(e) => setFilterKategori(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff", marginBottom: 16 }}>
+        <option value="semua">Semua Kategori</option>
+        {Object.entries(KATEGORI_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+      </select>
+
+      {listTampil.length === 0 ? (
+        <EmptyState text="Belum ada rating/komplain masuk." />
+      ) : (
+        listTampil.map((r) => (
+          <Card key={r.id} style={{ marginBottom: 12, border: !r.dibaca_owner ? "1.5px solid #E8A426" : undefined }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ display: "flex", gap: 2, marginBottom: 6 }}>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <Star key={n} size={15} fill={n <= r.rating ? "#E8A426" : "none"} color={n <= r.rating ? "#E8A426" : "#D8D6D0"} />
+                  ))}
+                  {!r.dibaca_owner && (
+                    <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A" }}>BARU</span>
+                  )}
+                </div>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{r.clients?.nama} ({r.clients?.kode})</p>
+                <p style={{ fontSize: 12, color: "#6B6F75", margin: "0 0 8px" }}>{r.orders?.no_nota}</p>
+                {r.kategori_komplain && (
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B", marginBottom: 8, display: "inline-block" }}>
+                    {KATEGORI_LABEL[r.kategori_komplain] || r.kategori_komplain}
+                  </span>
+                )}
+                {r.catatan && <p style={{ fontSize: 13, color: "#24272B", margin: "6px 0 0", lineHeight: 1.5 }}>{r.catatan}</p>}
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: "8px 0 0" }}>
+                  {new Date(r.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+                </p>
+              </div>
+              {!r.dibaca_owner && (
+                <button
+                  onClick={() => tandaiDibaca(r.id)}
+                  style={{ padding: "8px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12, fontWeight: 700, flexShrink: 0 }}
+                >
+                  Tandai Dibaca
+                </button>
+              )}
+            </div>
+          </Card>
+        ))
       )}
     </div>
   );
