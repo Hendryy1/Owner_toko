@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import ReactDOMServer from "react-dom/server";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3, Star
+  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3, Star, CalendarDays
 } from "lucide-react";
 
 const COMPANY_NAME = "PT INDO GARUDA ABADI";
@@ -439,13 +439,15 @@ export default function OwnerDashboard() {
         {page === "absen_sales" && <AbsenSalesPage token={token} profile={profile} />}
         {page === "area_sales" && <AreaSalesPage token={token} profile={profile} />}
         {page === "request_area" && <RequestAreaOwnerPage token={token} />}
-        {page === "rekap_absen" && <RekapAbsenPage token={token} />}
+        {page === "rekap_absen" && <RekapAbsenPage token={token} setPage={setPage} />}
+        {page === "calendar" && <CalendarPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "laporan_pesanan" && <LaporanPesananPage token={token} />}
         {page === "laporan_performa" && <LaporanPerformaPage token={token} />}
         {page === "log_aktivitas" && <LogAktivitasPage token={token} />}
         {page === "rating_komplain" && <RatingKomplainPage token={token} />}
+        {page === "backup_data" && <BackupDataPage token={token} />}
         {page === "kelola_gudang" && <KelolaGudangPage token={token} />}
         {page === "picking_list" && <PickingListPage token={token} role={profile?.role} userId={profile?.id} />}
         {page === "pesanan_siap" && <SiapDikirimPage token={token} role={profile?.role} />}
@@ -545,12 +547,14 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "area_sales", label: "Area", icon: MapPin, roles: ["sales"] },
     { key: "request_area", label: "Request Area Sales", icon: MapPin, roles: ["owner"] },
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
+    { key: "calendar", label: "Calendar", icon: CalendarDays, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Konfirmasi Pesanan Selesai", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
     { key: "laporan_pesanan", label: "Laporan Pesanan", icon: BarChart3, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "laporan_performa", label: "Laporan Performa", icon: TrendingUp, roles: ["owner"] },
     { key: "log_aktivitas", label: "Log Aktivitas", icon: History, roles: ["owner"] },
     { key: "rating_komplain", label: "Rating & Komplain Toko", icon: Star, roles: ["owner", "admin_transaksi"] },
+    { key: "backup_data", label: "Backup Data", icon: Download, roles: ["owner"] },
     { key: "kelola_gudang", label: "Kelola Gudang", icon: Boxes, roles: ["owner"] },
     { key: "picking_list", label: "Picking List", icon: ClipboardCheck, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "pesanan_siap", label: "Pesanan", icon: PackagePlus, roles: ["owner", "admin_transaksi", "staff_gudang"] },
@@ -9940,18 +9944,13 @@ function AbsenSalesPage({ token, profile }) {
 // ============================================================
 // REKAP ABSEN SALES - Owner lihat rekap semua sales + kelola tanggal merah
 // ============================================================
-function RekapAbsenPage({ token }) {
+function RekapAbsenPage({ token, setPage }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [salesList, setSalesList] = useState([]);
   const [absenBulanIni, setAbsenBulanIni] = useState([]);
   const [hariLibur, setHariLibur] = useState([]);
-  const [showTambahLibur, setShowTambahLibur] = useState(false);
-  const [tanggalBaru, setTanggalBaru] = useState("");
-  const [keteranganBaru, setKeteranganBaru] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [viewDate, setViewDate] = useState(new Date()); // bulan/tahun yang lagi ditampilkan di kalender
-  const [togglingTanggal, setTogglingTanggal] = useState(null);
+  const [viewDate, setViewDate] = useState(new Date());
 
   const now = viewDate;
   const isBulanIni = now.getFullYear() === new Date().getFullYear() && now.getMonth() === new Date().getMonth();
@@ -9963,6 +9962,9 @@ function RekapAbsenPage({ token }) {
     setLoading(true);
     setError("");
     try {
+      // Data hari libur di sini CUMA dibaca (buat hitung hari kerja) - kelola
+      // tanggal merahnya sekarang di menu Calendar terpisah, tapi rekap ini
+      // masih terkoneksi/pakai data yang SAMA supaya perhitungannya akurat.
       const [sales, absen, libur] = await Promise.all([
         supabaseFetch(token, "sales?select=id,kode,nama&order=nama.asc"),
         supabaseFetch(token, `absen_sales?select=sales_id,tanggal&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}`),
@@ -9980,8 +9982,112 @@ function RekapAbsenPage({ token }) {
     setViewDate(new Date(now.getFullYear(), now.getMonth() + delta, 1));
   }
 
-  // Klik tanggal di kalender langsung toggle: kalau belum tanggal merah,
-  // jadikan tanggal merah (minta keterangan singkat); kalau sudah, hapus.
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  // Hitung berapa hari kerja bulan ini (total hari - hari Minggu - tanggal merah)
+  // - kalau lagi lihat bulan SEKARANG, cuma hitung sampai hari ini; kalau lihat
+  // bulan lain (sudah lewat/akan datang), hitung semua hari kerja di bulan itu.
+  const tanggalAsliSekarang = new Date();
+  let hariKerja = 0;
+  for (let d = 1; d <= totalHariBulanIni; d++) {
+    const tgl = new Date(now.getFullYear(), now.getMonth(), d);
+    const tglStr = `${tgl.getFullYear()}-${String(tgl.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const isLiburTgl = hariLibur.some((h) => h.tanggal === tglStr);
+    const sudahLewat = isBulanIni ? tgl <= tanggalAsliSekarang : true;
+    if (tgl.getDay() !== 0 && !isLiburTgl && sudahLewat) hariKerja++;
+  }
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, flexWrap: "wrap", gap: 10 }}>
+        <PageHeader title="Rekap Absen Sales" subtitle={`Bulan ${now.toLocaleDateString("id-ID", { month: "long", year: "numeric" })} - ${hariKerja} hari kerja berjalan`} />
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <button onClick={() => gantiBulan(-1)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ChevronLeft size={15} color="#24272B" />
+          </button>
+          <button onClick={() => gantiBulan(1)} style={{ width: 32, height: 32, borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ChevronRight size={15} color="#24272B" />
+          </button>
+          <button
+            onClick={() => setPage("calendar")}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+          >
+            <CalendarDays size={14} /> Lihat/Atur Kalender
+          </button>
+        </div>
+      </div>
+
+      <Card style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Kode", "Nama Sales", "Jumlah Absen Bulan Ini", "Dari Hari Kerja"].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {salesList.map((s) => {
+              const jumlahAbsen = absenBulanIni.filter((a) => a.sales_id === s.id).length;
+              const kurang = hariKerja > 0 && jumlahAbsen < hariKerja;
+              return (
+                <tr key={s.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px" }}>{s.kode}</td>
+                  <td style={{ padding: "12px 14px", fontWeight: 600 }}>{s.nama}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: kurang ? "#FBEAEA" : "#D8E9E6", color: kurang ? "#C0392B" : "#28685D" }}>
+                      {jumlahAbsen} kali
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 14px", color: "#6B6F75" }}>dari {hariKerja} hari</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        {salesList.length === 0 && <EmptyState text="Belum ada akun sales." />}
+      </Card>
+    </div>
+  );
+}
+
+// ============================================================
+// CALENDAR - kelola tanggal merah (dipakai bareng oleh Rekap Absen Sales
+// untuk hitung hari kerja - masih terkoneksi ke data yang sama)
+// ============================================================
+function CalendarPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [hariLibur, setHariLibur] = useState([]);
+  const [showTambahLibur, setShowTambahLibur] = useState(false);
+  const [tanggalBaru, setTanggalBaru] = useState("");
+  const [keteranganBaru, setKeteranganBaru] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [viewDate, setViewDate] = useState(new Date());
+  const [togglingTanggal, setTogglingTanggal] = useState(null);
+
+  const now = viewDate;
+  const isBulanIni = now.getFullYear() === new Date().getFullYear() && now.getMonth() === new Date().getMonth();
+  const startBulan = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+  const endBulan = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
+  const totalHariBulanIni = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const libur = await supabaseFetch(token, `hari_libur?select=*&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=tanggal.asc`);
+      setHariLibur(libur);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [viewDate]);
+
+  function gantiBulan(delta) {
+    setViewDate(new Date(now.getFullYear(), now.getMonth() + delta, 1));
+  }
+
   async function toggleTanggalMerah(tglStr, sudahLibur, liburId) {
     setTogglingTanggal(tglStr);
     try {
@@ -10036,23 +10142,10 @@ function RekapAbsenPage({ token }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
-  // Hitung berapa hari kerja bulan ini (total hari - hari Minggu - tanggal merah)
-  // - kalau lagi lihat bulan SEKARANG, cuma hitung sampai hari ini; kalau lihat
-  // bulan lain (sudah lewat/akan datang), hitung semua hari kerja di bulan itu.
-  const tanggalAsliSekarang = new Date();
-  let hariKerja = 0;
-  for (let d = 1; d <= totalHariBulanIni; d++) {
-    const tgl = new Date(now.getFullYear(), now.getMonth(), d);
-    const tglStr = `${tgl.getFullYear()}-${String(tgl.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-    const isLiburTgl = hariLibur.some((h) => h.tanggal === tglStr);
-    const sudahLewat = isBulanIni ? tgl <= tanggalAsliSekarang : true;
-    if (tgl.getDay() !== 0 && !isLiburTgl && sudahLewat) hariKerja++;
-  }
-
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-        <PageHeader title="Rekap Absen Sales" subtitle={`Bulan ${now.toLocaleDateString("id-ID", { month: "long", year: "numeric" })} - ${hariKerja} hari kerja berjalan`} />
+        <PageHeader title="Calendar" subtitle="Atur tanggal merah - dipakai juga untuk hitung hari kerja di Rekap Absen Sales" />
         <button
           onClick={() => setShowTambahLibur(true)}
           style={{ padding: "10px 16px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13, flexShrink: 0, marginTop: 4 }}
@@ -10084,7 +10177,7 @@ function RekapAbsenPage({ token }) {
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 2 }}>
             {(() => {
-              const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).getDay(); // 0=Minggu
+              const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).getDay();
               const sel = [];
               for (let i = 0; i < firstDay; i++) sel.push(<div key={`kosong-${i}`} />);
               for (let d = 1; d <= totalHariBulanIni; d++) {
@@ -10118,37 +10211,6 @@ function RekapAbsenPage({ token }) {
             Klik tanggal untuk atur tanggal merah
           </p>
         </div>
-      </Card>
-
-      <Card style={{ padding: 0, overflow: "hidden", marginBottom: 24 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-          <thead>
-            <tr style={{ background: "#F7F5F1" }}>
-              {["Kode", "Nama Sales", "Jumlah Absen Bulan Ini", "Dari Hari Kerja"].map((h) => (
-                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {salesList.map((s) => {
-              const jumlahAbsen = absenBulanIni.filter((a) => a.sales_id === s.id).length;
-              const kurang = hariKerja > 0 && jumlahAbsen < hariKerja;
-              return (
-                <tr key={s.id} style={{ borderTop: "1px solid #EDEAE3" }}>
-                  <td style={{ padding: "12px 14px" }}>{s.kode}</td>
-                  <td style={{ padding: "12px 14px", fontWeight: 600 }}>{s.nama}</td>
-                  <td style={{ padding: "12px 14px" }}>
-                    <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: kurang ? "#FBEAEA" : "#D8E9E6", color: kurang ? "#C0392B" : "#28685D" }}>
-                      {jumlahAbsen} kali
-                    </span>
-                  </td>
-                  <td style={{ padding: "12px 14px", color: "#6B6F75" }}>dari {hariKerja} hari</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        {salesList.length === 0 && <EmptyState text="Belum ada akun sales." />}
       </Card>
 
       <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Tanggal Merah Bulan Ini</h2>
@@ -13763,6 +13825,112 @@ function RatingKomplainPage({ token }) {
           </Card>
         ))
       )}
+    </div>
+  );
+}
+
+// ============================================================
+// BACKUP DATA - lihat & download backup terjadwal, atau backup manual
+// ============================================================
+function BackupDataPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [fileList, setFileList] = useState([]);
+  const [error, setError] = useState("");
+  const [backingUp, setBackingUp] = useState(false);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/list/backups`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ limit: 100, sortBy: { column: "created_at", order: "desc" } }),
+      });
+      if (!res.ok) throw new Error(`Error ${res.status}: ${await res.text()}`);
+      const data = await res.json();
+      setFileList(data || []);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function downloadFile(namaFile) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/backups/${namaFile}`, {
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`Error ${res.status}`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = namaFile;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("Gagal download: " + e.message);
+    }
+  }
+
+  async function backupSekarang() {
+    setBackingUp(true);
+    try {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/backup-database`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(`Error ${res.status}: ${await res.text()}`);
+      await load();
+      alert("Backup berhasil dibuat.");
+    } catch (e) {
+      alert("Gagal backup: " + e.message);
+    }
+    setBackingUp(false);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  return (
+    <div>
+      <PageHeader title="Backup Data" subtitle="Salinan data penting - dibuat otomatis tiap hari, tersimpan 30 hari terakhir" />
+
+      <button
+        onClick={backupSekarang}
+        disabled={backingUp}
+        style={{ display: "flex", alignItems: "center", gap: 6, padding: "10px 18px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, marginBottom: 20 }}
+      >
+        <RefreshCw size={16} /> {backingUp ? "Membuat Backup..." : "Backup Sekarang"}
+      </button>
+
+      {fileList.length === 0 ? (
+        <EmptyState text="Belum ada backup tersimpan." />
+      ) : (
+        fileList.map((f) => (
+          <Card key={f.name} style={{ marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+              <div>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{f.name}</p>
+                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: 0 }}>
+                  {new Date(f.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+                  {f.metadata?.size && ` - ${(f.metadata.size / 1024).toFixed(0)} KB`}
+                </p>
+              </div>
+              <button
+                onClick={() => downloadFile(f.name)}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+              >
+                <Download size={14} /> Download
+              </button>
+            </div>
+          </Card>
+        ))
+      )}
+
+      <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "20px 0 0", lineHeight: 1.6 }}>
+        Backup berisi data tabel-tabel penting (pesanan, toko, produk, saldo, dll) dalam format JSON. Ini bukan pengganti backup Supabase bawaan, tapi lapis tambahan yang bisa Anda unduh dan simpan sendiri kapan saja.
+      </p>
     </div>
   );
 }
