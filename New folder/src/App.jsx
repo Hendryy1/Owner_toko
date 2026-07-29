@@ -309,7 +309,21 @@ export default function OwnerDashboard() {
       .then((rows) => setUrutanMenu(rows?.[0]?.urutan || []))
       .catch(() => {});
   }, [token]);
-  const [page, setPage] = useState("overview");
+  const [page, setPage] = useState(() => {
+    try {
+      return localStorage.getItem("dashboard_last_page") || "overview";
+    } catch (e) {
+      return "overview";
+    }
+  });
+
+  // Simpan halaman yang lagi dibuka - supaya kalau di-refresh, tetap
+  // kembali ke halaman yang sama (tidak loncat ke Ringkasan).
+  useEffect(() => {
+    try {
+      localStorage.setItem("dashboard_last_page", page);
+    } catch (e) { /* diamkan kalau localStorage tidak tersedia */ }
+  }, [page]);
   const [urutanMenu, setUrutanMenu] = useState([]);
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
