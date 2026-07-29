@@ -13999,7 +13999,7 @@ function BackupDataPage({ token }) {
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/list/backups`, {
         method: "POST",
         headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ limit: 100, sortBy: { column: "created_at", order: "desc" } }),
+        body: JSON.stringify({ prefix: "", limit: 100, sortBy: { column: "created_at", order: "desc" } }),
       });
       if (!res.ok) throw new Error(`Error ${res.status}: ${await res.text()}`);
       const data = await res.json();
