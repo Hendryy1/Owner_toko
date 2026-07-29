@@ -7032,68 +7032,43 @@ function ProfilSalesPage({ token, profile }) {
           )}
         </div>
 
-        {dataTerkunci && (
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FFFBF0", borderRadius: 10, padding: 12, marginBottom: 16 }}>
-            <AlertCircle size={15} color="#8A6A1A" style={{ flexShrink: 0, marginTop: 1 }} />
-            <p style={{ fontSize: 12, color: "#8A6A1A", margin: 0, lineHeight: 1.5 }}>
-              Nama, Alamat, Email, dan No. HP hanya bisa diubah <strong>sekali</strong>. Sudah pernah diubah - kalau perlu ubah lagi, hubungi Owner.
-            </p>
-          </div>
-        )}
-
-        <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle}>Nama Lengkap</label>
-          <input value={form.nama} onChange={(e) => setForm({ ...form, nama: e.target.value })} disabled={dataTerkunci} style={dataTerkunci ? fieldStyleLocked : fieldStyle} />
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FFFBF0", borderRadius: 10, padding: 12, marginBottom: 20 }}>
+          <AlertCircle size={15} color="#8A6A1A" style={{ flexShrink: 0, marginTop: 1 }} />
+          <p style={{ fontSize: 12, color: "#8A6A1A", margin: 0, lineHeight: 1.5 }}>
+            Untuk perubahan data profil, silakan hubungi Owner.
+          </p>
         </div>
 
-        <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle}>Alamat (Jalan, No. Rumah, RT/RW)</label>
-          <textarea value={form.alamat} onChange={(e) => setForm({ ...form, alamat: e.target.value })} disabled={dataTerkunci} rows={2} style={dataTerkunci ? { ...fieldStyleLocked, resize: "vertical" } : { ...fieldStyle, resize: "vertical" }} />
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <div>
-            <label style={labelStyle}>Kota/Kabupaten</label>
-            <input value={form.kota} onChange={(e) => setForm({ ...form, kota: e.target.value })} disabled={dataTerkunci} style={dataTerkunci ? fieldStyleLocked : fieldStyle} />
+            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Nama Lengkap</p>
+            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.nama || "-"}</p>
           </div>
           <div>
-            <label style={labelStyle}>Provinsi</label>
-            <input value={form.provinsi} onChange={(e) => setForm({ ...form, provinsi: e.target.value })} disabled={dataTerkunci} style={dataTerkunci ? fieldStyleLocked : fieldStyle} />
+            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>No. HP</p>
+            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.noHp || "-"}</p>
           </div>
-        </div>
-
-        <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle}>Kode Pos</label>
-          <input value={form.kodePos} onChange={(e) => setForm({ ...form, kodePos: e.target.value })} disabled={dataTerkunci} style={{ ...(dataTerkunci ? fieldStyleLocked : fieldStyle), maxWidth: 160 }} />
-        </div>
-
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
-          <div>
-            <label style={labelStyle}>Email</label>
-            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} disabled={dataTerkunci} style={dataTerkunci ? fieldStyleLocked : fieldStyle} />
+          <div style={{ gridColumn: "1 / -1" }}>
+            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Alamat</p>
+            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.alamat || "-"}</p>
           </div>
           <div>
-            <label style={labelStyle}>No. HP</label>
-            <input value={form.noHp} onChange={(e) => setForm({ ...form, noHp: e.target.value })} disabled={dataTerkunci} style={dataTerkunci ? fieldStyleLocked : fieldStyle} />
+            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Kota/Kabupaten</p>
+            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.kota || "-"}</p>
+          </div>
+          <div>
+            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Provinsi</p>
+            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.provinsi || "-"}</p>
+          </div>
+          <div>
+            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Kode Pos</p>
+            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.kodePos || "-"}</p>
+          </div>
+          <div>
+            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Email</p>
+            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.email || "-"}</p>
           </div>
         </div>
-
-        {error && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBEAEA", color: "#C0392B", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 16 }}>
-            <AlertCircle size={14} /> {error}
-          </div>
-        )}
-        {saved && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#D8E9E6", color: "#28685D", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 16, fontWeight: 600 }}>
-            <Check size={14} /> Profil berhasil disimpan.
-          </div>
-        )}
-
-        {!dataTerkunci && (
-          <button onClick={simpan} disabled={saving || uploading} style={{ padding: "12px 24px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
-            {saving ? "Menyimpan..." : "Simpan Perubahan"}
-          </button>
-        )}
       </Card>
 
       {/* VERIFIKASI DOKUMEN */}
