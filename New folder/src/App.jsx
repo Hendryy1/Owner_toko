@@ -7532,11 +7532,12 @@ function KunjunganSalesPage({ token, profile }) {
       ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
       ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
 
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
-      const filePath = `kunjungan-${profile.sales_id}-${selectedClient.id}-${Date.now()}.jpg`;
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
+      const extBlob = blob?.type === "image/webp" ? "webp" : "png"; // fallback kalau browser tidak dukung WebP
+      const filePath = `kunjungan-${profile.sales_id}-${selectedClient.id}-${Date.now()}.${extBlob}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": blob?.type || "image/png" },
         body: blob,
       });
       if (!res.ok) throw new Error(await res.text());
@@ -9898,11 +9899,12 @@ function AbsenSalesPage({ token, profile }) {
       ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
       ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
 
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
-      const filePath = `absen-${profile.sales_id}-${Date.now()}.jpg`;
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
+      const extBlob = blob?.type === "image/webp" ? "webp" : "png"; // fallback kalau browser tidak dukung WebP
+      const filePath = `absen-${profile.sales_id}-${Date.now()}.${extBlob}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": "image/jpeg" },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": blob?.type || "image/png" },
         body: blob,
       });
       if (!res.ok) throw new Error(await res.text());
@@ -12629,11 +12631,13 @@ function PickingListPage({ token, role, userId }) {
   async function uploadBuktiPengemasan(file) {
     setUploadingBukti(true);
     try {
-      const filePath = `bukti-pengemasan-${packingSelesaiOrder.id}-${Date.now()}.jpg`;
+      const compressed = await compressImage(file);
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
+      const filePath = `bukti-pengemasan-${packingSelesaiOrder.id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "image/jpeg" },
-        body: file,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
+        body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
       const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
