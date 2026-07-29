@@ -546,7 +546,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
   const [modeAturUrutan, setModeAturUrutan] = useState(false);
   const allItems = [
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_keuangan"] },
-    { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "sales"] },
+    { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "sales", "admin_transaksi"] },
     { key: "profil_sales", label: "Profil Saya", icon: User, roles: ["sales"] },
     { key: "omzet_sales", label: "Omzet Saya", icon: TrendingUp, roles: ["sales"] },
     { key: "kunjungan_sales", label: "Laporan Kunjungan", icon: MapPin, roles: ["sales"] },
@@ -6592,6 +6592,7 @@ function ChatSalesPage({ token, profile }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [filterKategori, setFilterKategori] = useState("clara"); // "clara" | "sales" - buat Owner/Admin Transaksi
   const pollRef = useRef(null);
 
   async function load() {
@@ -6600,14 +6601,18 @@ function ChatSalesPage({ token, profile }) {
     try {
       let url = "chat_cases?select=*,clients(nama,kode)&order=updated_at.desc";
       if (profile?.role === "sales" && profile?.sales_id) {
-        url += `&sales_id=eq.${profile.sales_id}`;
+        // Sales cuma lihat kasus kategori "sales" yang jadi tanggung jawabnya
+        url += `&kategori=eq.sales&sales_id=eq.${profile.sales_id}`;
+      } else {
+        // Owner/Admin Transaksi - filter berdasarkan tab kategori yang dipilih
+        url += `&kategori=eq.${filterKategori}`;
       }
       const rows = await supabaseFetch(token, url);
       setCases(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [filterKategori]);
 
   async function openCase(c) {
     setSelectedCase(c);
@@ -6640,7 +6645,7 @@ function ChatSalesPage({ token, profile }) {
     try {
       const [inserted] = await supabaseFetch(token, "chat_messages", {
         method: "POST",
-        body: JSON.stringify({ case_id: selectedCase.id, sender_type: "sales", message: text }),
+        body: JSON.stringify({ case_id: selectedCase.id, sender_type: selectedCase.kategori === "clara" ? "clara" : "sales", message: text }),
       });
       setMessages((prev) => [...prev, inserted]);
       await supabaseFetch(token, `chat_cases?id=eq.${selectedCase.id}`, {
@@ -6735,6 +6740,22 @@ function ChatSalesPage({ token, profile }) {
   return (
     <div>
       <PageHeader title="Chat Toko" subtitle={`${cases.filter((c) => c.status === "open").length} kasus masih terbuka`} />
+      {profile?.role !== "sales" && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+          <button
+            onClick={() => setFilterKategori("clara")}
+            style={{ padding: "9px 18px", borderRadius: 9, border: filterKategori === "clara" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: filterKategori === "clara" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+          >
+            Clara (Customer Service)
+          </button>
+          <button
+            onClick={() => setFilterKategori("sales")}
+            style={{ padding: "9px 18px", borderRadius: 9, border: filterKategori === "sales" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: filterKategori === "sales" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+          >
+            Ditangani Sales
+          </button>
+        </div>
+      )}
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
