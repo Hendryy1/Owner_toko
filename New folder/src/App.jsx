@@ -2824,6 +2824,21 @@ function RekapTokoPage({ token }) {
     return salesList.find((s) => s.kode.toUpperCase() === kode.trim().toUpperCase());
   }
 
+  // Aktifkan/nonaktifkan toko ini buat bisa dibantu order-kan sales (mode
+  // sales di Web App) - toko baru muncul di layar "Pilih Toko" sales kalau
+  // ini AKTIF.
+  async function toggleModeSales(clientId, statusSaatIni) {
+    try {
+      await supabaseFetch(token, `clients?id=eq.${clientId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ mode_sales_aktif: !statusSaatIni }),
+      });
+      setClients((prev) => prev.map((c) => (c.id === clientId ? { ...c, mode_sales_aktif: !statusSaatIni } : c)));
+    } catch (e) {
+      alert("Gagal ubah status mode sales: " + e.message);
+    }
+  }
+
   async function save(clientId) {
     const kodeSalesTrim = editForm.kodeSales.trim();
     const found = kodeSalesTrim ? matchedSales(kodeSalesTrim) : null;
@@ -2878,7 +2893,7 @@ function RekapTokoPage({ token }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
-              {["Nama Toko", "Alamat", "No HP", "Email", "Kode Sales", "Nama Sales", "Terakhir Order", "Catatan", ""].map((h) => (
+              {["Nama Toko", "Alamat", "No HP", "Email", "Kode Sales", "Nama Sales", "Mode Sales", "Terakhir Order", "Catatan", ""].map((h) => (
                 <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
               ))}
             </tr>
@@ -2901,6 +2916,21 @@ function RekapTokoPage({ token }) {
                   <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{c.email || "-"}</td>
                   <td style={{ padding: "12px 14px" }}>{c.sales?.kode || "-"}</td>
                   <td style={{ padding: "12px 14px" }}>{c.sales?.nama || "-"}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <button
+                      onClick={() => toggleModeSales(c.id, c.mode_sales_aktif)}
+                      disabled={!c.sales_id}
+                      title={!c.sales_id ? "Toko ini belum punya sales - tidak relevan diaktifkan" : ""}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 999, border: "none",
+                        background: c.mode_sales_aktif ? "#D8E9E6" : "#F7F5F1",
+                        color: c.mode_sales_aktif ? "#28685D" : "#9CA0A6",
+                        fontSize: 11, fontWeight: 700, opacity: !c.sales_id ? 0.5 : 1,
+                      }}
+                    >
+                      {c.mode_sales_aktif ? "Aktif" : "Nonaktif"}
+                    </button>
+                  </td>
                   <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                     {hari === null ? (
                       <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#F7F5F1", color: "#9CA0A6" }}>Belum pernah order</span>
