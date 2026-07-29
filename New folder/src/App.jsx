@@ -226,9 +226,15 @@ async function supabaseFetch(token, path, options = {}) {
       ...(options.headers || {}),
     },
   });
-  if (!res.ok) throw new Error(`Error ${res.status}: ${await res.text()}`);
   const text = await res.text();
-  return text ? JSON.parse(text) : null;
+  if (!res.ok) throw new Error(`Error ${res.status}: ${text}`);
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch (e) {
+    throw new Error(`Gagal baca respons server: ${e.message}`);
+  }
 }
 
 const rupiah = (n) => "Rp" + Math.round(Number(n) || 0).toLocaleString("id-ID");
