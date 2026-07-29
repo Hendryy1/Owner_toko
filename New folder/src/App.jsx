@@ -2756,7 +2756,7 @@ function RekapTokoPage({ token }) {
   const [orderTerakhir, setOrderTerakhir] = useState({}); // { client_id: tanggal }
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ alamat: "", telp: "", kodeSales: "", catatan: "", namaOwner: "", tanggalLahir: "", jenisUsaha: "", provinsi: "" });
+  const [editForm, setEditForm] = useState({ alamat: "", telp: "", kodeSales: "", catatan: "", namaOwner: "", tanggalLahir: "", jenisUsaha: "", provinsi: "", email: "" });
   const [saving, setSaving] = useState(false);
   const [hanyaTidakAktif, setHanyaTidakAktif] = useState(false);
 
@@ -2797,6 +2797,7 @@ function RekapTokoPage({ token }) {
     setEditForm({
       alamat: c.alamat || "", telp: c.telp || "", kodeSales: c.sales?.kode || "", catatan: c.catatan_internal || "",
       namaOwner: c.nama_owner || "", tanggalLahir: c.tanggal_lahir || "", jenisUsaha: c.jenis_usaha || "", provinsi: c.provinsi || "",
+      email: c.email || "",
     });
   }
 
@@ -2937,6 +2938,14 @@ function RekapTokoPage({ token }) {
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Alamat</label>
                 <input value={editForm.alamat} onChange={(e) => setEditForm({ ...editForm, alamat: e.target.value })} style={fieldStyle} />
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Email</label>
+                <p style={{ padding: "10px 12px", background: "#F7F5F1", borderRadius: 9, fontSize: 13.5, color: editForm.email ? "#24272B" : "#C0392B", margin: 0 }}>
+                  {editForm.email || "Belum ada email terdaftar"}
+                </p>
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: "6px 0 0" }}>Email ini sama dengan yang dipakai toko login (sudah diverifikasi OTP saat daftar) - tidak bisa diubah dari sini.</p>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
