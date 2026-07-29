@@ -6684,7 +6684,12 @@ function ChatSalesPage({ token, profile }) {
         </button>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <div>
-            <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: 0 }}>{selectedCase.no_case} - {selectedCase.clients?.nama}</p>
+            <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: 0 }}>
+              {selectedCase.no_case} - {selectedCase.clients?.nama}
+              <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: selectedCase.kategori === "clara" ? "#FBF0D9" : "#D8E9E6", color: selectedCase.kategori === "clara" ? "#8A6A1A" : "#28685D", verticalAlign: "middle" }}>
+                {selectedCase.kategori === "clara" ? "Clara (CS)" : "Sales"}
+              </span>
+            </p>
             <p style={{ fontSize: 12, color: "#9CA0A6", margin: "2px 0 0" }}>Kode Toko: {selectedCase.clients?.kode}</p>
           </div>
           {selectedCase.status === "open" ? (
@@ -6760,7 +6765,7 @@ function ChatSalesPage({ token, profile }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
-              {["No Case", "Toko", "Terakhir Update", "Status", ""].map((h) => (
+              {["No Case", "Toko", "Kategori", "Terakhir Update", "Status", ""].map((h) => (
                 <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
               ))}
             </tr>
@@ -6770,6 +6775,11 @@ function ChatSalesPage({ token, profile }) {
               <tr key={c.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                 <td style={{ padding: "12px 14px", fontWeight: 700 }}>{c.no_case}</td>
                 <td style={{ padding: "12px 14px" }}>{c.clients?.nama} ({c.clients?.kode})</td>
+                <td style={{ padding: "12px 14px" }}>
+                  <span style={{ background: c.kategori === "clara" ? "#FBF0D9" : "#D8E9E6", color: c.kategori === "clara" ? "#8A6A1A" : "#28685D", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                    {c.kategori === "clara" ? "Clara (CS)" : "Sales"}
+                  </span>
+                </td>
                 <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{new Date(c.updated_at).toLocaleString("id-ID")}</td>
                 <td style={{ padding: "12px 14px" }}>
                   <span style={{ background: c.status === "open" ? "#D8E9E6" : "#F7F5F1", color: c.status === "open" ? "#28685D" : "#9CA0A6", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
