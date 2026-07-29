@@ -7020,10 +7020,16 @@ function ProfilSalesPage({ token, profile }) {
           <div style={{ width: 84, height: 84, borderRadius: "50%", background: form.fotoUrl ? `url(${form.fotoUrl}) center/cover` : "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             {!form.fotoUrl && <User size={32} color="#D8D6D0" />}
           </div>
-          <label style={{ padding: "9px 16px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
-            {uploading ? "Mengupload..." : "Ganti Foto"}
-            <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploading} onChange={(e) => { if (e.target.files[0]) uploadFoto(e.target.files[0]); }} />
-          </label>
+          {form.fotoUrl ? (
+            <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: 0, lineHeight: 1.5 }}>
+              Foto profil cuma bisa dipasang <strong>1 kali</strong>. Hubungi Owner kalau perlu diganti.
+            </p>
+          ) : (
+            <label style={{ padding: "9px 16px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
+              {uploading ? "Mengupload..." : "Pasang Foto"}
+              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploading} onChange={(e) => { if (e.target.files[0]) uploadFoto(e.target.files[0]); }} />
+            </label>
+          )}
         </div>
 
         {dataTerkunci && (
