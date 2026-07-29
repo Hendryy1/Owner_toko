@@ -233,6 +233,44 @@ async function supabaseFetch(token, path, options = {}) {
 
 const rupiah = (n) => "Rp" + Math.round(Number(n) || 0).toLocaleString("id-ID");
 
+// Kompresi gambar sebelum upload (resize + re-encode JPEG kualitas wajar) -
+// dipakai di semua tempat upload foto di Dashboard, supaya file lebih
+// kecil/cepat tapi masih enak dilihat.
+function compressImage(file, maxDimension = 1280, quality = 0.8) {
+  return new Promise((resolve) => {
+    if (!file.type || !file.type.startsWith("image/")) {
+      resolve(file);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > maxDimension || height > maxDimension) {
+          if (width > height) {
+            height = Math.round((height / width) * maxDimension);
+            width = maxDimension;
+          } else {
+            width = Math.round((width / height) * maxDimension);
+            height = maxDimension;
+          }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => resolve(blob || file), "image/jpeg", quality);
+      };
+      img.onerror = () => resolve(file);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => resolve(file);
+    reader.readAsDataURL(file);
+  });
+}
+
 // ============================================================
 // APP UTAMA
 // ============================================================
@@ -3979,12 +4017,14 @@ function SiapDikirimPage({ token, role }) {
   async function uploadBuktiPengiriman(order, file) {
     setUploadingId(order.id);
     try {
-      const ext = file.name.split(".").pop();
+      const compressed = await compressImage(file);
+      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
+      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
       const filePath = `bukti_pengiriman_url-${order.id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
       const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bukti-pengiriman/${filePath}`;
@@ -4594,12 +4634,14 @@ function ProsesPengirimanPage({ token, role }) {
     setUploadingId(order.id);
     setUploadingField(fieldKey);
     try {
-      const ext = file.name.split(".").pop();
+      const compressed = await compressImage(file);
+      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
+      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
       const filePath = `${kolom}-${order.id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
       const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bukti-pengiriman/${filePath}`;
@@ -4643,12 +4685,14 @@ function ProsesPengirimanPage({ token, role }) {
   async function uploadFotoCod(order, file, jenis) {
     setUploadingCod(jenis);
     try {
-      const ext = file.name.split(".").pop();
+      const compressed = await compressImage(file);
+      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
+      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
       const filePath = `cod-${jenis}-${order.id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
       const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bukti-pengiriman/${filePath}`;
@@ -4672,12 +4716,14 @@ function ProsesPengirimanPage({ token, role }) {
   async function uploadBuktiRetur(file) {
     setUploadingBuktiRetur(true);
     try {
-      const ext = file.name.split(".").pop();
+      const compressed = await compressImage(file);
+      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
+      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
       const filePath = `bukti-retur-${konfirmasiReturId}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
       setBuktiRetur(`${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`);
@@ -6088,12 +6134,14 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
   async function uploadFotoTipe(file, tipe, setUploadingFn, listState, setListFn) {
     setUploadingFn(true);
     try {
-      const ext = file.name.split(".").pop();
+      const compressed = await compressImage(file);
+      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
+      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
       const filePath = `${form.kode || "produk"}-${tipe}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
       const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
@@ -6128,12 +6176,14 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
   async function uploadGambar(file) {
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop();
+      const compressed = await compressImage(file);
+      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
+      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
       const filePath = `${form.kode || "produk"}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
       setGambarUrl(`${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`);
@@ -6847,12 +6897,14 @@ function ProfilSalesPage({ token, profile }) {
   async function uploadFoto(file) {
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop();
+      const compressed = await compressImage(file);
+      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
+      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
       const filePath = `sales-${profile.sales_id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
       const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
@@ -6891,12 +6943,14 @@ function ProfilSalesPage({ token, profile }) {
   async function uploadDokumen(file, jenis) {
     setUploadingDoc(jenis);
     try {
-      const ext = file.name.split(".").pop();
+      const compressed = await compressImage(file);
+      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
+      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
       const filePath = `verifikasi-sales-${jenis}-${profile.sales_id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/dokumen-verifikasi/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
       if (jenis === "ktp") setFotoKtp(filePath);
@@ -8663,12 +8717,14 @@ function BannerPromoPage({ token }) {
   async function uploadFotoGaleri(file) {
     setUploadingGaleri(true);
     try {
-      const ext = file.name.split(".").pop();
+      const compressed = await compressImage(file);
+      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
+      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
       const filePath = `banner-galeri-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
       const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
@@ -8695,12 +8751,14 @@ function BannerPromoPage({ token }) {
   async function uploadGambar(file) {
     setUploading(true);
     try {
-      const ext = file.name.split(".").pop();
+      const compressed = await compressImage(file);
+      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
+      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
       const filePath = `banner-promo-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": file.type || "application/octet-stream" },
-        body: file,
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
       const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
