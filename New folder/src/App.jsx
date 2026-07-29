@@ -261,7 +261,7 @@ function compressImage(file, maxDimension = 1280, quality = 0.8) {
         canvas.height = height;
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob((blob) => resolve(blob || file), "image/jpeg", quality);
+        canvas.toBlob((blob) => resolve(blob || file), "image/webp", quality);
       };
       img.onerror = () => resolve(file);
       img.src = e.target.result;
@@ -269,6 +269,19 @@ function compressImage(file, maxDimension = 1280, quality = 0.8) {
     reader.onerror = () => resolve(file);
     reader.readAsDataURL(file);
   });
+}
+
+// Tentukan ekstensi & Content-Type file YANG SEBENARNYA dihasilkan
+// compressImage - biasanya WebP, tapi browser lama bisa fallback ke
+// PNG/JPEG kalau WebP tidak didukung. Jangan asumsikan selalu satu format.
+function infoFileTerkompresi(compressed, fileAsli) {
+  const adalahGambar = fileAsli.type?.startsWith("image/");
+  if (!adalahGambar || compressed === fileAsli) {
+    return { ext: fileAsli.name.split(".").pop(), contentType: fileAsli.type || "application/octet-stream" };
+  }
+  const petaExt = { "image/webp": "webp", "image/jpeg": "jpg", "image/png": "png" };
+  const ext = petaExt[compressed.type] || fileAsli.name.split(".").pop();
+  return { ext, contentType: compressed.type || fileAsli.type };
 }
 
 // ============================================================
@@ -4041,12 +4054,11 @@ function SiapDikirimPage({ token, role }) {
     setUploadingId(order.id);
     try {
       const compressed = await compressImage(file);
-      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
-      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
       const filePath = `bukti_pengiriman_url-${order.id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
         body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
@@ -4658,12 +4670,11 @@ function ProsesPengirimanPage({ token, role }) {
     setUploadingField(fieldKey);
     try {
       const compressed = await compressImage(file);
-      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
-      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
       const filePath = `${kolom}-${order.id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
         body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
@@ -4709,12 +4720,11 @@ function ProsesPengirimanPage({ token, role }) {
     setUploadingCod(jenis);
     try {
       const compressed = await compressImage(file);
-      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
-      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
       const filePath = `cod-${jenis}-${order.id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
         body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
@@ -4740,12 +4750,11 @@ function ProsesPengirimanPage({ token, role }) {
     setUploadingBuktiRetur(true);
     try {
       const compressed = await compressImage(file);
-      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
-      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
       const filePath = `bukti-retur-${konfirmasiReturId}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
         body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
@@ -6158,12 +6167,11 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
     setUploadingFn(true);
     try {
       const compressed = await compressImage(file);
-      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
-      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
       const filePath = `${form.kode || "produk"}-${tipe}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
         body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
@@ -6200,12 +6208,11 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
     setUploading(true);
     try {
       const compressed = await compressImage(file);
-      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
-      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
       const filePath = `${form.kode || "produk"}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
         body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
@@ -6921,12 +6928,11 @@ function ProfilSalesPage({ token, profile }) {
     setUploading(true);
     try {
       const compressed = await compressImage(file);
-      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
-      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
       const filePath = `sales-${profile.sales_id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
         body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
@@ -6967,12 +6973,11 @@ function ProfilSalesPage({ token, profile }) {
     setUploadingDoc(jenis);
     try {
       const compressed = await compressImage(file);
-      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
-      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
       const filePath = `verifikasi-sales-${jenis}-${profile.sales_id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/dokumen-verifikasi/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
         body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
@@ -8722,12 +8727,11 @@ function BannerPromoPage({ token }) {
     setUploadingGaleri(true);
     try {
       const compressed = await compressImage(file);
-      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
-      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
       const filePath = `banner-galeri-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
         body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
@@ -8756,12 +8760,11 @@ function BannerPromoPage({ token }) {
     setUploading(true);
     try {
       const compressed = await compressImage(file);
-      const isJpeg = compressed.type === "image/jpeg" && file.type?.startsWith("image/");
-      const ext = isJpeg ? "jpg" : file.name.split(".").pop();
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
       const filePath = `banner-promo-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": isJpeg ? "image/jpeg" : (file.type || "application/octet-stream") },
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
         body: compressed,
       });
       if (!res.ok) throw new Error(await res.text());
