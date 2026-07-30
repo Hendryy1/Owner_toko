@@ -2699,6 +2699,38 @@ function SalesPage({ token }) {
 // ============================================================
 // FORMAT NOTA (khusus Owner)
 // ============================================================
+// ============================================================
+// PREVIEW KERTAS - tampilkan bingkai persis ukuran kertas asli (inch),
+// diperkecil (scale) supaya muat di layar, biar bisa lihat tata letak &
+// ukuran SEBELUM benar-benar cetak ke printer.
+// ============================================================
+function PreviewKertas({ lebarIn, tinggiIn, children }) {
+  const LEBAR_MAKS_LAYAR = 380; // px - lebar maksimal area preview di layar
+  const lebarPx = lebarIn * 96; // 1 inch = 96px standar CSS
+  const tinggiPx = tinggiIn * 96;
+  const skala = Math.min(1, LEBAR_MAKS_LAYAR / lebarPx);
+
+  return (
+    <div style={{ marginTop: 14, padding: 16, background: "#F7F5F1", borderRadius: 12 }}>
+      <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 10px", textAlign: "center" }}>
+        Ukuran asli: {lebarIn.toFixed(2)}in x {tinggiIn.toFixed(2)}in - ditampilkan diperkecil ({Math.round(skala * 100)}%) supaya muat di layar
+      </p>
+      <div style={{ display: "flex", justifyContent: "center", overflowX: "auto" }}>
+        <div
+          style={{
+            width: lebarPx, height: tinggiPx, transform: `scale(${skala})`, transformOrigin: "top center",
+            background: "#fff", boxShadow: "0 2px 12px rgba(0,0,0,0.15)", overflow: "hidden", flexShrink: 0,
+            marginBottom: (tinggiPx - tinggiPx * skala) * -1, // kompensasi ruang kosong dari scale
+          }}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function FormatNotaPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -2706,6 +2738,7 @@ function FormatNotaPage({ token }) {
   const [error, setError] = useState("");
   const [form, setForm] = useState(null);
   const [id, setId] = useState(null);
+  const [previewAktif, setPreviewAktif] = useState(null); // "nota" | "surat_jalan" | "kurir" | "barcode" | null
 
   async function load() {
     setLoading(true);
@@ -2740,6 +2773,8 @@ function FormatNotaPage({ token }) {
           tinggi_kertas_nota: Number(form.tinggi_kertas_nota) || 11,
           lebar_kertas_kurir: Number(form.lebar_kertas_kurir) || 8.5,
           tinggi_kertas_kurir: Number(form.tinggi_kertas_kurir) || 11,
+          lebar_label_barcode_mm: Number(form.lebar_label_barcode_mm) || 100,
+          tinggi_label_barcode_mm: Number(form.tinggi_label_barcode_mm) || 150,
           updated_at: new Date().toISOString(),
         }),
       });
@@ -2752,6 +2787,43 @@ function FormatNotaPage({ token }) {
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
   const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  // Data contoh (dummy) buat preview - tidak nyata, cuma buat lihat tata letak
+  const dummyOrder = {
+    no_nota: "NT01202601000123",
+    created_at: new Date().toISOString(),
+    clients: { nama: "Toko Contoh Jaya", alamat: "Jl. Contoh Raya No. 45, Pekanbaru" },
+    tujuan_alamat: "Jl. Contoh Raya No. 45, Pekanbaru",
+    jenis_pembayaran: "Transfer",
+    metode_bayar: "transfer",
+    status_bayar: "belum_lunas",
+    jatuh_tempo: new Date(Date.now() + 7 * 86400000).toISOString(),
+    diskon_tambahan_nilai: 0,
+    order_items: [
+      { id: "1", qty: 2, harga_satuan: 120000, subtotal_setelah_diskon: 240000, products: { nama: "Contoh Barang A", satuan: "Dus" } },
+      { id: "2", qty: 5, harga_satuan: 45000, subtotal_setelah_diskon: 202500, products: { nama: "Contoh Barang B", satuan: "Pcs" } },
+    ],
+  };
+  const dummyLaporanKurir = {
+    jenis_kurir: "baraka", jenis_laporan: "kirim", created_at: new Date().toISOString(),
+    nama_kurir: "Contoh Nama Kurir", no_hp_kurir: "0812xxxxxxx", jumlah_koli: 3,
+  };
+  const dummyItemsKurir = [
+    { id: "1", no_nota: "NT01202601000123", jumlah_box: 2, catatan: "-" },
+    { id: "2", no_nota: "NT01202601000124", jumlah_box: 1, catatan: "Pecah belah" },
+  ];
+
+  function tombolPreview(kunci, label) {
+    return (
+      <button
+        type="button"
+        onClick={() => setPreviewAktif(previewAktif === kunci ? null : kunci)}
+        style={{ marginTop: 8, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #E4E1DA", background: previewAktif === kunci ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 12, fontWeight: 700 }}
+      >
+        <Eye size={12} style={{ verticalAlign: -1, marginRight: 4 }} /> {previewAktif === kunci ? "Tutup Preview" : label}
+      </button>
+    );
+  }
 
   if (loading) return <LoadingState />;
   if (error && !form) return <ErrorBox error={error} onRetry={load} />;
@@ -2824,6 +2896,12 @@ function FormatNotaPage({ token }) {
               <input type="number" step="0.1" min="1" value={form.tinggi_kertas_nota ?? 11} onChange={set("tinggi_kertas_nota")} style={fieldStyle} />
             </div>
           </div>
+          {tombolPreview("nota", "Lihat Preview Nota")}
+          {previewAktif === "nota" && (
+            <PreviewKertas lebarIn={Number(form.lebar_kertas_nota) || 9.5} tinggiIn={Number(form.tinggi_kertas_nota) || 11}>
+              <NotaPrintContent order={dummyOrder} type="nota" settings={form} />
+            </PreviewKertas>
+          )}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
             <div>
               <label style={labelStyle}>Dokumen Kurir - Lebar</label>
@@ -2834,6 +2912,29 @@ function FormatNotaPage({ token }) {
               <input type="number" step="0.1" min="1" value={form.tinggi_kertas_kurir ?? 11} onChange={set("tinggi_kertas_kurir")} style={fieldStyle} />
             </div>
           </div>
+          {tombolPreview("kurir", "Lihat Preview Dokumen Kurir")}
+          {previewAktif === "kurir" && (
+            <PreviewKertas lebarIn={Number(form.lebar_kertas_kurir) || 8.5} tinggiIn={Number(form.tinggi_kertas_kurir) || 11}>
+              <LaporanKurirDocContent laporan={dummyLaporanKurir} items={dummyItemsKurir} />
+            </PreviewKertas>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginTop: 14 }}>
+            <div>
+              <label style={labelStyle}>Label Barcode - Lebar (mm)</label>
+              <input type="number" step="1" min="10" value={form.lebar_label_barcode_mm ?? 100} onChange={set("lebar_label_barcode_mm")} style={fieldStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Label Barcode - Tinggi (mm)</label>
+              <input type="number" step="1" min="10" value={form.tinggi_label_barcode_mm ?? 150} onChange={set("tinggi_label_barcode_mm")} style={fieldStyle} />
+            </div>
+          </div>
+          {tombolPreview("barcode", "Lihat Preview Label Barcode")}
+          {previewAktif === "barcode" && (
+            <PreviewKertas lebarIn={(Number(form.lebar_label_barcode_mm) || 100) / 25.4} tinggiIn={(Number(form.tinggi_label_barcode_mm) || 150) / 25.4}>
+              <BarcodeLabelContent order={dummyOrder} noBox={1} totalBox={2} />
+            </PreviewKertas>
+          )}
         </div>
 
         {error && (
@@ -4238,6 +4339,15 @@ function SiapDikirimPage({ token, role }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkPrint, setBulkPrint] = useState(null); // { orders, type } | null
   const [bulkBarcode, setBulkBarcode] = useState(null); // array order | null
+  const [ukuranLabelBarcode, setUkuranLabelBarcode] = useState({ lebar: 100, tinggi: 150 });
+
+  useEffect(() => {
+    supabaseFetch(token, "nota_settings?select=lebar_label_barcode_mm,tinggi_label_barcode_mm&limit=1")
+      .then((rows) => {
+        if (rows[0]) setUkuranLabelBarcode({ lebar: rows[0].lebar_label_barcode_mm ?? 100, tinggi: rows[0].tinggi_label_barcode_mm ?? 150 });
+      })
+      .catch(() => {}); // biarkan pakai default kalau gagal muat
+  }, []);
   const [mencetakBarcode, setMencetakBarcode] = useState(false);
   const [errorCetakBarcode, setErrorCetakBarcode] = useState("");
   const [activeTab, setActiveTab] = useState("baru"); // tab pengemasan lama + tab baru siklus penuh
@@ -4413,7 +4523,7 @@ function SiapDikirimPage({ token, role }) {
       const res = await fetch(`${PRINT_SERVER_URL}/print-massal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: dataBarcode, printer: "bawah" }),
+        body: JSON.stringify({ items: dataBarcode, printer: "bawah", lebarMm: ukuranLabelBarcode.lebar, tinggiMm: ukuranLabelBarcode.tinggi }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.gagal?.length ? `${data.gagal.length} label gagal cetak` : (data.error || "Gagal cetak."));
@@ -4432,7 +4542,7 @@ function SiapDikirimPage({ token, role }) {
       const res = await fetch(`${PRINT_SERVER_URL}/print-massal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: dataBarcode, printer: "bawah" }),
+        body: JSON.stringify({ items: dataBarcode, printer: "bawah", lebarMm: ukuranLabelBarcode.lebar, tinggiMm: ukuranLabelBarcode.tinggi }),
       });
       const data = await res.json();
       if (!data.success) throw new Error(data.gagal?.length ? `${data.gagal.length} label gagal cetak` : (data.error || "Gagal cetak."));
