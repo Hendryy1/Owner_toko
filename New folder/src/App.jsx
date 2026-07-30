@@ -4519,14 +4519,9 @@ function SiapDikirimPage({ token, role }) {
     setMencetakBarcode(true);
     setErrorCetakBarcode("");
     try {
-      const dataBarcode = konversiOrdersKeDataBarcode([order]);
-      const res = await fetch(`${PRINT_SERVER_URL}/print-massal`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: dataBarcode, printer: "bawah", lebarMm: ukuranLabelBarcode.lebar, tinggiMm: ukuranLabelBarcode.tinggi }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.gagal?.length ? `${data.gagal.length} label gagal cetak` : (data.error || "Gagal cetak."));
+      const lebarIn = ukuranLabelBarcode.lebar / 25.4;
+      const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
+      await cetakPdfOtomatis(<BarcodeLabelContent order={order} />, `${lebarIn}in ${tinggiIn}in`, "bawah");
       await tandaiSudahDicetak(order.id);
     } catch (e) {
       setErrorCetakBarcode("Gagal cetak otomatis: " + e.message + " - pastikan print server jalan. Coba tombol cetak manual sebagai cadangan, atau ulangi.");
@@ -4538,14 +4533,11 @@ function SiapDikirimPage({ token, role }) {
     setMencetakBarcode(true);
     setErrorCetakBarcode("");
     try {
-      const dataBarcode = konversiOrdersKeDataBarcode(bulkBarcode);
-      const res = await fetch(`${PRINT_SERVER_URL}/print-massal`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: dataBarcode, printer: "bawah", lebarMm: ukuranLabelBarcode.lebar, tinggiMm: ukuranLabelBarcode.tinggi }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.gagal?.length ? `${data.gagal.length} label gagal cetak` : (data.error || "Gagal cetak."));
+      const lebarIn = ukuranLabelBarcode.lebar / 25.4;
+      const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
+      for (const o of bulkBarcode) {
+        await cetakPdfOtomatis(<BarcodeLabelContent order={o} />, `${lebarIn}in ${tinggiIn}in`, "bawah");
+      }
 
       setMarkingPrinted(true);
       const now = new Date().toISOString();
