@@ -133,6 +133,32 @@ function konversiOrdersKeDataBarcode(orders) {
   return hasil;
 }
 
+// Sama logikanya seperti konversiOrdersKeDataBarcode di atas (label INTI
+// buat luar kota + label KEMASAN per unit barang), tapi keluarannya
+// {order, noBox, totalBox} - dipakai buat loop cetak PDF (BarcodeLabelContent)
+// satu per satu, BUKAN buat generate TSPL lagi.
+function hitungEntriesLabelBarcode(orders) {
+  const hasil = [];
+  orders.forEach((o) => {
+    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+
+    if (!isPekanbaru) {
+      // Label INTI - 1 label per order, buat serah terima ke kurir luar kota
+      hasil.push({ order: o, noBox: null, totalBox: null });
+    }
+
+    (o.order_items || []).forEach((item) => {
+      const qty = Number(item.qty || 0) || 1;
+      for (let b = 1; b <= qty; b++) {
+        // Label KEMASAN - per unit barang, ditempel di kemasan fisik
+        hasil.push({ order: o, noBox: b, totalBox: qty });
+      }
+    });
+  });
+  return hasil;
+}
+
 
 // ============================================================
 // BUKA TAB BARU UNTUK PREVIEW SEBELUM PRINT - render konten JSX jadi
@@ -4529,7 +4555,10 @@ function SiapDikirimPage({ token, role }) {
     try {
       const lebarIn = ukuranLabelBarcode.lebar / 25.4;
       const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
-      await cetakPdfOtomatis(<BarcodeLabelContent order={order} />, `${lebarIn}in ${tinggiIn}in`, "bawah");
+      const entries = hitungEntriesLabelBarcode([order]);
+      for (const entry of entries) {
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} />, `${lebarIn}in ${tinggiIn}in`, "bawah");
+      }
       await tandaiSudahDicetak(order.id);
     } catch (e) {
       setErrorCetakBarcode("Gagal cetak otomatis: " + e.message + " - pastikan print server jalan. Coba tombol cetak manual sebagai cadangan, atau ulangi.");
@@ -4543,8 +4572,9 @@ function SiapDikirimPage({ token, role }) {
     try {
       const lebarIn = ukuranLabelBarcode.lebar / 25.4;
       const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
-      for (const o of bulkBarcode) {
-        await cetakPdfOtomatis(<BarcodeLabelContent order={o} />, `${lebarIn}in ${tinggiIn}in`, "bawah");
+      const entries = hitungEntriesLabelBarcode(bulkBarcode);
+      for (const entry of entries) {
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} />, `${lebarIn}in ${tinggiIn}in`, "bawah");
       }
 
       setMarkingPrinted(true);
