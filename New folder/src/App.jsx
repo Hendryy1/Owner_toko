@@ -1945,7 +1945,7 @@ function NotaPrintModal({ order, type, settings, onClose }) {
     setMencetak(true);
     setErrorCetak("");
     try {
-      await cetakPdfOtomatis(<NotaPrintContent order={order} type={type} settings={settings} />, "9.5in 11in", "atas");
+      await cetakPdfOtomatis(<NotaPrintContent order={order} type={type} settings={settings} />, `${settings?.lebar_kertas_nota ?? 9.5}in ${settings?.tinggi_kertas_nota ?? 11}in`, "atas");
       onClose();
     } catch (e) {
       setErrorCetak("Gagal cetak otomatis: " + e.message + " - pastikan print server (di komputer ini) sedang jalan. Anda tetap bisa pakai tombol \"Cetak Manual\" di bawah sebagai cadangan.");
@@ -2011,7 +2011,7 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
     const gagal = [];
     for (let i = 0; i < orders.length; i++) {
       try {
-        await cetakPdfOtomatis(<NotaPrintContent order={orders[i]} type={type} settings={settings} />, "9.5in 11in", "atas");
+        await cetakPdfOtomatis(<NotaPrintContent order={orders[i]} type={type} settings={settings} />, `${settings?.lebar_kertas_nota ?? 9.5}in ${settings?.tinggi_kertas_nota ?? 11}in`, "atas");
       } catch (e) {
         gagal.push(orders[i].no_nota);
       }
@@ -2736,6 +2736,10 @@ function FormatNotaPage({ token }) {
           catatan_cod: form.catatan_cod,
           label_ttd_kiri: form.label_ttd_kiri,
           label_ttd_kanan: form.label_ttd_kanan,
+          lebar_kertas_nota: Number(form.lebar_kertas_nota) || 9.5,
+          tinggi_kertas_nota: Number(form.tinggi_kertas_nota) || 11,
+          lebar_kertas_kurir: Number(form.lebar_kertas_kurir) || 8.5,
+          tinggi_kertas_kurir: Number(form.tinggi_kertas_kurir) || 11,
           updated_at: new Date().toISOString(),
         }),
       });
@@ -2804,6 +2808,31 @@ function FormatNotaPage({ token }) {
           <div>
             <label style={labelStyle}>Label Tanda Tangan Kanan</label>
             <input value={form.label_ttd_kanan || ""} onChange={set("label_ttd_kanan")} style={fieldStyle} />
+          </div>
+        </div>
+
+        <div style={{ borderTop: "1px solid #EDEAE3", paddingTop: 18, marginBottom: 20 }}>
+          <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Ukuran Kertas "Cetak Otomatis"</p>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 14px" }}>Cuma berlaku untuk tombol "Cetak Otomatis" (langsung ke printer, tanpa dialog) - dalam satuan inch.</p>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+            <div>
+              <label style={labelStyle}>Nota/Surat Jalan - Lebar</label>
+              <input type="number" step="0.1" min="1" value={form.lebar_kertas_nota ?? 9.5} onChange={set("lebar_kertas_nota")} style={fieldStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Nota/Surat Jalan - Tinggi</label>
+              <input type="number" step="0.1" min="1" value={form.tinggi_kertas_nota ?? 11} onChange={set("tinggi_kertas_nota")} style={fieldStyle} />
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <label style={labelStyle}>Dokumen Kurir - Lebar</label>
+              <input type="number" step="0.1" min="1" value={form.lebar_kertas_kurir ?? 8.5} onChange={set("lebar_kertas_kurir")} style={fieldStyle} />
+            </div>
+            <div>
+              <label style={labelStyle}>Dokumen Kurir - Tinggi</label>
+              <input type="number" step="0.1" min="1" value={form.tinggi_kertas_kurir ?? 11} onChange={set("tinggi_kertas_kurir")} style={fieldStyle} />
+            </div>
           </div>
         </div>
 
@@ -11649,12 +11678,21 @@ function LaporanKurirPage({ token }) {
   const [viewingLaporan, setViewingLaporan] = useState(null); // { laporan, items } | null
   const [mencetakKurir, setMencetakKurir] = useState(false);
   const [errorCetakKurir, setErrorCetakKurir] = useState("");
+  const [ukuranKertasKurir, setUkuranKertasKurir] = useState("8.5in 11in");
+
+  useEffect(() => {
+    supabaseFetch(token, "nota_settings?select=lebar_kertas_kurir,tinggi_kertas_kurir&limit=1")
+      .then((rows) => {
+        if (rows[0]) setUkuranKertasKurir(`${rows[0].lebar_kertas_kurir ?? 8.5}in ${rows[0].tinggi_kertas_kurir ?? 11}in`);
+      })
+      .catch(() => {}); // biarkan pakai default kalau gagal muat
+  }, []);
 
   async function cetakOtomatisKurir() {
     setMencetakKurir(true);
     setErrorCetakKurir("");
     try {
-      await cetakPdfOtomatis(<LaporanKurirDocContent laporan={viewingLaporan.laporan} items={viewingLaporan.items} />, "8.5in 11in", "atas");
+      await cetakPdfOtomatis(<LaporanKurirDocContent laporan={viewingLaporan.laporan} items={viewingLaporan.items} />, ukuranKertasKurir, "atas");
       setViewingLaporan(null);
     } catch (e) {
       setErrorCetakKurir("Gagal cetak otomatis: " + e.message + " - pastikan print server jalan. Bisa pakai tombol \"Cetak Manual\" sebagai cadangan.");
