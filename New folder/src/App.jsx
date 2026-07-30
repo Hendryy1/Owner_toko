@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import ReactDOMServer from "react-dom/server";
+import { createRoot } from "react-dom/client";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import {
@@ -18,9 +19,7 @@ const PRINT_SERVER_URL = "http://localhost:9100";
 // lalu kirim ke print server untuk dicetak otomatis lewat SumatraPDF,
 // tanpa dialog print browser sama sekali.
 async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas") {
-  const htmlKonten = ReactDOMServer.renderToStaticMarkup(jsxContent);
   const kontainer = document.createElement("div");
-  kontainer.innerHTML = htmlKonten;
   // Taruh di luar layar (bukan display:none) - html2pdf butuh elemen benar2
   // ter-render untuk baca ukuran/style-nya dengan akurat.
   const [lebarIn] = parseUkuranKertas(ukuranKertas);
@@ -38,11 +37,19 @@ async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas") 
   kontainer.style.width = `${lebarIn * 96}px`; // 1 inch = 96px (standar CSS)
   kontainer.style.background = "#fff";
   document.body.appendChild(kontainer);
-  // Kasih jeda 2 frame - pastikan browser BENAR-BENAR selesai render/layout
-  // elemen ini dulu, sebelum html2canvas mulai "memotret"-nya. Tanpa ini,
-  // hasil PDF bisa kosong/blank karena capture-nya kejadian sebelum
-  // konten sempat tergambar di layar.
-  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  // PENTING: render REACT SUNGGUHAN (bukan ReactDOMServer.renderToStaticMarkup)
+  // - supaya useEffect di dalam komponen (misal BarcodeLabel/QRCodeLabel yang
+  // load library dari CDN lalu gambar barcode/QR) BENAR-BENAR jalan. Static
+  // markup TIDAK menjalankan useEffect sama sekali, hasilnya barcode/QR
+  // kosong walau teks lain tampil normal.
+  const root = createRoot(kontainer);
+  root.render(jsxContent);
+
+  // Kasih jeda lebih lama (bukan cuma 2 frame) - beberapa komponen (barcode/QR)
+  // perlu load library dari CDN dulu (async) baru gambar - proses ini bisa
+  // makan waktu lebih dari beberapa frame render biasa.
+  await new Promise((r) => setTimeout(r, 1200));
 
   try {
     console.log("[cetakPdfOtomatis] Mulai capture kanvas, ukuran kontainer:", kontainer.offsetWidth, "x", kontainer.offsetHeight);
@@ -69,6 +76,7 @@ async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas") 
     if (!data.success) throw new Error(data.error || "Gagal cetak.");
     return true;
   } finally {
+    root.unmount();
     document.body.removeChild(kontainer);
   }
 }
