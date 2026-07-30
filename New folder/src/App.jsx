@@ -22,10 +22,18 @@ async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas") 
   kontainer.innerHTML = htmlKonten;
   // Taruh di luar layar (bukan display:none) - html2pdf butuh elemen benar2
   // ter-render untuk baca ukuran/style-nya dengan akurat.
+  const [lebarIn] = parseUkuranKertas(ukuranKertas);
   kontainer.style.position = "fixed";
   kontainer.style.left = "-9999px";
   kontainer.style.top = "0";
+  kontainer.style.width = `${lebarIn * 96}px`; // 1 inch = 96px (standar CSS)
+  kontainer.style.background = "#fff";
   document.body.appendChild(kontainer);
+  // Kasih jeda 2 frame - pastikan browser BENAR-BENAR selesai render/layout
+  // elemen ini dulu, sebelum html2canvas mulai "memotret"-nya. Tanpa ini,
+  // hasil PDF bisa kosong/blank karena capture-nya kejadian sebelum
+  // konten sempat tergambar di layar.
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
   try {
     const worker = html2pdf()
