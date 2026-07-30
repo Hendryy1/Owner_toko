@@ -6,6 +6,11 @@ import {
 } from "lucide-react";
 
 const COMPANY_NAME = "PT INDO GARUDA ABADI";
+// Print server lokal (Node.js) yang jalan di komputer yang sama dengan
+// Dashboard - dipakai buat cetak otomatis ke printer tanpa dialog print.
+// Pakai "localhost" (bukan IP jaringan) supaya browser anggap koneksi
+// AMAN meski Dashboard sendiri diakses lewat HTTPS.
+const PRINT_SERVER_URL = "http://localhost:9100";
 
 // ============================================================
 // BUKA TAB BARU UNTUK PREVIEW SEBELUM PRINT - render konten JSX jadi
@@ -1805,6 +1810,27 @@ function NotaPrintContent({ order, type, settings }) {
 }
 
 function NotaPrintModal({ order, type, settings, onClose }) {
+  const [mencetak, setMencetak] = useState(false);
+  const [errorCetak, setErrorCetak] = useState("");
+
+  async function cetakOtomatis() {
+    setMencetak(true);
+    setErrorCetak("");
+    try {
+      const res = await fetch(`${PRINT_SERVER_URL}/print-nota`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order, type, settings, printer: "atas" }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Gagal cetak.");
+      onClose();
+    } catch (e) {
+      setErrorCetak("Gagal cetak otomatis: " + e.message + " - pastikan print server (di komputer ini) sedang jalan. Anda tetap bisa pakai tombol \"Cetak Manual\" di bawah sebagai cadangan.");
+    }
+    setMencetak(false);
+  }
+
   return (
     <div className="nota-print-overlay" style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
       <style>{`
@@ -1819,15 +1845,27 @@ function NotaPrintModal({ order, type, settings, onClose }) {
       `}</style>
       <div style={{ background: "#fff", borderRadius: 14, width: 620, maxHeight: "90vh", overflowY: "auto", padding: 0 }}>
         <NotaPrintContent order={order} type={type} settings={settings} />
+        {errorCetak && (
+          <div className="no-print" style={{ margin: "0 36px", padding: 12, borderRadius: 9, background: "#FBEAEA", color: "#C0392B", fontSize: 12, lineHeight: 1.5 }}>
+            {errorCetak}
+          </div>
+        )}
         <div className="no-print" style={{ display: "flex", gap: 10, padding: "16px 36px 24px" }}>
           <button onClick={onClose} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
             Tutup
           </button>
           <button
             onClick={() => bukaTabPreviewCetak(<NotaPrintContent order={order} type={type} settings={settings} />, type === "surat_jalan" ? "Surat Jalan" : "Nota", "9.5in 11in")}
+            style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontWeight: 600, fontSize: 12.5 }}
+          >
+            Cetak Manual
+          </button>
+          <button
+            onClick={cetakOtomatis}
+            disabled={mencetak}
             style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
           >
-            <Printer size={15} /> Print
+            <Printer size={15} /> {mencetak ? "Mencetak..." : "Cetak Otomatis"}
           </button>
         </div>
       </div>
