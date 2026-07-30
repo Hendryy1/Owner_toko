@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import ReactDOMServer from "react-dom/server";
+import html2pdf from "html2pdf.js";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
   Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3, Star, CalendarDays
@@ -11,6 +12,60 @@ const COMPANY_NAME = "PT INDO GARUDA ABADI";
 // Pakai "localhost" (bukan IP jaringan) supaya browser anggap koneksi
 // AMAN meski Dashboard sendiri diakses lewat HTTPS.
 const PRINT_SERVER_URL = "http://localhost:9100";
+
+// Render JSX jadi PDF (persis tampilan aslinya - warna, tabel, font),
+// lalu kirim ke print server untuk dicetak otomatis lewat SumatraPDF,
+// tanpa dialog print browser sama sekali.
+async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas") {
+  const htmlKonten = ReactDOMServer.renderToStaticMarkup(jsxContent);
+  const kontainer = document.createElement("div");
+  kontainer.innerHTML = htmlKonten;
+  // Taruh di luar layar (bukan display:none) - html2pdf butuh elemen benar2
+  // ter-render untuk baca ukuran/style-nya dengan akurat.
+  kontainer.style.position = "fixed";
+  kontainer.style.left = "-9999px";
+  kontainer.style.top = "0";
+  document.body.appendChild(kontainer);
+
+  try {
+    const worker = html2pdf()
+      .from(kontainer)
+      .set({
+        margin: 0,
+        jsPDF: { unit: "in", format: parseUkuranKertas(ukuranKertas), orientation: "portrait" },
+        html2canvas: { scale: 2, useCORS: true },
+      });
+    const pdfBlob = await worker.outputPdf("blob");
+    const base64Pdf = await blobKeBase64(pdfBlob);
+
+    const res = await fetch(`${PRINT_SERVER_URL}/print-pdf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pdfBase64: base64Pdf, printer: namaPrinter }),
+    });
+    const data = await res.json();
+    if (!data.success) throw new Error(data.error || "Gagal cetak.");
+    return true;
+  } finally {
+    document.body.removeChild(kontainer);
+  }
+}
+
+function parseUkuranKertas(ukuranKertas) {
+  // Contoh input: "9.5in 11in" atau "8.5in 11in" - ubah jadi [lebar, tinggi] dalam inch buat jsPDF
+  const bagian = String(ukuranKertas).split(" ").map((s) => parseFloat(s));
+  return bagian.length === 2 ? bagian : [8.5, 11];
+}
+
+function blobKeBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result.split(",")[1]); // buang prefix "data:application/pdf;base64,"
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 
 // Ubah daftar order jadi ARRAY data siap kirim ke print server (endpoint
 // /print-massal) - urutan & jenis label (inti utuh vs per-kemasan) sesuai
@@ -1868,13 +1923,7 @@ function NotaPrintModal({ order, type, settings, onClose }) {
     setMencetak(true);
     setErrorCetak("");
     try {
-      const res = await fetch(`${PRINT_SERVER_URL}/print-nota`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order, type, settings, printer: "atas" }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Gagal cetak.");
+      await cetakPdfOtomatis(<NotaPrintContent order={order} type={type} settings={settings} />, "9.5in 11in", "atas");
       onClose();
     } catch (e) {
       setErrorCetak("Gagal cetak otomatis: " + e.message + " - pastikan print server (di komputer ini) sedang jalan. Anda tetap bisa pakai tombol \"Cetak Manual\" di bawah sebagai cadangan.");
@@ -1940,13 +1989,7 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
     const gagal = [];
     for (let i = 0; i < orders.length; i++) {
       try {
-        const res = await fetch(`${PRINT_SERVER_URL}/print-nota`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ order: orders[i], type, settings, printer: "atas" }),
-        });
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || "Gagal cetak.");
+        await cetakPdfOtomatis(<NotaPrintContent order={orders[i]} type={type} settings={settings} />, "9.5in 11in", "atas");
       } catch (e) {
         gagal.push(orders[i].no_nota);
       }
@@ -11589,13 +11632,7 @@ function LaporanKurirPage({ token }) {
     setMencetakKurir(true);
     setErrorCetakKurir("");
     try {
-      const res = await fetch(`${PRINT_SERVER_URL}/print-dokumen-kurir`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ laporan: viewingLaporan.laporan, items: viewingLaporan.items, printer: "atas" }),
-      });
-      const data = await res.json();
-      if (!data.success) throw new Error(data.error || "Gagal cetak.");
+      await cetakPdfOtomatis(<LaporanKurirDocContent laporan={viewingLaporan.laporan} items={viewingLaporan.items} />, "8.5in 11in", "atas");
       setViewingLaporan(null);
     } catch (e) {
       setErrorCetakKurir("Gagal cetak otomatis: " + e.message + " - pastikan print server jalan. Bisa pakai tombol \"Cetak Manual\" sebagai cadangan.");
