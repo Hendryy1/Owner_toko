@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import ReactDOMServer from "react-dom/server";
-import html2pdf from "html2pdf.js";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
   Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3, Star, CalendarDays
@@ -44,14 +45,19 @@ async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas") 
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
 
   try {
-    const worker = html2pdf()
-      .from(kontainer)
-      .set({
-        margin: 0,
-        jsPDF: { unit: "in", format: parseUkuranKertas(ukuranKertas), orientation: "portrait" },
-        html2canvas: { scale: 2, useCORS: true },
-      });
-    const pdfBlob = await worker.outputPdf("blob");
+    console.log("[cetakPdfOtomatis] Mulai capture kanvas, ukuran kontainer:", kontainer.offsetWidth, "x", kontainer.offsetHeight);
+    const canvas = await html2canvas(kontainer, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+    console.log("[cetakPdfOtomatis] Kanvas selesai, ukuran:", canvas.width, "x", canvas.height);
+
+    const [lebarPdf, tinggiPdf] = parseUkuranKertas(ukuranKertas);
+    const pdf = new jsPDF({ unit: "in", format: [lebarPdf, tinggiPdf], orientation: "portrait" });
+    const dataUrlGambar = canvas.toDataURL("image/jpeg", 0.95);
+    // Tinggi gambar di PDF menyesuaikan proporsi asli kanvas, supaya tidak gepeng/melar
+    const tinggiGambarDiPdf = (canvas.height * lebarPdf) / canvas.width;
+    pdf.addImage(dataUrlGambar, "JPEG", 0, 0, lebarPdf, tinggiGambarDiPdf);
+
+    const pdfBlob = pdf.output("blob");
+    console.log("[cetakPdfOtomatis] Ukuran PDF akhir (byte):", pdfBlob.size);
     const base64Pdf = await blobKeBase64(pdfBlob);
 
     const res = await fetch(`${PRINT_SERVER_URL}/print-pdf`, {
