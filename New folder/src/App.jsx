@@ -13,7 +13,12 @@ const COMPANY_NAME = "PT INDO GARUDA ABADI";
 // Dashboard - dipakai buat cetak otomatis ke printer tanpa dialog print.
 // Pakai "localhost" (bukan IP jaringan) supaya browser anggap koneksi
 // AMAN meski Dashboard sendiri diakses lewat HTTPS.
-const PRINT_SERVER_URL = "http://localhost:9100";
+// Pakai HTTPS + alamat IP jaringan (bukan localhost) supaya bisa diakses
+// dari HP/perangkat lain juga, tidak cuma dari komputer print server itu
+// sendiri. Sebelum ini bisa dipakai, tiap perangkat (termasuk HP) WAJIB
+// buka dulu https://192.168.137.1:9100/ping langsung di browser-nya,
+// klik "Advanced" -> "Proceed" untuk terima sertifikatnya (sekali saja).
+const PRINT_SERVER_URL = "https://192.168.137.1:9100";
 
 // Render JSX jadi PDF (persis tampilan aslinya - warna, tabel, font),
 // lalu kirim ke print server untuk dicetak otomatis lewat SumatraPDF,
