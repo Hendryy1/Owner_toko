@@ -12,6 +12,43 @@ const COMPANY_NAME = "PT INDO GARUDA ABADI";
 // AMAN meski Dashboard sendiri diakses lewat HTTPS.
 const PRINT_SERVER_URL = "http://localhost:9100";
 
+// Ubah daftar order jadi ARRAY data siap kirim ke print server (endpoint
+// /print-massal) - urutan & jenis label (inti utuh vs per-kemasan) sesuai
+// logika bukaTabPreviewBarcode di atas, cuma keluarannya data buat print
+// server bukan HTML preview.
+function konversiOrdersKeDataBarcode(orders) {
+  const hasil = [];
+  orders.forEach((o) => {
+    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const teleponPenerima = o.tujuan_telp || o.clients?.telp;
+    const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
+    const namaPenerima = o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama;
+
+    if (!isPekanbaru) {
+      // Label INTI - 1 label per order, semua barang, buat serah terima ke kurir luar kota
+      hasil.push({
+        penerima: namaPenerima, noHp: teleponPenerima, alamat: alamatPenerima,
+        noNota: o.no_nota, isQR: false,
+        items: (o.order_items || []).map((it) => ({ kode: it.products?.kode || "-", nama: it.products?.nama || "-", qty: it.qty })),
+      });
+    }
+
+    (o.order_items || []).forEach((item) => {
+      const qty = Number(item.qty || 0) || 1;
+      for (let b = 1; b <= qty; b++) {
+        // Label KEMASAN - per unit barang, ditempel di kemasan fisik
+        hasil.push({
+          penerima: namaPenerima, noNota: o.no_nota, noBox: b, totalBox: qty, isQR: true,
+          items: [{ kode: item.products?.kode || "-", nama: item.products?.nama || "-", qty: item.qty }],
+        });
+      }
+    });
+  });
+  return hasil;
+}
+
+
 // ============================================================
 // BUKA TAB BARU UNTUK PREVIEW SEBELUM PRINT - render konten JSX jadi
 // HTML statis, tampilkan di tab baru dengan tombol Cetak sendiri, supaya
@@ -1041,7 +1078,7 @@ function BarcodeLabelContent({ order: o, noBox, totalBox }) {
 // ============================================================
 // MODAL CETAK BARCODE MASSAL - beberapa label sekaligus, halaman terpisah
 // ============================================================
-function BulkBarcodeModal({ orders, onClose, onSelesaiCetak }) {
+function BulkBarcodeModal({ orders, onClose, onSelesaiCetak, mencetak, error }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
       <style>{`
@@ -1057,7 +1094,14 @@ function BulkBarcodeModal({ orders, onClose, onSelesaiCetak }) {
         }
       `}</style>
       <div className="barcode-bulk-container" style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
-        <p className="no-print" style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 14px" }}>{orders.length} label siap dicetak - klik Print untuk cetak semua sekaligus.</p>
+        <p className="no-print" style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 14px" }}>
+          {mencetak ? "Mengirim ke printer..." : `${orders.length} label siap dicetak.`}
+        </p>
+        {error && (
+          <div className="no-print" style={{ marginBottom: 14, padding: 12, borderRadius: 9, background: "#FBEAEA", color: "#C0392B", fontSize: 12, lineHeight: 1.5 }}>
+            {error}
+          </div>
+        )}
         {orders.map((o) => (
           <div key={o.id} className="barcode-bulk-item" style={{ borderTop: "1px dashed #E4E1DA", paddingTop: 12, marginTop: 12 }}>
             <BarcodeLabelContent order={o} />
@@ -1068,10 +1112,17 @@ function BulkBarcodeModal({ orders, onClose, onSelesaiCetak }) {
             Tutup
           </button>
           <button
+            onClick={() => bukaTabPreviewBarcode(orders)}
+            style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontWeight: 600, fontSize: 12 }}
+          >
+            Cetak Manual
+          </button>
+          <button
             onClick={onSelesaiCetak}
+            disabled={mencetak}
             style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
           >
-            <Printer size={15} /> Print Semua ({orders.length})
+            <Printer size={15} /> {mencetak ? "Mencetak..." : `Cetak Otomatis (${orders.length})`}
           </button>
         </div>
       </div>
@@ -1878,6 +1929,37 @@ function NotaPrintModal({ order, type, settings, onClose }) {
 // masing-masing di halaman terpisah (page-break)
 // ============================================================
 function BulkPrintModal({ orders, type, settings, onClose }) {
+  const [mencetak, setMencetak] = useState(false);
+  const [progresCetak, setProgresCetak] = useState(0);
+  const [errorCetak, setErrorCetak] = useState("");
+
+  async function cetakOtomatisSemua() {
+    setMencetak(true);
+    setErrorCetak("");
+    setProgresCetak(0);
+    const gagal = [];
+    for (let i = 0; i < orders.length; i++) {
+      try {
+        const res = await fetch(`${PRINT_SERVER_URL}/print-nota`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order: orders[i], type, settings, printer: "atas" }),
+        });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || "Gagal cetak.");
+      } catch (e) {
+        gagal.push(orders[i].no_nota);
+      }
+      setProgresCetak(i + 1);
+    }
+    setMencetak(false);
+    if (gagal.length > 0) {
+      setErrorCetak(`Gagal cetak ${gagal.length} dari ${orders.length} dokumen (${gagal.join(", ")}) - pastikan print server jalan. Sisanya sudah berhasil tercetak.`);
+    } else {
+      onClose();
+    }
+  }
+
   return (
     <div className="nota-print-overlay" style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
       <style>{`
@@ -1895,7 +1977,14 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
       `}</style>
       <div className="bulk-print-container" style={{ background: "#fff", borderRadius: 14, width: 620, maxHeight: "90vh", overflowY: "auto", padding: 0 }}>
         <div className="no-print" style={{ padding: "20px 36px 0" }}>
-          <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{orders.length} dokumen siap dicetak - klik Print untuk cetak semua sekaligus.</p>
+          <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>
+            {mencetak ? `Mencetak ${progresCetak}/${orders.length}...` : `${orders.length} dokumen siap dicetak.`}
+          </p>
+          {errorCetak && (
+            <div style={{ marginTop: 10, padding: 12, borderRadius: 9, background: "#FBEAEA", color: "#C0392B", fontSize: 12, lineHeight: 1.5 }}>
+              {errorCetak}
+            </div>
+          )}
         </div>
         {orders.map((o) => (
           <div key={o.id} className="bulk-print-item" style={{ borderTop: "1px dashed #E4E1DA", marginTop: 12 }}>
@@ -1918,9 +2007,16 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
               type === "surat_jalan" ? "Surat Jalan Massal" : "Nota Massal",
               "9.5in 11in"
             )}
+            style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontWeight: 600, fontSize: 12 }}
+          >
+            Cetak Manual
+          </button>
+          <button
+            onClick={cetakOtomatisSemua}
+            disabled={mencetak}
             style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
           >
-            <Printer size={15} /> Print Semua ({orders.length})
+            <Printer size={15} /> {mencetak ? `Mencetak ${progresCetak}/${orders.length}...` : `Cetak Otomatis (${orders.length})`}
           </button>
         </div>
       </div>
@@ -4048,6 +4144,8 @@ function SiapDikirimPage({ token, role }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkPrint, setBulkPrint] = useState(null); // { orders, type } | null
   const [bulkBarcode, setBulkBarcode] = useState(null); // array order | null
+  const [mencetakBarcode, setMencetakBarcode] = useState(false);
+  const [errorCetakBarcode, setErrorCetakBarcode] = useState("");
   const [activeTab, setActiveTab] = useState("baru"); // tab pengemasan lama + tab baru siklus penuh
   const [detailOrder, setDetailOrder] = useState(null); // order yang lagi dibuka "Lihat Detail"-nya (tahap siap_dikirim ke atas)
   const [showCetakOptions, setShowCetakOptions] = useState(false); // toggle slide-down opsi cetak massal
@@ -4214,22 +4312,48 @@ function SiapDikirimPage({ token, role }) {
   }
 
   async function handleCetak(order) {
-    bukaTabPreviewBarcode([order]);
-    await tandaiSudahDicetak(order.id);
+    setMencetakBarcode(true);
+    setErrorCetakBarcode("");
+    try {
+      const dataBarcode = konversiOrdersKeDataBarcode([order]);
+      const res = await fetch(`${PRINT_SERVER_URL}/print-massal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: dataBarcode, printer: "bawah" }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.gagal?.length ? `${data.gagal.length} label gagal cetak` : (data.error || "Gagal cetak."));
+      await tandaiSudahDicetak(order.id);
+    } catch (e) {
+      setErrorCetakBarcode("Gagal cetak otomatis: " + e.message + " - pastikan print server jalan. Coba tombol cetak manual sebagai cadangan, atau ulangi.");
+    }
+    setMencetakBarcode(false);
   }
 
   async function handleCetakMassalBarcode() {
-    bukaTabPreviewBarcode(bulkBarcode);
-    setMarkingPrinted(true);
+    setMencetakBarcode(true);
+    setErrorCetakBarcode("");
     try {
+      const dataBarcode = konversiOrdersKeDataBarcode(bulkBarcode);
+      const res = await fetch(`${PRINT_SERVER_URL}/print-massal`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items: dataBarcode, printer: "bawah" }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.gagal?.length ? `${data.gagal.length} label gagal cetak` : (data.error || "Gagal cetak."));
+
+      setMarkingPrinted(true);
       const now = new Date().toISOString();
       const ids = bulkBarcode.map((o) => o.id);
       await supabaseFetch(token, `orders?id=in.(${ids.join(",")})`, { method: "PATCH", body: JSON.stringify({ barcode_dicetak_at: now }) });
       setOrders((prev) => prev.map((o) => (ids.includes(o.id) ? { ...o, barcode_dicetak_at: now } : o)));
+      setMarkingPrinted(false);
+      setBulkBarcode(null);
     } catch (e) {
-      alert("Gagal tandai sudah dicetak: " + e.message);
+      setErrorCetakBarcode("Gagal cetak otomatis: " + e.message + " - pastikan print server jalan.");
     }
-    setMarkingPrinted(false);
+    setMencetakBarcode(false);
   }
 
   if (loading) return <LoadingState />;
@@ -4537,7 +4661,7 @@ function SiapDikirimPage({ token, role }) {
 
       {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} settings={notaSettings} onClose={() => setPrintingOrder(null)} />}
       {bulkPrint && <BulkPrintModal orders={bulkPrint.orders} type={bulkPrint.type} settings={notaSettings} onClose={() => setBulkPrint(null)} />}
-      {bulkBarcode && <BulkBarcodeModal orders={bulkBarcode} onClose={() => setBulkBarcode(null)} onSelesaiCetak={handleCetakMassalBarcode} />}
+      {bulkBarcode && <BulkBarcodeModal orders={bulkBarcode} onClose={() => setBulkBarcode(null)} onSelesaiCetak={handleCetakMassalBarcode} mencetak={mencetakBarcode} error={errorCetakBarcode} />}
 
       {/* MODAL LIHAT DETAIL - untuk tab siap_kirim/proses_kirim/retur/selesai */}
       {detailOrder && (
@@ -4616,16 +4740,27 @@ function SiapDikirimPage({ token, role }) {
                 }
               `}</style>
 
+              {errorCetakBarcode && (
+                <div className="no-print" style={{ marginTop: 10, padding: 12, borderRadius: 9, background: "#FBEAEA", color: "#C0392B", fontSize: 12, lineHeight: 1.5 }}>
+                  {errorCetakBarcode}
+                </div>
+              )}
               <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
                 <button onClick={() => setShowBarcode(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
                   Tutup
                 </button>
                 <button
-                  onClick={() => handleCetak(o)}
-                  disabled={markingPrinted}
-                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: markingPrinted ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                  onClick={() => bukaTabPreviewBarcode([o])}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontWeight: 600, fontSize: 12 }}
                 >
-                  <Printer size={15} /> Cetak
+                  Cetak Manual
+                </button>
+                <button
+                  onClick={() => handleCetak(o)}
+                  disabled={markingPrinted || mencetakBarcode}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: (markingPrinted || mencetakBarcode) ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+                >
+                  <Printer size={15} /> {mencetakBarcode ? "Mencetak..." : "Cetak Otomatis"}
                 </button>
               </div>
             </div>
@@ -11447,6 +11582,26 @@ function LaporanKurirPage({ token }) {
   const [laporanList, setLaporanList] = useState([]);
   const [error, setError] = useState("");
   const [viewingLaporan, setViewingLaporan] = useState(null); // { laporan, items } | null
+  const [mencetakKurir, setMencetakKurir] = useState(false);
+  const [errorCetakKurir, setErrorCetakKurir] = useState("");
+
+  async function cetakOtomatisKurir() {
+    setMencetakKurir(true);
+    setErrorCetakKurir("");
+    try {
+      const res = await fetch(`${PRINT_SERVER_URL}/print-dokumen-kurir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ laporan: viewingLaporan.laporan, items: viewingLaporan.items, printer: "atas" }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Gagal cetak.");
+      setViewingLaporan(null);
+    } catch (e) {
+      setErrorCetakKurir("Gagal cetak otomatis: " + e.message + " - pastikan print server jalan. Bisa pakai tombol \"Cetak Manual\" sebagai cadangan.");
+    }
+    setMencetakKurir(false);
+  }
 
   async function load() {
     setLoading(true);
@@ -11523,15 +11678,27 @@ function LaporanKurirPage({ token }) {
         <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 14, width: "100%", maxWidth: 620, maxHeight: "88vh", overflowY: "auto", padding: 0 }}>
             <LaporanKurirDocContent laporan={viewingLaporan.laporan} items={viewingLaporan.items} />
+            {errorCetakKurir && (
+              <div style={{ margin: "0 36px 12px", padding: 12, borderRadius: 9, background: "#FBEAEA", color: "#C0392B", fontSize: 12, lineHeight: 1.5 }}>
+                {errorCetakKurir}
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10, padding: "16px 36px 24px" }}>
               <button onClick={() => setViewingLaporan(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
                 Tutup
               </button>
               <button
                 onClick={() => bukaTabPreviewCetak(<LaporanKurirDocContent laporan={viewingLaporan.laporan} items={viewingLaporan.items} />, "Bukti Serah Terima Paket", "8.5in 11in")}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontWeight: 600, fontSize: 12 }}
+              >
+                Cetak Manual
+              </button>
+              <button
+                onClick={cetakOtomatisKurir}
+                disabled={mencetakKurir}
                 style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
               >
-                <Printer size={15} /> Print
+                <Printer size={15} /> {mencetakKurir ? "Mencetak..." : "Cetak Otomatis"}
               </button>
             </div>
           </div>
