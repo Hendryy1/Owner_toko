@@ -23,9 +23,17 @@ async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas") 
   // Taruh di luar layar (bukan display:none) - html2pdf butuh elemen benar2
   // ter-render untuk baca ukuran/style-nya dengan akurat.
   const [lebarIn] = parseUkuranKertas(ukuranKertas);
+  // PENTING: taruh di posisi (0,0) - JANGAN jauh di luar layar (misal
+  // -9999px) karena browser modern bisa "malas" benar2 nge-render elemen
+  // yang dianggap tidak akan pernah terlihat sama sekali, hasilnya PDF
+  // jadi kosong/blank. Sembunyikan pakai opacity 0 + z-index rendah
+  // sebagai gantinya - elemen tetap dianggap "ada di layar" oleh browser,
+  // jadi tetap di-render penuh, tapi user tidak akan melihatnya.
   kontainer.style.position = "fixed";
-  kontainer.style.left = "-9999px";
+  kontainer.style.left = "0";
   kontainer.style.top = "0";
+  kontainer.style.zIndex = "-9999";
+  kontainer.style.pointerEvents = "none";
   kontainer.style.width = `${lebarIn * 96}px`; // 1 inch = 96px (standar CSS)
   kontainer.style.background = "#fff";
   document.body.appendChild(kontainer);
