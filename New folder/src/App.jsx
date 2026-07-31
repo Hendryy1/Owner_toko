@@ -16,9 +16,11 @@ const COMPANY_NAME = "PT INDO GARUDA ABADI";
 // Pakai HTTPS + alamat IP jaringan (bukan localhost) supaya bisa diakses
 // dari HP/perangkat lain juga, tidak cuma dari komputer print server itu
 // sendiri. Sebelum ini bisa dipakai, tiap perangkat (termasuk HP) WAJIB
-// buka dulu https://192.168.137.1:9100/ping langsung di browser-nya,
+// buka dulu https://192.168.1.11:9100/ping langsung di browser-nya,
 // klik "Advanced" -> "Proceed" untuk terima sertifikatnya (sekali saja).
-const PRINT_SERVER_URL = "https://192.168.137.1:9100";
+// CATATAN: alamat IP ini BISA BERUBAH kalau komputer pindah/reconnect
+// WiFi - cek ulang dengan "ipconfig" di CMD kalau print berhenti jalan.
+const PRINT_SERVER_URL = "https://192.168.1.11:9100";
 
 // Render JSX jadi PDF (persis tampilan aslinya - warna, tabel, font),
 // lalu kirim ke print server untuk dicetak otomatis lewat SumatraPDF,
