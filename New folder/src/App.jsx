@@ -1175,9 +1175,9 @@ function BarcodeLabelContent({ order: o, noBox, totalBox }) {
             <p style={{ fontSize: 12.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700 }}>Pengirim: {o.nama_pengirim_dropship || o.clients?.nama}</p>
           )}
           <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Penerima: {namaPenerima}</p>
-          <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>No HP: {teleponPenerima || "-"}</p>
-          <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
-          <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
+          <p style={{ fontSize: 12.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>No HP: {teleponPenerima || "-"}</p>
+          <p style={{ fontSize: 11.5, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
+          <p style={{ fontSize: 12.5, fontWeight: 700, color: "#24272B", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
         </>
       )}
       {noBox && totalBox ? (
@@ -1216,7 +1216,7 @@ function BarcodeLabelContent({ order: o, noBox, totalBox }) {
         <tbody>
           {(o.order_items || []).map((it, i) => (
             <tr key={i} style={{ borderBottom: "1px solid #EDEAE3" }}>
-              <td style={{ padding: "4px 4px", color: "#6B6F75" }}>{it.products?.kode || "-"}</td>
+              <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700 }}>{it.products?.kode || "-"}</td>
               <td style={{ padding: "4px 4px", color: "#24272B" }}>{it.products?.nama || "-"}</td>
               <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700, textAlign: "right" }}>{it.qty}</td>
             </tr>
