@@ -60,12 +60,15 @@ async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas", 
 
   try {
     console.log("[cetakPdfOtomatis] Mulai capture kanvas, ukuran kontainer:", kontainer.offsetWidth, "x", kontainer.offsetHeight);
-    const canvas = await html2canvas(kontainer, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+    // scale 3 (bukan 2) + format PNG (bukan JPEG) - JPEG kompresi lossy
+    // bikin teks halus jadi blur/bayangan, PNG lossless jaga ketajaman
+    // teks & garis tipis, penting buat hasil print yang jelas dibaca.
+    const canvas = await html2canvas(kontainer, { scale: 3, useCORS: true, backgroundColor: "#ffffff" });
     console.log("[cetakPdfOtomatis] Kanvas selesai, ukuran:", canvas.width, "x", canvas.height);
 
     const [lebarPdf, tinggiPdf] = parseUkuranKertas(ukuranKertas);
     const pdf = new jsPDF({ unit: "in", format: [lebarPdf, tinggiPdf], orientation: "portrait" });
-    const dataUrlGambar = canvas.toDataURL("image/jpeg", 0.95);
+    const dataUrlGambar = canvas.toDataURL("image/png");
 
     if (modeFit) {
       // Mode FIT - sesuaikan supaya SEMUA konten pasti kelihatan penuh
@@ -84,12 +87,12 @@ async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas", 
       }
       const offsetX = (lebarPdf - lebarGambar) / 2;
       const offsetY = (tinggiPdf - tinggiGambar) / 2;
-      pdf.addImage(dataUrlGambar, "JPEG", offsetX, offsetY, lebarGambar, tinggiGambar);
+      pdf.addImage(dataUrlGambar, "PNG", offsetX, offsetY, lebarGambar, tinggiGambar);
     } else {
       // Mode STRETCH (default) - lebar diregangkan penuh, tinggi ikut
       // proporsi asli kanvas.
       const tinggiGambarDiPdf = (canvas.height * lebarPdf) / canvas.width;
-      pdf.addImage(dataUrlGambar, "JPEG", 0, 0, lebarPdf, tinggiGambarDiPdf);
+      pdf.addImage(dataUrlGambar, "PNG", 0, 0, lebarPdf, tinggiGambarDiPdf);
     }
 
     const pdfBlob = pdf.output("blob");
