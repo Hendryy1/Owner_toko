@@ -282,8 +282,8 @@ function bukaTabPreviewBarcode(orders) {
     const namaPenerima = o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama;
     const baris = (o.order_items || []).map((it) => `
       <tr style="border-bottom:1px solid #EDEAE3${entry.item && it.id === entry.item.id ? ";background:#FBF0D9" : ""}">
-        <td style="padding:4px;color:#6B6F75">${it.products?.kode || "-"}</td>
-        <td style="padding:4px;color:#24272B">${it.products?.nama || "-"}</td>
+        <td style="padding:4px;color:#24272B;font-weight:700">${it.products?.kode || "-"}</td>
+        <td style="padding:4px;color:#24272B;font-weight:700">${it.products?.nama || "-"}</td>
         <td style="padding:4px;color:#24272B;font-weight:700;text-align:right">${it.qty}</td>
       </tr>`).join("");
     const infoAtas = entry.jenis === "kemasan"
@@ -291,11 +291,11 @@ function bukaTabPreviewBarcode(orders) {
       : `
         ${o.is_dropship ? `<p style="font-size:12.5px;color:#8A6A1A;margin:0 0 4px;font-weight:700">Pengirim: ${o.nama_pengirim_dropship || o.clients?.nama}</p>` : ""}
         <p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 2px">Penerima: ${namaPenerima}</p>
-        <p style="font-size:12.5px;color:#6B6F75;margin:0 0 2px">No HP: ${teleponPenerima || "-"}</p>
-        <p style="font-size:11.5px;color:#6B6F75;margin:0 0 10px;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>
-        <p style="font-size:12.5px;color:#6B6F75;margin:0 0 16px">${jumlahBarang} barang dipesan</p>`;
+        <p style="font-size:12.5px;font-weight:700;color:#24272B;margin:0 0 2px">No HP: ${teleponPenerima || "-"}</p>
+        <p style="font-size:13.5px;font-weight:700;color:#24272B;margin:0 0 10px;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>
+        <p style="font-size:12.5px;font-weight:700;color:#24272B;margin:0 0 16px">${jumlahBarang} barang dipesan</p>`;
     const infoBox = entry.noBox
-      ? `<p style="font-size:16px;font-weight:700;color:#8A6A1A;margin:0 0 10px;padding:4px 14px;background:#FBF0D9;display:inline-block;border-radius:6px">${entry.item?.products?.kode || ""} - No. Box: ${entry.noBox} / ${entry.totalBox}</p>`
+      ? `<p style="font-size:16px;font-weight:700;color:#24272B;margin:0 0 10px;padding:4px 14px;background:#FBF0D9;display:inline-block;border-radius:6px">${entry.item?.products?.kode || ""} - No. Box: ${entry.noBox} / ${entry.totalBox}</p>`
       : "";
     return `
       <div class="barcode-item" style="text-align:center;padding:10px 0;${i < entries.length - 1 ? "page-break-after:always;" : ""}">
@@ -1181,14 +1181,14 @@ function BarcodeLabelContent({ order: o, noBox, totalBox }) {
         </>
       )}
       {noBox && totalBox ? (
-        <p style={{ fontSize: 16, fontWeight: 700, color: "#8A6A1A", margin: "0 0 10px", padding: "4px 14px", background: "#FBF0D9", display: "inline-block", borderRadius: 6 }}>
+        <p style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "4px 14px", background: "#FBF0D9", display: "inline-block", borderRadius: 6 }}>
           No. Box: {noBox} / {totalBox}
         </p>
       ) : !isPekanbaru ? (
         // Label INTI (luar kota) - tidak ada nomor box spesifik, tampilkan
         // total box sebagai gantinya, buat info kurir berapa box yang
         // harus diterima untuk 1 order ini.
-        <p style={{ fontSize: 16, fontWeight: 700, color: "#8A6A1A", margin: "0 0 10px", padding: "4px 14px", background: "#FBF0D9", display: "inline-block", borderRadius: 6 }}>
+        <p style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "4px 14px", background: "#FBF0D9", display: "inline-block", borderRadius: 6 }}>
           Total Box: {jumlahBarang}
         </p>
       ) : null}
@@ -1217,7 +1217,7 @@ function BarcodeLabelContent({ order: o, noBox, totalBox }) {
           {(o.order_items || []).map((it, i) => (
             <tr key={i} style={{ borderBottom: "1px solid #EDEAE3" }}>
               <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700 }}>{it.products?.kode || "-"}</td>
-              <td style={{ padding: "4px 4px", color: "#24272B" }}>{it.products?.nama || "-"}</td>
+              <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700 }}>{it.products?.nama || "-"}</td>
               <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700, textAlign: "right" }}>{it.qty}</td>
             </tr>
           ))}
