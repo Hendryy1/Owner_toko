@@ -25,7 +25,7 @@ const PRINT_SERVER_URL = "https://192.168.1.11:9100";
 // Render JSX jadi PDF (persis tampilan aslinya - warna, tabel, font),
 // lalu kirim ke print server untuk dicetak otomatis lewat SumatraPDF,
 // tanpa dialog print browser sama sekali.
-async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas") {
+async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas", modeFit = false) {
   const kontainer = document.createElement("div");
   // Taruh di luar layar (bukan display:none) - html2pdf butuh elemen benar2
   // ter-render untuk baca ukuran/style-nya dengan akurat.
@@ -66,9 +66,31 @@ async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas") 
     const [lebarPdf, tinggiPdf] = parseUkuranKertas(ukuranKertas);
     const pdf = new jsPDF({ unit: "in", format: [lebarPdf, tinggiPdf], orientation: "portrait" });
     const dataUrlGambar = canvas.toDataURL("image/jpeg", 0.95);
-    // Tinggi gambar di PDF menyesuaikan proporsi asli kanvas, supaya tidak gepeng/melar
-    const tinggiGambarDiPdf = (canvas.height * lebarPdf) / canvas.width;
-    pdf.addImage(dataUrlGambar, "JPEG", 0, 0, lebarPdf, tinggiGambarDiPdf);
+
+    if (modeFit) {
+      // Mode FIT - sesuaikan supaya SEMUA konten pasti kelihatan penuh
+      // (tidak terpotong), sisa ruang (kalau ada) dibiarkan kosong &
+      // konten di-tengah-kan. Cocok kalau proporsi konten beda dari
+      // proporsi kertas fisik.
+      const rasioKonten = canvas.width / canvas.height;
+      const rasioKertas = lebarPdf / tinggiPdf;
+      let lebarGambar, tinggiGambar;
+      if (rasioKonten > rasioKertas) {
+        lebarGambar = lebarPdf;
+        tinggiGambar = lebarPdf / rasioKonten;
+      } else {
+        tinggiGambar = tinggiPdf;
+        lebarGambar = tinggiPdf * rasioKonten;
+      }
+      const offsetX = (lebarPdf - lebarGambar) / 2;
+      const offsetY = (tinggiPdf - tinggiGambar) / 2;
+      pdf.addImage(dataUrlGambar, "JPEG", offsetX, offsetY, lebarGambar, tinggiGambar);
+    } else {
+      // Mode STRETCH (default) - lebar diregangkan penuh, tinggi ikut
+      // proporsi asli kanvas.
+      const tinggiGambarDiPdf = (canvas.height * lebarPdf) / canvas.width;
+      pdf.addImage(dataUrlGambar, "JPEG", 0, 0, lebarPdf, tinggiGambarDiPdf);
+    }
 
     const pdfBlob = pdf.output("blob");
     console.log("[cetakPdfOtomatis] Ukuran PDF akhir (byte):", pdfBlob.size);
@@ -2816,6 +2838,7 @@ function FormatNotaPage({ token }) {
           tinggi_kertas_kurir: Number(form.tinggi_kertas_kurir) || 11,
           lebar_label_barcode_mm: Number(form.lebar_label_barcode_mm) || 100,
           tinggi_label_barcode_mm: Number(form.tinggi_label_barcode_mm) || 150,
+          mode_fit_barcode: !!form.mode_fit_barcode,
           updated_at: new Date().toISOString(),
         }),
       });
@@ -2970,6 +2993,14 @@ function FormatNotaPage({ token }) {
               <input type="number" step="1" min="10" value={form.tinggi_label_barcode_mm ?? 150} onChange={set("tinggi_label_barcode_mm")} style={fieldStyle} />
             </div>
           </div>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 12, fontSize: 12.5, color: "#24272B", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={!!form.mode_fit_barcode}
+              onChange={(e) => setForm({ ...form, mode_fit_barcode: e.target.checked })}
+            />
+            Mode "Fit" - sesuaikan konten supaya pasti kelihatan penuh (tidak terpotong), bisa ada spasi kosong. Kalau tidak dicentang, konten diregangkan penuh mengikuti lebar kertas.
+          </label>
           {tombolPreview("barcode", "Lihat Preview Label Barcode")}
           {previewAktif === "barcode" && (
             <PreviewKertas lebarIn={(Number(form.lebar_label_barcode_mm) || 100) / 25.4} tinggiIn={(Number(form.tinggi_label_barcode_mm) || 150) / 25.4}>
@@ -4380,12 +4411,12 @@ function SiapDikirimPage({ token, role }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [bulkPrint, setBulkPrint] = useState(null); // { orders, type } | null
   const [bulkBarcode, setBulkBarcode] = useState(null); // array order | null
-  const [ukuranLabelBarcode, setUkuranLabelBarcode] = useState({ lebar: 100, tinggi: 150 });
+  const [ukuranLabelBarcode, setUkuranLabelBarcode] = useState({ lebar: 100, tinggi: 150, modeFit: false });
 
   useEffect(() => {
-    supabaseFetch(token, "nota_settings?select=lebar_label_barcode_mm,tinggi_label_barcode_mm&limit=1")
+    supabaseFetch(token, "nota_settings?select=lebar_label_barcode_mm,tinggi_label_barcode_mm,mode_fit_barcode&limit=1")
       .then((rows) => {
-        if (rows[0]) setUkuranLabelBarcode({ lebar: rows[0].lebar_label_barcode_mm ?? 100, tinggi: rows[0].tinggi_label_barcode_mm ?? 150 });
+        if (rows[0]) setUkuranLabelBarcode({ lebar: rows[0].lebar_label_barcode_mm ?? 100, tinggi: rows[0].tinggi_label_barcode_mm ?? 150, modeFit: !!rows[0].mode_fit_barcode });
       })
       .catch(() => {}); // biarkan pakai default kalau gagal muat
   }, []);
@@ -4564,7 +4595,7 @@ function SiapDikirimPage({ token, role }) {
       const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
       const entries = hitungEntriesLabelBarcode([order]);
       for (const entry of entries) {
-        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} />, `${lebarIn}in ${tinggiIn}in`, "bawah");
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
       }
       await tandaiSudahDicetak(order.id);
     } catch (e) {
@@ -4581,7 +4612,7 @@ function SiapDikirimPage({ token, role }) {
       const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
       const entries = hitungEntriesLabelBarcode(bulkBarcode);
       for (const entry of entries) {
-        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} />, `${lebarIn}in ${tinggiIn}in`, "bawah");
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
       }
 
       setMarkingPrinted(true);
