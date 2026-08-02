@@ -1190,9 +1190,11 @@ function BarcodeLabelContent({ order: o, noBox, totalBox }) {
         </p>
       ) : null}
       <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 20, marginBottom: 16 }}>
-        {isPekanbaru ? (
-          <QRCodeLabel value={noBox ? `${o.no_nota}-${String(noBox).padStart(2, "0")}` : o.no_nota} />
+        {noBox ? (
+          // Label KEMASAN (per box) - QR saja, berlaku sama untuk Pekanbaru maupun luar kota
+          <QRCodeLabel value={`${o.no_nota}-${String(noBox).padStart(2, "0")}`} />
         ) : (
+          // Label INTI (cuma muncul untuk luar kota) - Barcode128 + QR bersamaan
           <>
             <BarcodeLabel value={o.no_nota} />
             <QRCodeLabel value={o.no_nota} size={80} />
