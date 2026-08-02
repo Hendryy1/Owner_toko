@@ -1176,7 +1176,7 @@ function BarcodeLabelContent({ order: o, noBox, totalBox }) {
           )}
           <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Penerima: {namaPenerima}</p>
           <p style={{ fontSize: 12.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>No HP: {teleponPenerima || "-"}</p>
-          <p style={{ fontSize: 11.5, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
+          <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
           <p style={{ fontSize: 12.5, fontWeight: 700, color: "#24272B", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
         </>
       )}
