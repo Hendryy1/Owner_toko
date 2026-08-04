@@ -2646,7 +2646,10 @@ function SalesPage({ token }) {
     if (detailCache[salesId]) return; // sudah pernah dimuat
     setDetailCache((prev) => ({ ...prev, [salesId]: { loading: true } }));
     try {
-      const orders = await supabaseFetch(token, `orders?select=created_at,order_items(subtotal_setelah_diskon)&sales_id=eq.${salesId}&status=neq.ditolak`);
+      const [orders, daftarToko] = await Promise.all([
+        supabaseFetch(token, `orders?select=created_at,order_items(subtotal_setelah_diskon)&sales_id=eq.${salesId}&status=neq.ditolak`),
+        supabaseFetch(token, `clients?select=nama,kode,kota,status&sales_id=eq.${salesId}&order=nama.asc`),
+      ]);
       const totalOmzet = orders.reduce((sum, o) => sum + (o.order_items || []).reduce((s, it) => s + Number(it.subtotal_setelah_diskon || 0), 0), 0);
       const hariSet = new Set(), mingguSet = new Set(), bulanSet = new Set(), tahunSet = new Set();
       orders.forEach((o) => {
@@ -2667,6 +2670,7 @@ function SalesPage({ token }) {
           rataMinggu: safeDiv(totalOmzet, mingguSet.size),
           rataBulan: safeDiv(totalOmzet, bulanSet.size),
           rataTahun: safeDiv(totalOmzet, tahunSet.size),
+          daftarToko,
         },
       }));
     } catch (e) {
@@ -2755,6 +2759,26 @@ function SalesPage({ token }) {
                     </div>
                   )}
                   <p style={{ fontSize: 10.5, color: "#B5B2AA", margin: "10px 0 0" }}>*Dihitung dari rata-rata di periode sales ini aktif berjualan (all-time), bukan cuma bulan yang difilter di atas.</p>
+
+                  {detail && !detail.loading && !detail.error && (
+                    <div style={{ marginTop: 16, borderTop: "1px solid #EDEAE3", paddingTop: 14 }}>
+                      <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 10px" }}>
+                        Toko yang Ditangani ({detail.daftarToko?.length || 0})
+                      </p>
+                      {!detail.daftarToko || detail.daftarToko.length === 0 ? (
+                        <p style={{ fontSize: 12, color: "#9CA0A6", margin: 0 }}>Belum ada toko yang ditangani.</p>
+                      ) : (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                          {detail.daftarToko.map((t, i) => (
+                            <div key={i} style={{ padding: "8px 10px", background: "#F7F5F1", borderRadius: 8 }}>
+                              <p style={{ fontSize: 12.5, fontWeight: 600, color: "#24272B", margin: "0 0 2px" }}>{t.nama}</p>
+                              <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>{t.kode} - {t.kota || "-"}{t.status !== "aktif" && ` (${t.status})`}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
