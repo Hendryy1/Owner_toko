@@ -9809,7 +9809,7 @@ function VerifikasiTokoPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "clients?select=id,kode,nama,alamat,telp,email,provinsi,kota,jenis_usaha,nama_owner,tanggal_lahir,jenis_pembayaran,foto_toko_url,foto_ktp_url,status_verifikasi,alasan_verifikasi_ditolak&status_verifikasi=neq.belum_upload&order=nama.asc");
+      const rows = await supabaseFetch(token, "clients?select=id,kode,nama,alamat,telp,email,provinsi,kota,jenis_usaha,nama_owner,tanggal_lahir,jenis_pembayaran,foto_toko_url,foto_ktp_url,foto_toko_url_pending,foto_ktp_url_pending,status_verifikasi,alasan_verifikasi_ditolak,status_perubahan_verifikasi,alasan_perubahan_ditolak&status_verifikasi=neq.belum_upload&order=nama.asc");
       setClients(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -9824,6 +9824,11 @@ function VerifikasiTokoPage({ token }) {
       if (c.foto_ktp_url && !ktpSignedUrls[c.id]) {
         getSignedKtpUrl(c.foto_ktp_url).then((url) => {
           if (url) setKtpSignedUrls((prev) => ({ ...prev, [c.id]: url }));
+        });
+      }
+      if (c.foto_ktp_url_pending && !ktpSignedUrls[`${c.id}_pending`]) {
+        getSignedKtpUrl(c.foto_ktp_url_pending).then((url) => {
+          if (url) setKtpSignedUrls((prev) => ({ ...prev, [`${c.id}_pending`]: url }));
         });
       }
     });
@@ -9875,10 +9880,60 @@ function VerifikasiTokoPage({ token }) {
     setProcessingId(null);
   }
 
+  // Approve PENGAJUAN PERUBAHAN - pindahkan foto pending jadi foto utama
+  // (yang lama otomatis "diganti"/dianggap jadi arsip lama), kosongkan
+  // kolom pending, status utama tetap "terverifikasi".
+  async function approvePerubahan(client) {
+    setProcessingId(client.id);
+    try {
+      await supabaseFetch(token, `clients?id=eq.${client.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          foto_toko_url: client.foto_toko_url_pending,
+          foto_ktp_url: client.foto_ktp_url_pending,
+          foto_toko_url_pending: null,
+          foto_ktp_url_pending: null,
+          status_perubahan_verifikasi: null,
+          alasan_perubahan_ditolak: null,
+        }),
+      });
+      setClients((prev) => prev.map((c) => (c.id === client.id ? {
+        ...c,
+        foto_toko_url: c.foto_toko_url_pending, foto_ktp_url: c.foto_ktp_url_pending,
+        foto_toko_url_pending: null, foto_ktp_url_pending: null,
+        status_perubahan_verifikasi: null, alasan_perubahan_ditolak: null,
+      } : c)));
+    } catch (e) { alert("Gagal approve perubahan: " + e.message); }
+    setProcessingId(null);
+  }
+
+  // Tolak PENGAJUAN PERUBAHAN - foto lama (utama) TETAP tidak berubah,
+  // cuma kolom pending yang dibersihkan + catat alasan penolakan.
+  async function tolakPerubahan(client) {
+    if (!rejectReason.trim()) {
+      alert("Isi dulu alasan penolakannya.");
+      return;
+    }
+    setProcessingId(client.id);
+    try {
+      await supabaseFetch(token, `clients?id=eq.${client.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status_perubahan_verifikasi: "ditolak", alasan_perubahan_ditolak: rejectReason.trim() }),
+      });
+      setClients((prev) => prev.map((c) => (c.id === client.id ? { ...c, status_perubahan_verifikasi: "ditolak", alasan_perubahan_ditolak: rejectReason.trim() } : c)));
+      setRejectingId(null);
+      setRejectReason("");
+    } catch (e) { alert("Gagal tolak perubahan: " + e.message); }
+    setProcessingId(null);
+  }
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
-  const filtered = clients.filter((c) => filter === "semua" || c.status_verifikasi === filter);
+  const filtered = filter === "perubahan"
+    ? clients.filter((c) => c.status_perubahan_verifikasi === "menunggu_review")
+    : clients.filter((c) => filter === "semua" || c.status_verifikasi === filter);
+  const jumlahPerubahan = clients.filter((c) => c.status_perubahan_verifikasi === "menunggu_review").length;
   const badgeStyle = {
     menunggu_review: { bg: "#FBF0D9", color: "#8A6A1A", label: "Menunggu Review" },
     terverifikasi: { bg: "#D8E9E6", color: "#28685D", label: "Terverifikasi" },
@@ -9892,6 +9947,7 @@ function VerifikasiTokoPage({ token }) {
       <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
         {[
           { key: "menunggu_review", label: "Menunggu Review" },
+          { key: "perubahan", label: `Perubahan${jumlahPerubahan > 0 ? ` (${jumlahPerubahan})` : ""}` },
           { key: "terverifikasi", label: "Terverifikasi" },
           { key: "ditolak", label: "Ditolak" },
           { key: "semua", label: "Semua" },
@@ -9916,7 +9972,12 @@ function VerifikasiTokoPage({ token }) {
                   <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700 }}>{c.kode}</p>
                   <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.nama}</p>
                 </div>
-                <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color }}>{badge.label}</span>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                  <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color }}>{badge.label}</span>
+                  {filter !== "perubahan" && c.status_perubahan_verifikasi === "menunggu_review" && (
+                    <span style={{ padding: "3px 8px", borderRadius: 999, fontSize: 9.5, fontWeight: 700, background: "#FBF0D9", color: "#8A6A1A" }}>Ada Pengajuan Perubahan</span>
+                  )}
+                </div>
               </div>
 
               <div style={{ background: "#F7F5F1", borderRadius: 10, padding: 12, marginBottom: 12 }}>
@@ -9950,11 +10011,13 @@ function VerifikasiTokoPage({ token }) {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
                 <div>
-                  <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>FOTO TOKO</p>
-                  {c.foto_toko_url ? (
+                  <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>
+                    FOTO TOKO{filter === "perubahan" ? " (BARU)" : ""}
+                  </p>
+                  {(filter === "perubahan" ? c.foto_toko_url_pending : c.foto_toko_url) ? (
                     <img
-                      src={c.foto_toko_url} alt="Foto Toko"
-                      onClick={() => setLightboxUrl(c.foto_toko_url)}
+                      src={filter === "perubahan" ? c.foto_toko_url_pending : c.foto_toko_url} alt="Foto Toko"
+                      onClick={() => setLightboxUrl(filter === "perubahan" ? c.foto_toko_url_pending : c.foto_toko_url)}
                       style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, cursor: "pointer" }}
                     />
                   ) : (
@@ -9962,12 +10025,14 @@ function VerifikasiTokoPage({ token }) {
                   )}
                 </div>
                 <div>
-                  <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>FOTO KTP</p>
-                  {c.foto_ktp_url ? (
-                    ktpSignedUrls[c.id] ? (
+                  <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700 }}>
+                    FOTO KTP{filter === "perubahan" ? " (BARU)" : ""}
+                  </p>
+                  {(filter === "perubahan" ? c.foto_ktp_url_pending : c.foto_ktp_url) ? (
+                    ktpSignedUrls[filter === "perubahan" ? `${c.id}_pending` : c.id] ? (
                       <img
-                        src={ktpSignedUrls[c.id]} alt="Foto KTP"
-                        onClick={() => setLightboxUrl(ktpSignedUrls[c.id])}
+                        src={ktpSignedUrls[filter === "perubahan" ? `${c.id}_pending` : c.id]} alt="Foto KTP"
+                        onClick={() => setLightboxUrl(ktpSignedUrls[filter === "perubahan" ? `${c.id}_pending` : c.id])}
                         style={{ width: "100%", height: 120, objectFit: "cover", borderRadius: 8, cursor: "pointer" }}
                       />
                     ) : (
@@ -9985,7 +10050,7 @@ function VerifikasiTokoPage({ token }) {
                 </div>
               )}
 
-              {c.status_verifikasi === "menunggu_review" && (
+              {(filter === "perubahan" ? c.status_perubahan_verifikasi === "menunggu_review" : c.status_verifikasi === "menunggu_review") && (
                 rejectingId === c.id ? (
                   <div>
                     <textarea
@@ -9995,7 +10060,7 @@ function VerifikasiTokoPage({ token }) {
                       style={{ width: "100%", padding: 9, borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5, marginBottom: 8, resize: "vertical" }}
                     />
                     <div style={{ display: "flex", gap: 8 }}>
-                      <button onClick={() => tolak(c)} disabled={processingId === c.id} style={{ flex: 1, padding: 9, borderRadius: 8, border: "none", background: "#C0392B", color: "#fff", fontSize: 12, fontWeight: 700 }}>
+                      <button onClick={() => (filter === "perubahan" ? tolakPerubahan(c) : tolak(c))} disabled={processingId === c.id} style={{ flex: 1, padding: 9, borderRadius: 8, border: "none", background: "#C0392B", color: "#fff", fontSize: 12, fontWeight: 700 }}>
                         Kirim Penolakan
                       </button>
                       <button onClick={() => { setRejectingId(null); setRejectReason(""); }} style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12, fontWeight: 600 }}>
@@ -10005,7 +10070,7 @@ function VerifikasiTokoPage({ token }) {
                   </div>
                 ) : (
                   <div style={{ display: "flex", gap: 8 }}>
-                    <button onClick={() => approve(c)} disabled={processingId === c.id} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", background: "#28685D", color: "#fff", fontSize: 12.5, fontWeight: 700 }}>
+                    <button onClick={() => (filter === "perubahan" ? approvePerubahan(c) : approve(c))} disabled={processingId === c.id} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", background: "#28685D", color: "#fff", fontSize: 12.5, fontWeight: 700 }}>
                       {processingId === c.id ? "..." : "Setujui"}
                     </button>
                     <button onClick={() => setRejectingId(c.id)} style={{ flex: 1, padding: 10, borderRadius: 9, border: "1.5px solid #C0392B", background: "#fff", color: "#C0392B", fontSize: 12.5, fontWeight: 700 }}>
