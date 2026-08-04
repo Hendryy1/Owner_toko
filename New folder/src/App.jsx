@@ -2762,6 +2762,9 @@ function SalesPage({ token }) {
 
                   {detail && !detail.loading && !detail.error && (
                     <div style={{ marginTop: 16, borderTop: "1px solid #EDEAE3", paddingTop: 14 }}>
+                      <p style={{ fontSize: 10, color: "#C0392B", margin: "0 0 8px", fontFamily: "monospace", background: "#FBEAEA", padding: 8, borderRadius: 6 }}>
+                        [DEBUG SEMENTARA] daftarToko = {JSON.stringify(detail.daftarToko)}
+                      </p>
                       <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 10px" }}>
                         Toko yang Ditangani ({detail.daftarToko?.length || 0})
                       </p>
