@@ -733,6 +733,7 @@ export default function OwnerDashboard() {
         {page === "sales" && <SalesPage token={token} />}
         {page === "format_nota" && <FormatNotaPage token={token} />}
         {page === "rekening_bank" && <RekeningBankPage token={token} />}
+        {page === "maintenance" && <MaintenancePage token={token} />}
         {page === "akun_staff" && <AkunStaffPage token={token} />}
         {page === "verifikasi_sales" && <VerifikasiSalesPage token={token} />}
         {page === "laporan_kunjungan_owner" && <LaporanKunjunganOwnerPage token={token} />}
@@ -848,6 +849,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_keuangan"] },
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
     { key: "rekening_bank", label: "Rekening Bank Perusahaan", icon: CreditCard, roles: ["owner"] },
+    { key: "maintenance", label: "Mode Maintenance", icon: AlertCircle, roles: ["owner"] },
     { key: "akun_staff", label: "Kelola Akun Staff", icon: Users, roles: ["owner"] },
     { key: "verifikasi_sales", label: "Verifikasi Sales", icon: Eye, roles: ["owner"] },
     { key: "laporan_kunjungan_owner", label: "Laporan Kunjungan Sales", icon: MapPin, roles: ["owner"] },
@@ -2829,6 +2831,102 @@ function PreviewKertas({ lebarIn, tinggiIn, children }) {
 // ditampilkan ke toko ASLI (bukan demo) untuk transfer manual, sementara
 // integrasi Xendit VA masih dalam proses verifikasi.
 // ============================================================
+// ============================================================
+// MODE MAINTENANCE - Owner aktifkan saat perlu update mendadak. Toko yang
+// sedang buka Web App akan lihat info maintenance (dicek berkala), begitu
+// dimatikan lagi, Web App toko OTOMATIS refresh paksa tanpa perlu klik apapun.
+// ============================================================
+function MaintenancePage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [aktif, setAktif] = useState(false);
+  const [pesan, setPesan] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setLoading(true);
+    try {
+      const rows = await supabaseFetch(token, "pengaturan_maintenance?select=*&id=eq.1");
+      if (rows[0]) { setAktif(rows[0].aktif); setPesan(rows[0].pesan || ""); }
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function simpan(aktifBaru) {
+    setSaving(true);
+    setError("");
+    try {
+      await supabaseFetch(token, "pengaturan_maintenance?id=eq.1", {
+        method: "PATCH",
+        body: JSON.stringify({ aktif: aktifBaru, pesan: pesan.trim() || null, updated_at: new Date().toISOString() }),
+      });
+      setAktif(aktifBaru);
+    } catch (e) {
+      setError("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  if (loading) return <LoadingState />;
+
+  return (
+    <div style={{ padding: "28px 32px", maxWidth: 560 }}>
+      <h1 className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#24272B", margin: "4px 0 6px" }}>Mode Maintenance</h1>
+      <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 20px", lineHeight: 1.6 }}>
+        Aktifkan saat perlu update mendadak - Web App toko akan menampilkan info maintenance (dicek otomatis tiap beberapa detik). Begitu Anda matikan lagi, Web App toko akan <strong>otomatis refresh paksa</strong> tanpa perlu klik apapun dari mereka.
+      </p>
+
+      {error && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBEAEA", color: "#C0392B", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 14 }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ background: "#fff", border: "1px solid #EDEAE3", borderRadius: 14, padding: 20, marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          <div>
+            <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Status Saat Ini</p>
+            <p style={{ fontSize: 12.5, color: aktif ? "#C0392B" : "#28685D", margin: 0, fontWeight: 600 }}>
+              {aktif ? "AKTIF - Web App toko menampilkan maintenance" : "Nonaktif - Web App berjalan normal"}
+            </p>
+          </div>
+          <span style={{ width: 14, height: 14, borderRadius: "50%", background: aktif ? "#C0392B" : "#28685D" }} />
+        </div>
+
+        <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Pesan untuk Toko</label>
+        <textarea
+          value={pesan} onChange={(e) => setPesan(e.target.value)}
+          rows={3}
+          placeholder="Sistem sedang dalam pemeliharaan. Mohon tunggu sebentar..."
+          style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, resize: "vertical", marginBottom: 16 }}
+        />
+
+        {aktif ? (
+          <button
+            onClick={() => simpan(false)} disabled={saving}
+            style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 14 }}
+          >
+            {saving ? "Menyimpan..." : "Matikan Maintenance (Refresh Paksa Toko)"}
+          </button>
+        ) : (
+          <button
+            onClick={() => simpan(true)} disabled={saving}
+            style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: "#C0392B", color: "#fff", fontWeight: 700, fontSize: 14 }}
+          >
+            {saving ? "Menyimpan..." : "Aktifkan Maintenance Sekarang"}
+          </button>
+        )}
+      </div>
+
+      <p style={{ fontSize: 11.5, color: "#9CA0A6", lineHeight: 1.6 }}>
+        <strong>Alur yang disarankan:</strong> Aktifkan maintenance → lakukan update kode/database Anda → setelah semua beres, matikan maintenance di sini. Toko yang sedang membuka Web App akan otomatis ter-refresh dengan versi terbaru.
+      </p>
+    </div>
+  );
+}
+
+
 function RekeningBankPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [daftar, setDaftar] = useState([]);
