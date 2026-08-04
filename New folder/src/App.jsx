@@ -3905,7 +3905,7 @@ function RekapNotaPage({ token }) {
     if (filterMonth !== 0 && d.getMonth() + 1 !== Number(filterMonth)) return false;
     if (filterStatus !== "semua" && o.status !== filterStatus) return false;
     return true;
-  });
+  }).sort((a, b) => (a.clients?.kode || "").localeCompare(b.clients?.kode || ""));
 
   const totalCashbackBelumDibayar = filtered.reduce((s, o) => {
     const cb = o.cashback_ledger?.[0];
@@ -4022,7 +4022,8 @@ function RekapNotaPage({ token }) {
         </Card>
       ) : (
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+        <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 720 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
               {["No Nota", "Toko", "Jenis Bayar", "Jatuh Tempo", "Status", "Total", "Cashback", ""].map((h) => (
@@ -4082,6 +4083,7 @@ function RekapNotaPage({ token }) {
             })}
           </tbody>
         </table>
+        </div>
         {filtered.length === 0 && <EmptyState text="Tidak ada nota pada periode/filter ini." />}
       </Card>
       )}
