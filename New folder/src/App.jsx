@@ -6772,6 +6772,7 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
     kode: product.kode || "", nama: product.nama || "", kategori: product.kategori || "", satuan: product.satuan || "",
     hargaJual: product.harga_jual || "", hargaAsli: product.harga_asli || "", hargaModal: product.harga_modal || "",
     stockAwal: product.stock_awal ?? 0, stockMinimum: product.stock_minimum ?? 0, isiPerKoli: product.isi_per_koli || "", diskonKoliPct: product.diskon_koli_pct ? Number(product.diskon_koli_pct) * 100 : "",
+    minimalOrder: product.minimal_order ?? 1,
     cashbackPerKoli: product.cashback_per_koli || "", deskripsi: product.deskripsi || "", aktif: product.aktif ?? true,
   });
   const [gambarUrl, setGambarUrl] = useState(product.gambar_url || "");
@@ -6905,6 +6906,7 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
         harga_modal: form.hargaModal ? Number(form.hargaModal) : null, stock_awal: Number(form.stockAwal) || 0,
         stock_minimum: Number(form.stockMinimum) || 0,
         isi_per_koli: Number(form.isiPerKoli) || 0, diskon_koli_pct: (Number(form.diskonKoliPct) || 0) / 100,
+        minimal_order: Number(form.minimalOrder) || 1,
         cashback_per_koli: Number(form.cashbackPerKoli) || 0, deskripsi: form.deskripsi || null,
         gambar_url: gambarUrl || null, aktif: form.aktif,
       };
@@ -7047,6 +7049,14 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
             <label style={labelStyle}>Stock Minimum (peringatan)</label>
             <input type="number" min="0" value={form.stockMinimum} onChange={set("stockMinimum")} style={fieldStyle} />
           </div>
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>Minimal Order (satuan)</label>
+          <input type="number" min="1" value={form.minimalOrder} onChange={set("minimalOrder")} style={fieldStyle} />
+          <p style={{ fontSize: 11, color: "#9CA0A6", margin: "4px 0 0" }}>
+            Jumlah minimal yang wajib dibeli toko untuk produk ini (berlaku sama untuk semua kota/provinsi). Isi 1 kalau tidak ada aturan khusus.
+          </p>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 16 }}>
