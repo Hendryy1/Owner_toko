@@ -3417,7 +3417,8 @@ function RekapTokoPage({ token }) {
         </label>
       </div>
       <Card style={{ padding: 0, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+        <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 900 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
               {["Nama Toko", "Alamat", "No HP", "Email", "Kode Sales", "Nama Sales", "Mode Sales", "Terakhir Order", "Catatan", ""].map((h) => (
@@ -3432,6 +3433,7 @@ function RekapTokoPage({ token }) {
                 const hari = hariSejakOrder(c.id);
                 return hari === null || hari > BATAS_HARI_TIDAK_AKTIF;
               })
+              .sort((a, b) => (a.kode || "").localeCompare(b.kode || ""))
               .map((c) => {
               const hari = hariSejakOrder(c.id);
               const tidakAktif = hari === null || hari > BATAS_HARI_TIDAK_AKTIF;
@@ -3480,6 +3482,7 @@ function RekapTokoPage({ token }) {
             })}
           </tbody>
         </table>
+        </div>
         {clients.length === 0 && <EmptyState text="Belum ada toko aktif." />}
       </Card>
 
