@@ -9809,7 +9809,7 @@ function VerifikasiTokoPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "clients?select=id,kode,nama,foto_toko_url,foto_ktp_url,status_verifikasi,alasan_verifikasi_ditolak&status_verifikasi=neq.belum_upload&order=nama.asc");
+      const rows = await supabaseFetch(token, "clients?select=id,kode,nama,alamat,telp,email,provinsi,kota,jenis_usaha,nama_owner,tanggal_lahir,jenis_pembayaran,foto_toko_url,foto_ktp_url,status_verifikasi,alasan_verifikasi_ditolak&status_verifikasi=neq.belum_upload&order=nama.asc");
       setClients(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -9917,6 +9917,35 @@ function VerifikasiTokoPage({ token }) {
                   <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.nama}</p>
                 </div>
                 <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color }}>{badge.label}</span>
+              </div>
+
+              <div style={{ background: "#F7F5F1", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 5 }}>
+                  <MapPin size={13} color="#9CA0A6" style={{ marginTop: 2, flexShrink: 0 }} />
+                  <p style={{ fontSize: 12, color: "#24272B", margin: 0, lineHeight: 1.4 }}>{c.alamat || "-"}{c.kota ? `, ${c.kota}` : ""}{c.provinsi ? `, ${c.provinsi}` : ""}</p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                  <Phone size={13} color="#9CA0A6" style={{ flexShrink: 0 }} />
+                  <p style={{ fontSize: 12, color: "#24272B", margin: 0 }}>{c.telp || "-"}</p>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                  <MessageCircle size={13} color="#9CA0A6" style={{ flexShrink: 0 }} />
+                  <p style={{ fontSize: 12, color: "#24272B", margin: 0 }}>{c.email || "-"}</p>
+                </div>
+                {c.nama_owner && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+                    <User size={13} color="#9CA0A6" style={{ flexShrink: 0 }} />
+                    <p style={{ fontSize: 12, color: "#24272B", margin: 0 }}>Owner: {c.nama_owner}{c.tanggal_lahir ? ` (lahir ${new Date(c.tanggal_lahir).toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" })})` : ""}</p>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+                  {c.jenis_usaha && (
+                    <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: "#fff", color: "#6B6F75" }}>{c.jenis_usaha}</span>
+                  )}
+                  {c.jenis_pembayaran && (
+                    <span style={{ fontSize: 10.5, fontWeight: 700, padding: "3px 8px", borderRadius: 999, background: "#fff", color: "#6B6F75" }}>{c.jenis_pembayaran}</span>
+                  )}
+                </div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 14 }}>
