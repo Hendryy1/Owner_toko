@@ -5,7 +5,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3, Star, CalendarDays
+  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3, Star, CalendarDays, CreditCard
 } from "lucide-react";
 
 const COMPANY_NAME = "PT INDO GARUDA ABADI";
@@ -732,6 +732,7 @@ export default function OwnerDashboard() {
         {page === "rekap_toko" && <RekapTokoPage token={token} />}
         {page === "sales" && <SalesPage token={token} />}
         {page === "format_nota" && <FormatNotaPage token={token} />}
+        {page === "rekening_bank" && <RekeningBankPage token={token} />}
         {page === "akun_staff" && <AkunStaffPage token={token} />}
         {page === "verifikasi_sales" && <VerifikasiSalesPage token={token} />}
         {page === "laporan_kunjungan_owner" && <LaporanKunjunganOwnerPage token={token} />}
@@ -846,6 +847,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "rekap_toko", label: "Rekap Toko", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "sales", label: "Rekap Sales", icon: Users, roles: ["owner", "admin_keuangan"] },
     { key: "format_nota", label: "Format Nota", icon: FileEdit, roles: ["owner"] },
+    { key: "rekening_bank", label: "Rekening Bank Perusahaan", icon: CreditCard, roles: ["owner"] },
     { key: "akun_staff", label: "Kelola Akun Staff", icon: Users, roles: ["owner"] },
     { key: "verifikasi_sales", label: "Verifikasi Sales", icon: Eye, roles: ["owner"] },
     { key: "laporan_kunjungan_owner", label: "Laporan Kunjungan Sales", icon: MapPin, roles: ["owner"] },
@@ -2805,6 +2807,126 @@ function PreviewKertas({ lebarIn, tinggiIn, children }) {
   );
 }
 
+
+// ============================================================
+// REKENING BANK PERUSAHAAN - Owner kelola daftar rekening bank yang
+// ditampilkan ke toko ASLI (bukan demo) untuk transfer manual, sementara
+// integrasi Xendit VA masih dalam proses verifikasi.
+// ============================================================
+function RekeningBankPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [daftar, setDaftar] = useState([]);
+  const [namaBank, setNamaBank] = useState("");
+  const [noRekening, setNoRekening] = useState("");
+  const [atasNama, setAtasNama] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setLoading(true);
+    try {
+      const rows = await supabaseFetch(token, "rekening_bank_perusahaan?select=*&order=urutan.asc");
+      setDaftar(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function tambah() {
+    if (!namaBank.trim() || !noRekening.trim() || !atasNama.trim()) {
+      setError("Isi dulu nama bank, nomor rekening, dan atas nama.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await supabaseFetch(token, "rekening_bank_perusahaan", {
+        method: "POST",
+        body: JSON.stringify({ nama_bank: namaBank.trim(), no_rekening: noRekening.trim(), atas_nama: atasNama.trim(), urutan: daftar.length }),
+      });
+      setNamaBank(""); setNoRekening(""); setAtasNama("");
+      await load();
+    } catch (e) {
+      setError("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function toggleAktif(id, statusSaatIni) {
+    try {
+      await supabaseFetch(token, `rekening_bank_perusahaan?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ aktif: !statusSaatIni, updated_at: new Date().toISOString() }) });
+      setDaftar((prev) => prev.map((r) => (r.id === id ? { ...r, aktif: !statusSaatIni } : r)));
+    } catch (e) {
+      alert("Gagal ubah status: " + e.message);
+    }
+  }
+
+  async function hapus(id) {
+    if (!confirm("Hapus rekening ini?")) return;
+    try {
+      await supabaseFetch(token, `rekening_bank_perusahaan?id=eq.${id}`, { method: "DELETE" });
+      setDaftar((prev) => prev.filter((r) => r.id !== id));
+    } catch (e) {
+      alert("Gagal hapus: " + e.message);
+    }
+  }
+
+  return (
+    <div style={{ padding: "28px 32px", maxWidth: 640 }}>
+      <h1 className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#24272B", margin: "4px 0 6px" }}>Rekening Bank Perusahaan</h1>
+      <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 20px", lineHeight: 1.6 }}>
+        Ditampilkan ke toko untuk transfer manual, sementara integrasi Xendit VA masih dalam proses verifikasi. Cuma akun demo Xendit yang tetap pakai VA otomatis.
+      </p>
+
+      {error && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBEAEA", color: "#C0392B", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 14 }}>
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <p style={{ color: "#9CA0A6", fontSize: 13 }}>Memuat...</p>
+      ) : daftar.length === 0 ? (
+        <p style={{ color: "#9CA0A6", fontSize: 12.5, marginBottom: 20 }}>Belum ada rekening ditambahkan.</p>
+      ) : (
+        daftar.map((r) => (
+          <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, padding: "12px 14px", background: "#fff", border: "1px solid #EDEAE3", borderRadius: 12 }}>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{r.nama_bank}</p>
+              <p style={{ fontSize: 12.5, color: "#6B6F75", margin: 0, fontFamily: "monospace" }}>{r.no_rekening}</p>
+              <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>a.n. {r.atas_nama}</p>
+            </div>
+            <button
+              onClick={() => toggleAktif(r.id, r.aktif)}
+              style={{ padding: "5px 10px", borderRadius: 999, border: "none", background: r.aktif ? "#D8E9E6" : "#F7F5F1", color: r.aktif ? "#28685D" : "#9CA0A6", fontSize: 11, fontWeight: 700 }}
+            >
+              {r.aktif ? "Aktif" : "Nonaktif"}
+            </button>
+            <button onClick={() => hapus(r.id)} style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #F0CFC7", background: "#fff", color: "#C0392B", fontSize: 11.5, fontWeight: 600 }}>
+              Hapus
+            </button>
+          </div>
+        ))
+      )}
+
+      <div style={{ marginTop: 24, padding: 18, background: "#F7F5F1", borderRadius: 14 }}>
+        <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 12px" }}>Tambah Rekening Baru</p>
+        <div style={{ marginBottom: 10 }}>
+          <input value={namaBank} onChange={(e) => setNamaBank(e.target.value)} placeholder="Nama Bank (misal: BCA)" style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
+        </div>
+        <div style={{ marginBottom: 10 }}>
+          <input value={noRekening} onChange={(e) => setNoRekening(e.target.value)} placeholder="Nomor Rekening" style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <input value={atasNama} onChange={(e) => setAtasNama(e.target.value)} placeholder="Atas Nama (misal: PT Indo Garuda Abadi)" style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
+        </div>
+        <button onClick={tambah} disabled={saving} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
+          {saving ? "Menyimpan..." : "+ Tambah Rekening"}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 function FormatNotaPage({ token }) {
   const [loading, setLoading] = useState(true);
