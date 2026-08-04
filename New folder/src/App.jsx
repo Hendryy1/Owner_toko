@@ -2174,7 +2174,6 @@ function ClientsPage({ token }) {
   const [clients, setClients] = useState([]);
   const [error, setError] = useState("");
   const [processingId, setProcessingId] = useState(null);
-  const [kodeBaru, setKodeBaru] = useState({});
 
   async function load() {
     setLoading(true);
@@ -2188,13 +2187,11 @@ function ClientsPage({ token }) {
   useEffect(() => { load(); }, []);
 
   async function approve(id) {
-    const kode = (kodeBaru[id] || "").trim();
-    if (!kode) { alert("Isi dulu Kode Toko barunya (misal C006)."); return; }
     setProcessingId(id);
     try {
       await supabaseFetch(token, `clients?id=eq.${id}`, {
         method: "PATCH",
-        body: JSON.stringify({ kode, status: "aktif" }),
+        body: JSON.stringify({ status: "aktif" }),
       });
       setClients((prev) => prev.filter((c) => c.id !== id));
     } catch (e) {
@@ -2226,15 +2223,10 @@ function ClientsPage({ token }) {
         clients.map((c) => (
           <Card key={c.id} style={{ marginBottom: 12 }}>
             <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>{c.nama}</p>
+            <p style={{ fontSize: 12.5, fontWeight: 700, color: "#28685D", margin: "0 0 4px" }}>Kode Toko: {c.kode}</p>
             <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 2px" }}>{c.telp}</p>
             <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 14px" }}>{c.alamat}</p>
             <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-              <input
-                placeholder="Kode Toko baru, misal C006"
-                value={kodeBaru[c.id] || ""}
-                onChange={(e) => setKodeBaru({ ...kodeBaru, [c.id]: e.target.value.toUpperCase() })}
-                style={{ flex: 1, padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, outline: "none" }}
-              />
               <button
                 disabled={processingId === c.id}
                 onClick={() => reject(c.id)}
