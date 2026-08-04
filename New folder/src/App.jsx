@@ -6527,6 +6527,135 @@ function FreeOngkirPage({ token }) {
 // ============================================================
 // PRODUCT (khusus Owner) - CRUD lengkap + gambar
 // ============================================================
+// ============================================================
+// MODAL HARGA PER PROVINSI - Owner atur harga khusus 1 produk buat
+// tiap provinsi (karena beda ongkir). Provinsi yang belum diatur di
+// sini otomatis pakai harga default produk.
+// ============================================================
+function HargaProvinsiModal({ token, product, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [daftarHarga, setDaftarHarga] = useState([]); // [{id, provinsi, harga}]
+  const [provinsiBaru, setProvinsiBaru] = useState("");
+  const [hargaBaru, setHargaBaru] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setLoading(true);
+    try {
+      const rows = await supabaseFetch(token, `harga_produk_provinsi?select=id,provinsi,harga&product_id=eq.${product.id}&order=provinsi.asc`);
+      setDaftarHarga(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function tambahHarga() {
+    if (!provinsiBaru.trim() || !hargaBaru) {
+      setError("Isi dulu nama provinsi dan harganya.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await supabaseFetch(token, `harga_produk_provinsi?on_conflict=product_id,provinsi`, {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+        body: JSON.stringify({ product_id: product.id, provinsi: provinsiBaru.trim(), harga: Number(hargaBaru) }),
+      });
+      setProvinsiBaru("");
+      setHargaBaru("");
+      await load();
+    } catch (e) {
+      setError("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function updateHarga(id, hargaBaruNilai) {
+    try {
+      await supabaseFetch(token, `harga_produk_provinsi?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ harga: Number(hargaBaruNilai), updated_at: new Date().toISOString() }) });
+      setDaftarHarga((prev) => prev.map((h) => (h.id === id ? { ...h, harga: Number(hargaBaruNilai) } : h)));
+    } catch (e) {
+      alert("Gagal update harga: " + e.message);
+    }
+  }
+
+  async function hapusHarga(id) {
+    if (!confirm("Hapus harga khusus provinsi ini? Provinsi ini akan kembali pakai harga default produk.")) return;
+    try {
+      await supabaseFetch(token, `harga_produk_provinsi?id=eq.${id}`, { method: "DELETE" });
+      setDaftarHarga((prev) => prev.filter((h) => h.id !== id));
+    } catch (e) {
+      alert("Gagal hapus: " + e.message);
+    }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
+        <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Harga per Provinsi</p>
+        <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 4px" }}>{product.nama}</p>
+        <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 18px" }}>
+          Harga default (dasar): <strong>{rupiah(product.harga_jual)}</strong> - dipakai untuk provinsi yang belum diatur khusus di bawah.
+        </p>
+
+        {error && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBEAEA", color: "#C0392B", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 14 }}>
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <p style={{ textAlign: "center", color: "#9CA0A6", fontSize: 13, padding: "20px 0" }}>Memuat...</p>
+        ) : daftarHarga.length === 0 ? (
+          <p style={{ textAlign: "center", color: "#9CA0A6", fontSize: 12.5, padding: "16px 0" }}>Belum ada harga khusus provinsi - semua pakai harga default.</p>
+        ) : (
+          daftarHarga.map((h) => (
+            <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "8px 10px", background: "#F7F5F1", borderRadius: 9 }}>
+              <p style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "#24272B", margin: 0 }}>{h.provinsi}</p>
+              <input
+                type="number" defaultValue={h.harga}
+                onBlur={(e) => { if (Number(e.target.value) !== h.harga) updateHarga(h.id, e.target.value); }}
+                style={{ width: 120, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }}
+              />
+              <button onClick={() => hapusHarga(h.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #F0CFC7", background: "#fff", color: "#C0392B", fontSize: 11.5, fontWeight: 600 }}>
+                Hapus
+              </button>
+            </div>
+          ))
+        )}
+
+        <div style={{ borderTop: "1px solid #EDEAE3", marginTop: 14, paddingTop: 14 }}>
+          <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Tambah Harga Provinsi Baru</p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={provinsiBaru} onChange={(e) => setProvinsiBaru(e.target.value)}
+              placeholder="Nama provinsi (misal: Riau)"
+              style={{ flex: 1, padding: "9px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5 }}
+            />
+            <input
+              type="number" value={hargaBaru} onChange={(e) => setHargaBaru(e.target.value)}
+              placeholder="Harga"
+              style={{ width: 120, padding: "9px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5 }}
+            />
+          </div>
+          <button
+            onClick={tambahHarga} disabled={saving}
+            style={{ width: "100%", marginTop: 10, padding: 11, borderRadius: 9, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13 }}
+          >
+            {saving ? "Menyimpan..." : "+ Tambah"}
+          </button>
+        </div>
+
+        <button onClick={onClose} style={{ width: "100%", marginTop: 16, padding: 11, borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
+          Tutup
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ProductPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState([]);
@@ -6534,6 +6663,7 @@ function ProductPage({ token }) {
   const [editingProduct, setEditingProduct] = useState(null); // null = tutup modal, {} = tambah baru, {...} = edit
   const [deletingId, setDeletingId] = useState(null);
   const [showImport, setShowImport] = useState(false);
+  const [editingHargaProvinsi, setEditingHargaProvinsi] = useState(null); // null = tutup, {...product} = buka modal
 
   async function load() {
     setLoading(true);
@@ -6602,7 +6732,7 @@ function ProductPage({ token }) {
             <span style={{ display: "inline-block", background: p.aktif ? "#D8E9E6" : "#F7F5F1", color: p.aktif ? "#28685D" : "#9CA0A6", padding: "2px 9px", borderRadius: 999, fontSize: 10.5, fontWeight: 700, marginBottom: 10 }}>
               {p.aktif ? "Aktif" : "Nonaktif"}
             </span>
-            <div style={{ display: "flex", gap: 6 }}>
+            <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
               <button onClick={() => setEditingProduct(p)} style={{ flex: 1, padding: "7px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11.5, fontWeight: 600, display: "flex", alignItems: "center", justifyContent: "center", gap: 4 }}>
                 <FileEdit size={11} /> Edit
               </button>
@@ -6610,6 +6740,9 @@ function ProductPage({ token }) {
                 Hapus
               </button>
             </div>
+            <button onClick={() => setEditingHargaProvinsi(p)} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#F7F5F1", color: "#24272B", fontSize: 11.5, fontWeight: 600 }}>
+              Harga per Provinsi
+            </button>
           </Card>
         ))}
       </div>
@@ -6621,6 +6754,10 @@ function ProductPage({ token }) {
 
       {showImport && (
         <ImportCSVModal token={token} onClose={() => setShowImport(false)} onSelesai={() => { setShowImport(false); load(); }} />
+      )}
+
+      {editingHargaProvinsi && (
+        <HargaProvinsiModal token={token} product={editingHargaProvinsi} onClose={() => setEditingHargaProvinsi(null)} />
       )}
     </div>
   );
