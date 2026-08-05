@@ -4341,7 +4341,7 @@ function KonfirmasiPembayaranPage({ token }) {
       // 3. COD/Transfer-Pekanbaru yang statusnya proses_dikirim - SEMUA,
       //    walau dokumennya BELUM lengkap - supaya Owner bisa lihat progres
       //    upload kapan saja, meski belum bisa selesaikan sampai lengkap.
-      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,dikonfirmasi_toko_at,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status_bayar.eq.lunas,status.eq.proses_dikirim)&order=created_at.desc&limit=200");
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,dikonfirmasi_toko_at,bukti_transfer_url,bukti_pengiriman_url,bukti_serah_terima_kurir_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status_bayar.eq.lunas,status.eq.proses_dikirim)&order=created_at.desc&limit=200");
       setOrders(rows);
 
       // Order retur yang SUDAH dikonfirmasi (ada bukti+alasan) di Proses
@@ -4547,14 +4547,16 @@ function KonfirmasiPembayaranPage({ token }) {
         // COD (itu memang khusus COD)
         const dokumen = isCodOrder
           ? [
-              { label: "Bukti Pengiriman", url: o.bukti_pengiriman_url },
+              { label: "Bukti Pengemasan", url: o.bukti_pengiriman_url },
+              { label: "Bukti Serah Terima Kurir", url: o.bukti_serah_terima_kurir_url },
               { label: "Bukti Barang Sampai", url: o.bukti_barang_sampai_url },
               { label: "Nota TTD Penerima", url: o.bukti_nota_ttd_url },
               { label: "Bukti Nota COD", url: o.bukti_nota_cod_url },
               { label: "Bukti Cash COD", url: o.bukti_cash_cod_url },
             ]
           : [
-              { label: "Bukti Pengiriman", url: o.bukti_pengiriman_url },
+              { label: "Bukti Pengemasan", url: o.bukti_pengiriman_url },
+              { label: "Bukti Serah Terima Kurir", url: o.bukti_serah_terima_kurir_url },
               { label: "Bukti Barang Sampai", url: o.bukti_barang_sampai_url },
               { label: "Nota TTD Penerima", url: o.bukti_nota_ttd_url },
             ];
@@ -12666,6 +12668,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const [cameraError, setCameraError] = useState("");
   const [scanMsg, setScanMsg] = useState([]); // array riwayat pesan scan, terbaru di depan - supaya info lama tidak hilang tertimpa
   const [confirmingScan, setConfirmingScan] = useState(null); // order hasil scan (+ info box kalau relevan), nunggu konfirmasi tambah
+  const [uploadingFotoScan, setUploadingFotoScan] = useState(false);
   const [boxProgress, setBoxProgress] = useState({}); // { [order_id]: [nomor box yang sudah dikonfirmasi, ...] } - khusus Kurir Toko + Pekanbaru
   const [orderSedangProses, setOrderSedangProses] = useState(null); // { orderId, noNota, totalBox } - order yang box-nya BELUM lengkap semua
   const [scanDitolakMsg, setScanDitolakMsg] = useState(null); // pesan penolakan terpisah, supaya tidak menimpa info scan order yang sedang aktif
@@ -12784,7 +12787,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     try {
       // Cuma boleh pesanan yang statusnya "Siap Dikirim" (sudah di-scan
       // outbound, tapi belum "Mulai Kirim") yang bisa diserahkan ke kurir.
-      const rows = await supabaseFetch(token, `orders?select=id,no_nota,status,tujuan_kota,clients(nama,kota),order_items(qty),picking_selesai_at&no_nota=eq.${kode}`);
+      const rows = await supabaseFetch(token, `orders?select=id,no_nota,status,tujuan_kota,bukti_serah_terima_kurir_url,clients(nama,kota),order_items(qty),picking_selesai_at&no_nota=eq.${kode}`);
       if (!rows || rows.length === 0) {
         tambahPesanScan({ type: "error", text: `Nomor "${kode}" tidak ditemukan.` });
         return;
@@ -12843,6 +12846,33 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     } catch (e) {
       tambahPesanScan({ type: "error", text: "Gagal cek nomor: " + e.message });
     }
+  }
+
+  // Upload foto bukti pengiriman WAJIB sebelum bisa konfirmasi order hasil
+  // scan - disimpan ke kolom bukti_serah_terima_kurir_url (kolom TERPISAH
+  // dari bukti_pengiriman_url yang dipakai buat foto pengemasan/Outbound,
+  // supaya tidak saling menimpa), lalu ditampilkan di menu Review
+  // Pengiriman sebagai "Bukti Serah Terima Kurir".
+  async function uploadFotoBuktiScan(file) {
+    if (!confirmingScan || !file) return;
+    setUploadingFotoScan(true);
+    try {
+      const compressed = await compressImage(file);
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
+      const filePath = `bukti_serah_terima_kurir_url-${confirmingScan.id}-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
+        body: compressed,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bukti-pengiriman/${filePath}`;
+      await supabaseFetch(token, `orders?id=eq.${confirmingScan.id}`, { method: "PATCH", body: JSON.stringify({ bukti_serah_terima_kurir_url: publicUrl }) });
+      setConfirmingScan((prev) => (prev ? { ...prev, bukti_serah_terima_kurir_url: publicUrl } : prev));
+    } catch (e) {
+      alert("Gagal upload foto: " + e.message);
+    }
+    setUploadingFotoScan(false);
   }
 
   function konfirmasiTambahScan() {
@@ -13201,16 +13231,38 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
                   No. Box: {confirmingScan.noBox} / {confirmingScan.totalBox}
                 </p>
               )}
-              <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 18px" }}>
+              <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 12px" }}>
                 {confirmingScan.totalBox
                   ? `Konfirmasi box ke-${confirmingScan.noBox} paket ini?`
                   : "Tambahkan paket ini ke daftar serah terima?"}
               </p>
+
+              <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>
+                Foto Bukti Pengiriman (wajib)
+              </label>
+              {confirmingScan.bukti_serah_terima_kurir_url ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+                  <img src={confirmingScan.bukti_serah_terima_kurir_url} alt="Bukti" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8 }} />
+                  <span style={{ display: "flex", alignItems: "center", gap: 5, color: "#28685D", fontSize: 12, fontWeight: 700 }}>
+                    <Check size={14} /> Foto terupload
+                  </span>
+                </div>
+              ) : (
+                <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", padding: "12px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer", marginBottom: 18 }}>
+                  <UploadCloud size={15} /> {uploadingFotoScan ? "Mengupload..." : "Ambil/Upload Foto"}
+                  <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploadingFotoScan} onChange={(e) => { if (e.target.files[0]) uploadFotoBuktiScan(e.target.files[0]); }} />
+                </label>
+              )}
+
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={() => setConfirmingScan(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
                   Batalkan
                 </button>
-                <button onClick={konfirmasiTambahScan} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
+                <button
+                  onClick={konfirmasiTambahScan}
+                  disabled={!confirmingScan.bukti_serah_terima_kurir_url}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: confirmingScan.bukti_pengiriman_url ? "#28685D" : "#E4E1DA", color: confirmingScan.bukti_pengiriman_url ? "#fff" : "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}
+                >
                   {confirmingScan.totalBox ? "Konfirmasi" : "Tambahkan"}
                 </button>
               </div>
