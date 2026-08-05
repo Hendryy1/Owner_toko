@@ -4463,10 +4463,10 @@ function KonfirmasiPembayaranPage({ token }) {
           <div style={{ height: 8 }} />
         </>
       )}
-      {menunggu.length === 0 ? (
+      {riwayat.length === 0 ? (
         <EmptyState text="Tidak ada pesanan yang perlu diproses saat ini." />
       ) : (
-        menunggu.map(renderCard)
+        riwayat.map(renderCard)
       )}
 
       {perluReviewCod.length > 0 && (
