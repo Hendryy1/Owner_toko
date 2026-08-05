@@ -13472,7 +13472,19 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
   }
 
   async function tambahScan(decodedText) {
-    const kode = decodedText.trim();
+    const rawKode = decodedText.trim();
+    // Parse kode unik per box - sama seperti mode serah terima. Format
+    // barcode: "NOMOR_INDUK-NN-NOMORPRODUK" atau "NOMOR_INDUK-NN" (versi
+    // lama) atau kode polos tanpa box (non-boxed, misal Baraka).
+    let kode = rawKode;
+    const match3 = rawKode.match(/^(.+)-(\d{2,3})-(.+)$/);
+    const match2 = rawKode.match(/^(.+)-(\d{2,3})$/);
+    if (match3) {
+      kode = match3[1];
+    } else if (match2) {
+      kode = match2[1];
+    }
+
     if (scannedList.some((s) => s.no_nota === kode)) {
       setScanMsg({ type: "error", text: `${kode} sudah discan sebelumnya.` });
       return;
