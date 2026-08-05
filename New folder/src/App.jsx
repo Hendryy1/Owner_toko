@@ -4141,7 +4141,7 @@ function RekapNotaPage({ token }) {
     if (filterMonth !== 0 && d.getMonth() + 1 !== Number(filterMonth)) return false;
     if (filterStatus !== "semua" && o.status !== filterStatus) return false;
     return true;
-  }).sort((a, b) => (a.clients?.kode || "").localeCompare(b.clients?.kode || ""));
+  }); // urutan mengikuti query asli (created_at.desc) - pesanan terbaru duluan
 
   const totalCashbackBelumDibayar = filtered.reduce((s, o) => {
     const cb = o.cashback_ledger?.[0];
