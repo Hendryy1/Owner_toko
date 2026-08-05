@@ -137,7 +137,7 @@ function konversiOrdersKeDataBarcode(orders) {
   const hasil = [];
   orders.forEach((o) => {
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
     const teleponPenerima = o.tujuan_telp || o.clients?.telp;
     const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
     const namaPenerima = o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama;
@@ -178,7 +178,7 @@ function hitungEntriesLabelBarcode(orders) {
   const hasil = [];
   orders.forEach((o) => {
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
 
     if (!isPekanbaru) {
       // Label INTI - 1 label per order, buat serah terima ke kurir luar kota
@@ -272,7 +272,7 @@ function bukaTabPreviewBarcode(orders) {
   const entries = [];
   orders.forEach((o) => {
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
 
     if (!isPekanbaru) {
       entries.push({ order: o, isPekanbaru: false, jenis: "inti", noBox: null, totalBox: null, item: null });
@@ -1183,7 +1183,7 @@ function BarcodeLabelContent({ order: o, noBox, totalBox }) {
   const teleponPenerima = o.tujuan_telp || o.clients?.telp;
   const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
   const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-  const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+  const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
   const namaPenerima = o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama;
   return (
     <div className="barcode-label-content" style={{ textAlign: "center", padding: "10px 0" }}>
@@ -4507,7 +4507,7 @@ function KonfirmasiPembayaranPage({ token }) {
           {perluReviewCod.map((o) => {
             const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
             const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-            const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+            const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
             const docsLengkap = o.metode_bayar === "cod"
               ? !!o.bukti_barang_sampai_url && !!o.bukti_nota_ttd_url && !!o.bukti_nota_cod_url && !!o.bukti_cash_cod_url
               : !!o.bukti_barang_sampai_url && !!o.bukti_nota_ttd_url;
@@ -4788,7 +4788,7 @@ function SiapDikirimPage({ token, role }) {
     if (jenisType === "surat_jalan") {
       dipilih = dipilih.filter((o) => {
         const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-        return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+        return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
       });
     }
 
@@ -4916,7 +4916,7 @@ function SiapDikirimPage({ token, role }) {
   function cekTerlambatDikirimKurir(o) {
     if (!o.tanggal_dikirim) return false;
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
     const dikirim = new Date(o.tanggal_dikirim);
     const sekarang = new Date();
     if (isPekanbaru) {
@@ -5234,7 +5234,7 @@ function SiapDikirimPage({ token, role }) {
           const sudahDicetak = !!o.barcode_dicetak_at;
           const hasProofKirim = !!o.bukti_pengiriman_url;
           const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-          const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+          const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
           const terlambatPengemasan = cekTerlambatPengemasan(o);
           return (
             <Card key={o.id} style={{ marginBottom: 12 }}>
@@ -5417,7 +5417,7 @@ function ProsesPengirimanPage({ token, role }) {
       const rowsFiltered = role === "kurir"
         ? rows.filter((o) => {
             const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-            return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+            return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
           })
         : rows;
       setOrders(rowsFiltered);
@@ -5428,7 +5428,7 @@ function ProsesPengirimanPage({ token, role }) {
       setReturOrders(role === "kurir"
         ? returRows.filter((o) => {
             const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-            return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+            return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
           })
         : returRows);
 
@@ -5617,7 +5617,7 @@ function ProsesPengirimanPage({ token, role }) {
   function cekTerlambatDikirimKurir(o) {
     if (!o.tanggal_dikirim) return false;
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
     const dikirim = new Date(o.tanggal_dikirim);
     const sekarang = new Date();
     if (isPekanbaru) {
@@ -5643,7 +5643,7 @@ function ProsesPengirimanPage({ token, role }) {
   function isMenungguReviewOwner(o) {
     const isCodOrder = o.metode_bayar === "cod";
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    const isPekanbaruOrder = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const isPekanbaruOrder = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
     const wajibUploadBuktiOrder = isCodOrder || (o.metode_bayar === "transfer" && isPekanbaruOrder);
     const docsLengkapOrder = !!o.bukti_barang_sampai_url && !!o.bukti_nota_ttd_url;
     return o.status === "proses_dikirim" && wajibUploadBuktiOrder && docsLengkapOrder && o.status_bayar === "lunas";
@@ -5696,7 +5696,7 @@ function ProsesPengirimanPage({ token, role }) {
           const hasNotaTtd = !!o.bukti_nota_ttd_url;
           const codDocsLengkap = hasBarangSampai && hasNotaTtd;
           const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-          const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+          const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
           // Transfer yang tujuannya Pekanbaru WAJIB pakai alur upload bukti
           // yang sama seperti COD (barang sampai + nota TTD), lalu tetap
           // direview di menu Konfirmasi Pembayaran sebelum benar-benar
@@ -12376,7 +12376,7 @@ function SiapDikirimBaruPage({ token, role }) {
       const rowsFiltered = role === "kurir"
         ? rows.filter((o) => {
             const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-            return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+            return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
           })
         : rows;
       setOrders(rowsFiltered);
@@ -12392,7 +12392,7 @@ function SiapDikirimBaruPage({ token, role }) {
   // (dikirim lewat jasa kurir eksternal Baraka)
   function isPekanbaruOrder(o) {
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    return !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
   }
 
   // Cek apakah order ini TERLAMBAT diambil kurir - sudah outbound (siap
@@ -12835,7 +12835,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
       }
 
       const kotaTujuanAsli = rows[0].tujuan_kota || rows[0].clients?.kota;
-      const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+      const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
 
       if (jenisKurir === "toko" && isPekanbaru) {
         // Order Pekanbaru + Kurir Toko - tiap box punya kode unik sendiri
@@ -13940,7 +13940,7 @@ function PickingListPage({ token, role, userId }) {
   // ---------- TAMPILAN DETAIL PICKING SATU ORDER ----------
   if (selectedOrder) {
     const kotaTujuanAsli = selectedOrder.tujuan_kota || selectedOrder.clients?.kota;
-    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
     const jumlahJenisBarang = (selectedOrder.order_items || []).length;
     return (
       <div>
@@ -14294,7 +14294,7 @@ function LaporanPesananPage({ token }) {
   function cekTerlambatDikirimKurir(o) {
     if (o.status !== "proses_dikirim" || !o.tanggal_dikirim) return false;
     const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
+    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
     const dikirim = new Date(o.tanggal_dikirim);
     const sekarang = new Date();
     if (isPekanbaru) {
@@ -14666,7 +14666,7 @@ function LaporanPerformaPage({ token }) {
       const o = ordersKurirMap[it.order_id];
       if (!o || !o.tanggal_dikirim || !o.selesai_at) return; // cuma hitung yang sudah benar-benar selesai
       const kotaTujuan = o.tujuan_kota || o.clients?.kota;
-      const isPekanbaru = !!(kotaTujuan && kotaTujuan.trim().toLowerCase() === "pekanbaru");
+      const isPekanbaru = !!(kotaTujuan && kotaTujuan.trim().toLowerCase().includes("pekanbaru"));
       const dikirim = new Date(o.tanggal_dikirim);
       const selesai = new Date(o.selesai_at);
       const tepatWaktu = isPekanbaru
