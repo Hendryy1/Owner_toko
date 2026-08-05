@@ -180,11 +180,18 @@ function hitungEntriesLabelBarcode(orders) {
       hasil.push({ order: o, noBox: null, totalBox: null });
     }
 
+    // Total box dihitung dari GABUNGAN semua jenis barang dalam order ini
+    // (misal KZ-01 6pcs + KZ-02 6pcs = 12 box total, bukan 6+6 terpisah),
+    // dan penomoran box lanjut berurutan lintas jenis barang (1-12, bukan
+    // reset ke 1 tiap ganti jenis barang).
+    const totalBoxOrder = (o.order_items || []).reduce((sum, item) => sum + (Number(item.qty || 0) || 1), 0);
+    let counterBox = 0;
     (o.order_items || []).forEach((item) => {
       const qty = Number(item.qty || 0) || 1;
-      for (let b = 1; b <= qty; b++) {
+      for (let i = 0; i < qty; i++) {
+        counterBox++;
         // Label KEMASAN - per unit barang, ditempel di kemasan fisik
-        hasil.push({ order: o, noBox: b, totalBox: qty });
+        hasil.push({ order: o, noBox: counterBox, totalBox: totalBoxOrder });
       }
     });
   });
