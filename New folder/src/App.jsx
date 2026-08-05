@@ -5020,7 +5020,7 @@ function SiapDikirimPage({ token, role }) {
     proses_pengemasan: orderPengemasanSemua,
     siap_kirim: orderSiapKirim,
     proses_kirim: orderProsesKirim,
-    terlambat_diambil: orderTerlambatDiambil,
+    // terlambat_diambil dihapus - sudah digabung ke tab "Siap Kirim" (badge muncul di dalam kartu)
     terlambat_dikirim_kurir: orderTerlambatDikirimKurir,
     proses_retur: orderProsesRetur,
     terselesaikan: orderTerselesaikan,
@@ -5062,12 +5062,6 @@ function SiapDikirimPage({ token, role }) {
           style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "proses_kirim" ? "1.5px solid #28685D" : "1.5px solid #E4E1DA", background: activeTab === "proses_kirim" ? "#D8E9E6" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
         >
           Proses Pengiriman ({orderProsesKirim.length})
-        </button>
-        <button
-          onClick={() => setActiveTab("terlambat_diambil")}
-          style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "terlambat_diambil" ? "1.5px solid #C0392B" : "1.5px solid #E4E1DA", background: activeTab === "terlambat_diambil" ? "#FBEAEA" : "#fff", color: activeTab === "terlambat_diambil" ? "#C0392B" : "#24272B", fontSize: 13, fontWeight: 700 }}
-        >
-          Terlambat Diambil Kurir ({orderTerlambatDiambil.length})
         </button>
         <button
           onClick={() => setActiveTab("terlambat_dikirim_kurir")}
