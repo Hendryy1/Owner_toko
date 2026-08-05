@@ -7790,22 +7790,25 @@ function ChatSalesPage({ token, profile }) {
             {messages.length === 0 && (
               <p style={{ textAlign: "center", fontSize: 12.5, color: "#9CA0A6", padding: "20px 0" }}>Belum ada pesan di kasus ini.</p>
             )}
-            {messages.map((m) => (
-              <div key={m.id} style={{ display: "flex", justifyContent: m.sender_type === "sales" ? "flex-end" : "flex-start", marginBottom: 12 }}>
+            {messages.map((m) => {
+              const dariAdmin = m.sender_type === "sales" || m.sender_type === "clara";
+              return (
+              <div key={m.id} style={{ display: "flex", justifyContent: dariAdmin ? "flex-end" : "flex-start", marginBottom: 12 }}>
                 {m.tipe_pesan === "gambar" && m.image_url ? (
                   <img src={m.image_url} alt="Lampiran" style={{ maxWidth: "50%", borderRadius: 14, display: "block" }} />
                 ) : (
                   <div style={{
                     maxWidth: "65%", padding: "10px 14px", borderRadius: 14,
-                    background: m.sender_type === "sales" ? "#E8A426" : "#fff",
-                    border: m.sender_type === "sales" ? "none" : "1px solid #EDEAE3",
+                    background: dariAdmin ? "#E8A426" : "#fff",
+                    border: dariAdmin ? "none" : "1px solid #EDEAE3",
                     fontSize: 13, lineHeight: 1.5, color: "#24272B", whiteSpace: "pre-line",
                   }}>
                     {m.message}
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
           {selectedCase.status === "open" && (
             <div style={{ padding: 14, display: "flex", gap: 10, borderTop: "1px solid #EDEAE3" }}>
