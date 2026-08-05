@@ -4787,6 +4787,7 @@ function SiapDikirimPage({ token, role }) {
   const [mencetakBarcode, setMencetakBarcode] = useState(false);
   const [errorCetakBarcode, setErrorCetakBarcode] = useState("");
   const [activeTab, setActiveTab] = useState("baru"); // tab pengemasan lama + tab baru siklus penuh
+  const [filterCetakSiapKirim, setFilterCetakSiapKirim] = useState("semua"); // "semua" | "nota_belum" | "nota_sudah" | "sj_belum" | "sj_sudah"
   const [detailOrder, setDetailOrder] = useState(null); // order yang lagi dibuka "Lihat Detail"-nya (tahap siap_dikirim ke atas)
   const [showCetakOptions, setShowCetakOptions] = useState(false); // toggle slide-down opsi cetak massal
 
@@ -5026,7 +5027,17 @@ function SiapDikirimPage({ token, role }) {
     terselesaikan: orderTerselesaikan,
   };
   const isTabLain = Object.keys(tabLainMap).includes(activeTab);
-  const orderTampil = isTabLain ? tabLainMap[activeTab] : (activeTab === "baru" ? orderBaru : ordersUrut);
+  const orderTampilRaw = isTabLain ? tabLainMap[activeTab] : (activeTab === "baru" ? orderBaru : ordersUrut);
+  // Filter tambahan khusus tab "Siap Kirim" - berdasarkan status cetak Nota/Surat Jalan
+  const orderTampil = activeTab === "siap_kirim"
+    ? orderTampilRaw.filter((o) => {
+        if (filterCetakSiapKirim === "nota_belum") return !o.nota_dicetak_at;
+        if (filterCetakSiapKirim === "nota_sudah") return !!o.nota_dicetak_at;
+        if (filterCetakSiapKirim === "sj_belum") return !o.surat_jalan_dicetak_at;
+        if (filterCetakSiapKirim === "sj_sudah") return !!o.surat_jalan_dicetak_at;
+        return true;
+      })
+    : orderTampilRaw;
 
   return (
     <div>
@@ -5076,6 +5087,26 @@ function SiapDikirimPage({ token, role }) {
           Pesanan Terselesaikan ({orderTerselesaikan.length})
         </button>
       </div>
+
+      {activeTab === "siap_kirim" && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          {[
+            { key: "semua", label: "Semua" },
+            { key: "nota_belum", label: "Nota Belum Dicetak" },
+            { key: "nota_sudah", label: "Nota Sudah Dicetak" },
+            { key: "sj_belum", label: "Surat Jalan Belum Dicetak" },
+            { key: "sj_sudah", label: "Surat Jalan Sudah Dicetak" },
+          ].map((f) => (
+            <button
+              key={f.key}
+              onClick={() => setFilterCetakSiapKirim(f.key)}
+              style={{ padding: "7px 14px", borderRadius: 8, border: filterCetakSiapKirim === f.key ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: filterCetakSiapKirim === f.key ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 12, fontWeight: 700 }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {activeTab === "siap_kirim" && orderTampil.length > 0 && role !== "kurir" && role !== "staff_gudang" && (
         <Card style={{ marginBottom: 16, padding: 14 }}>
