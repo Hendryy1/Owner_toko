@@ -1862,6 +1862,15 @@ function CekPesananModal({ order, allOrders, token, onConfirm, onClose, processi
           </div>
         )}
 
+        {order.metode_bayar === "transfer" && order.bukti_transfer_url && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, background: "#FBF0D9", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            <p style={{ fontSize: 12, color: "#8A6A1A", margin: 0, fontWeight: 600 }}>Toko sudah upload bukti transfer.</p>
+            <a href={order.bukti_transfer_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#8A6A1A", fontWeight: 700, textDecoration: "underline", flexShrink: 0 }}>
+              Lihat Bukti
+            </a>
+          </div>
+        )}
+
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, marginBottom: 20 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
