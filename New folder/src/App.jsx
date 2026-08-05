@@ -13558,19 +13558,19 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
   function konfirmasiTambahScan() {
     if (!confirmingScan) return;
     if (confirmingScan.totalBox) {
-      const daftarBoxBaru = [...(boxProgress[confirmingScan.id] || []), confirmingScan.noBox];
+      const daftarBoxBaru = [...(boxProgressRef.current[confirmingScan.id] || []), confirmingScan.noBox];
       setBoxProgress((prev) => ({ ...prev, [confirmingScan.id]: daftarBoxBaru }));
       if (daftarBoxBaru.length >= confirmingScan.totalBox) {
         // Semua box sudah discan - baru order-nya benar-benar masuk
         // daftar retur, dan buka lagi kesempatan scan order LAIN.
-        setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, nama: confirmingScan.clients?.nama }]);
+        setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, nama: confirmingScan.clients?.nama, totalBox: confirmingScan.totalBox }]);
         setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} lengkap (${confirmingScan.totalBox} box) - ditambahkan ke daftar retur.` });
         setOrderSedangProses(null);
       } else {
         setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} - box ${confirmingScan.noBox}/${confirmingScan.totalBox} tercatat (${daftarBoxBaru.length}/${confirmingScan.totalBox} total). Scan box lain.` });
       }
     } else {
-      setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, nama: confirmingScan.clients?.nama }]);
+      setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, nama: confirmingScan.clients?.nama, totalBox: 1 }]);
       setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} ditambahkan ke daftar retur.` });
     }
     setConfirmingScan(null);
@@ -13582,7 +13582,7 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
 
   async function konfirmasiRetur() {
     if (scannedList.length === 0) return;
-    if (!confirm(`Yakin retur ${scannedList.length} paket ini? Statusnya akan berubah jadi "Diretur".`)) return;
+    if (!confirm(`Yakin retur ${totalPaketRetur} paket ini? Statusnya akan berubah jadi "Diretur".`)) return;
     setSaving(true);
     try {
       const now = new Date().toISOString();
@@ -13599,7 +13599,7 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
         body: JSON.stringify({
           jenis_kurir: "toko", jenis_laporan: "retur",
           nama_kurir: role === "kurir" ? (namaAkun || "Kurir Toko") : "Admin/Owner",
-          jumlah_koli: scannedList.length,
+          jumlah_koli: totalPaketRetur,
           dibuat_oleh: role === "kurir" ? userId : null,
         }),
       });
@@ -13615,6 +13615,10 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
     setSaving(false);
   }
 
+  // Jumlah PAKET/BOX fisik (bukan jumlah order) - 1 order bisa punya
+  // beberapa box, jadi dihitung dari total box tiap order yang sudah lengkap.
+  const totalPaketRetur = scannedList.reduce((sum, s) => sum + (s.totalBox || 1), 0);
+
   if (berhasil) {
     return (
       <div>
@@ -13624,7 +13628,7 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
           </div>
           <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>Retur Berhasil Dicatat</p>
           <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 24px" }}>
-            {scannedList.length} paket sudah ditandai retur. Owner/Admin perlu konfirmasi bukti & alasan retur di menu Proses Pengiriman.
+            {totalPaketRetur} paket sudah ditandai retur. Owner/Admin perlu konfirmasi bukti & alasan retur di menu Proses Pengiriman.
           </p>
           <button onClick={() => { setScannedList([]); setBerhasil(false); }} style={{ padding: "12px 28px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
             Retur Paket Lain
@@ -13668,7 +13672,7 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
 
       <Card style={{ marginBottom: 20 }}>
         <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Jumlah Paket Retur</p>
-        <p className="disp" style={{ fontSize: 32, fontWeight: 700, color: "#C0392B", margin: 0 }}>{scannedList.length}</p>
+        <p className="disp" style={{ fontSize: 32, fontWeight: 700, color: "#C0392B", margin: 0 }}>{totalPaketRetur}</p>
       </Card>
 
       {scannedList.length > 0 && (
@@ -13690,7 +13694,7 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
         disabled={scannedList.length === 0 || saving}
         style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: (scannedList.length === 0 || saving) ? "#E4E1DA" : "#C0392B", color: (scannedList.length === 0 || saving) ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 14 }}
       >
-        {saving ? "Memproses..." : `Konfirmasi Retur (${scannedList.length} paket)`}
+        {saving ? "Memproses..." : `Konfirmasi Retur (${totalPaketRetur} paket)`}
       </button>
 
       {showCamera && (
