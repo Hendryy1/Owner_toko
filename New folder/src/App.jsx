@@ -9852,6 +9852,10 @@ function SaldoVaPage({ token }) {
   const [saldoList, setSaldoList] = useState([]);
   const [creatingVaFor, setCreatingVaFor] = useState(null); // `${clientId}-${bank}`
   const [search, setSearch] = useState("");
+  const [isiSaldoModal, setIsiSaldoModal] = useState(null); // client yang lagi diisi saldonya
+  const [jumlahIsi, setJumlahIsi] = useState("");
+  const [keteranganIsi, setKeteranganIsi] = useState("");
+  const [savingIsi, setSavingIsi] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -9875,6 +9879,36 @@ function SaldoVaPage({ token }) {
   }
   function saldoToko(clientId) {
     return Number(saldoList.find((s) => s.client_id === clientId)?.saldo || 0);
+  }
+
+  // Isi/koreksi saldo manual - dipakai selagi Xendit VA belum full verified,
+  // Owner terima transfer manual lalu catat ke saldo toko di sini. Bisa
+  // juga isi angka NEGATIF untuk koreksi/kurangi saldo kalau perlu.
+  async function simpanIsiSaldo() {
+    const jumlah = Number(jumlahIsi);
+    if (!jumlah) {
+      alert("Isi dulu jumlahnya.");
+      return;
+    }
+    setSavingIsi(true);
+    try {
+      await supabaseFetch(token, "saldo_ledger", {
+        method: "POST",
+        body: JSON.stringify({
+          client_id: isiSaldoModal.id,
+          jenis: "adjustment_manual",
+          jumlah,
+          keterangan: keteranganIsi.trim() || (jumlah > 0 ? "Isi saldo manual oleh Owner" : "Koreksi/kurangi saldo manual oleh Owner"),
+        }),
+      });
+      setIsiSaldoModal(null);
+      setJumlahIsi("");
+      setKeteranganIsi("");
+      await load();
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSavingIsi(false);
   }
 
   async function buatVa(client, bank) {
@@ -9921,7 +9955,13 @@ function SaldoVaPage({ token }) {
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px" }}>Saldo</p>
-                  <p style={{ fontSize: 16, fontWeight: 700, color: saldo > 0 ? "#28685D" : "#9CA0A6", margin: 0 }}>{rupiah(saldo)}</p>
+                  <p style={{ fontSize: 16, fontWeight: 700, color: saldo > 0 ? "#28685D" : "#9CA0A6", margin: "0 0 6px" }}>{rupiah(saldo)}</p>
+                  <button
+                    onClick={() => setIsiSaldoModal(c)}
+                    style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 700 }}
+                  >
+                    Isi Saldo
+                  </button>
                 </div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
@@ -9951,6 +9991,51 @@ function SaldoVaPage({ token }) {
         })}
       </div>
       {filteredClients.length === 0 && <EmptyState text="Tidak ada toko yang cocok." />}
+
+      {isiSaldoModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 420, padding: 26 }}>
+            <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Isi Saldo Manual</p>
+            <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 4px" }}>{isiSaldoModal.nama} ({isiSaldoModal.kode})</p>
+            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 18px" }}>
+              Saldo saat ini: <strong>{rupiah(saldoToko(isiSaldoModal.id))}</strong>
+            </p>
+
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Jumlah</label>
+            <input
+              type="number" value={jumlahIsi} onChange={(e) => setJumlahIsi(e.target.value)}
+              placeholder="Isi angka positif untuk tambah, negatif untuk kurangi"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 14, marginBottom: 12 }}
+            />
+
+            <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>Keterangan (opsional)</label>
+            <input
+              value={keteranganIsi} onChange={(e) => setKeteranganIsi(e.target.value)}
+              placeholder="Misal: Transfer manual BCA 5 Agustus"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, marginBottom: 20 }}
+            />
+
+            <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 16px", lineHeight: 1.5 }}>
+              Kalau toko punya order transfer yang sedang menunggu pembayaran dan saldo baru ini membuatnya cukup, order tersebut akan otomatis lunas dan lanjut ke Menunggu Pengiriman.
+            </p>
+
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => { setIsiSaldoModal(null); setJumlahIsi(""); setKeteranganIsi(""); }}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}
+              >
+                Batal
+              </button>
+              <button
+                onClick={simpanIsiSaldo} disabled={savingIsi}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+              >
+                {savingIsi ? "Menyimpan..." : "Simpan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
