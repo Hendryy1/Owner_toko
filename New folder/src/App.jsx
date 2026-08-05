@@ -5686,15 +5686,18 @@ function ProsesPengirimanPage({ token, role }) {
                       {(!hasBarangSampai || !hasNotaTtd) && !bolehUpload && (
                         <span style={{ fontSize: 11.5, color: "#9CA0A6", fontStyle: "italic" }}>Menunggu upload dari Kurir</span>
                       )}
-                      {hasBarangSampai && (
+                      {hasBarangSampai && bolehUpload && (
                         <a href={o.bukti_barang_sampai_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "#28685D", fontWeight: 700, textDecoration: "underline" }}>
                           Lihat Bukti Sampai
                         </a>
                       )}
-                      {hasNotaTtd && (
+                      {hasNotaTtd && bolehUpload && (
                         <a href={o.bukti_nota_ttd_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "#28685D", fontWeight: 700, textDecoration: "underline" }}>
                           Lihat Nota TTD
                         </a>
+                      )}
+                      {hasBarangSampai && hasNotaTtd && !bolehUpload && (
+                        <span style={{ fontSize: 11.5, color: "#28685D", fontWeight: 700 }}>Dokumen sudah lengkap (oleh Kurir)</span>
                       )}
                       {codDocsLengkap && (
                         o.status_bayar === "lunas" ? (
