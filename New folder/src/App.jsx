@@ -13425,6 +13425,8 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
 // ============================================================
 function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
   const [scannedList, setScannedList] = useState([]); // [{ no_nota, order_id, nama }]
+  const [boxProgress, setBoxProgress] = useState({}); // { [order_id]: [nomor box yang sudah discan retur, ...] }
+  const [orderSedangProses, setOrderSedangProses] = useState(null); // { orderId, noNota, totalBox } - order multi-box yang belum lengkap semua di-scan
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState("");
   const [scanMsg, setScanMsg] = useState(null);
@@ -13477,20 +13479,29 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
     // barcode: "NOMOR_INDUK-NN-NOMORPRODUK" atau "NOMOR_INDUK-NN" (versi
     // lama) atau kode polos tanpa box (non-boxed, misal Baraka).
     let kode = rawKode;
+    let noBoxScan = null;
     const match3 = rawKode.match(/^(.+)-(\d{2,3})-(.+)$/);
     const match2 = rawKode.match(/^(.+)-(\d{2,3})$/);
     if (match3) {
       kode = match3[1];
+      noBoxScan = parseInt(match3[2], 10);
     } else if (match2) {
       kode = match2[1];
+      noBoxScan = parseInt(match2[2], 10);
     }
 
     if (scannedList.some((s) => s.no_nota === kode)) {
       setScanMsg({ type: "error", text: `${kode} sudah discan sebelumnya.` });
       return;
     }
+    // Kalau masih ada order LAIN yang box-nya belum lengkap semua, tolak
+    // scan order berbeda dulu (sama seperti mode serah terima).
+    if (orderSedangProses && orderSedangProses.orderId && kode !== orderSedangProses.noNota) {
+      setScanMsg({ type: "error", text: `Selesaikan dulu semua box ${orderSedangProses.noNota} sebelum scan order lain.` });
+      return;
+    }
     try {
-      const rows = await supabaseFetch(token, `orders?select=id,no_nota,status,clients(nama)&no_nota=eq.${kode}`);
+      const rows = await supabaseFetch(token, `orders?select=id,no_nota,status,tujuan_kota,clients(nama,kota),order_items(qty)&no_nota=eq.${kode}`);
       if (!rows || rows.length === 0) {
         setScanMsg({ type: "error", text: `Nomor "${kode}" tidak ditemukan.` });
         return;
@@ -13499,8 +13510,34 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
         setScanMsg({ type: "error", text: `${rows[0].no_nota} tidak bisa diretur (statusnya "${rows[0].status}").` });
         return;
       }
-      setScanMsg(null);
-      setConfirmingScan(rows[0]);
+
+      const kotaTujuanAsli = rows[0].tujuan_kota || rows[0].clients?.kota;
+      const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase().includes("pekanbaru"));
+      const totalBox = (rows[0].order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0) || 1;
+
+      if (isPekanbaru && totalBox > 1) {
+        // Order Pekanbaru multi-box - tiap box punya kode unik sendiri,
+        // wajib scan SEMUA box sebelum order ini masuk daftar retur.
+        if (noBoxScan === null) {
+          setScanMsg({ type: "error", text: `Barcode ini belum punya nomor box - cetak ulang barcode untuk order ini.` });
+          return;
+        }
+        if (noBoxScan < 1 || noBoxScan > totalBox) {
+          setScanMsg({ type: "error", text: `Nomor box ${noBoxScan} tidak valid (order ini cuma punya ${totalBox} box).` });
+          return;
+        }
+        const sudahScan = boxProgress[rows[0].id] || [];
+        if (sudahScan.includes(noBoxScan)) {
+          setScanMsg({ type: "error", text: `Box ${noBoxScan} sudah discan sebelumnya.` });
+          return;
+        }
+        setScanMsg(null);
+        setOrderSedangProses({ orderId: rows[0].id, noNota: rows[0].no_nota, totalBox });
+        setConfirmingScan({ ...rows[0], noBox: noBoxScan, totalBox });
+      } else {
+        setScanMsg(null);
+        setConfirmingScan(rows[0]);
+      }
     } catch (e) {
       setScanMsg({ type: "error", text: "Gagal cek nomor: " + e.message });
     }
@@ -13508,8 +13545,22 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
 
   function konfirmasiTambahScan() {
     if (!confirmingScan) return;
-    setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, nama: confirmingScan.clients?.nama }]);
-    setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} ditambahkan ke daftar retur.` });
+    if (confirmingScan.totalBox) {
+      const daftarBoxBaru = [...(boxProgress[confirmingScan.id] || []), confirmingScan.noBox];
+      setBoxProgress((prev) => ({ ...prev, [confirmingScan.id]: daftarBoxBaru }));
+      if (daftarBoxBaru.length >= confirmingScan.totalBox) {
+        // Semua box sudah discan - baru order-nya benar-benar masuk
+        // daftar retur, dan buka lagi kesempatan scan order LAIN.
+        setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, nama: confirmingScan.clients?.nama }]);
+        setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} lengkap (${confirmingScan.totalBox} box) - ditambahkan ke daftar retur.` });
+        setOrderSedangProses(null);
+      } else {
+        setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} - box ${confirmingScan.noBox}/${confirmingScan.totalBox} tercatat (${daftarBoxBaru.length}/${confirmingScan.totalBox} total). Scan box lain.` });
+      }
+    } else {
+      setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, nama: confirmingScan.clients?.nama }]);
+      setScanMsg({ type: "ok", text: `${confirmingScan.no_nota} ditambahkan ke daftar retur.` });
+    }
     setConfirmingScan(null);
   }
 
@@ -13658,14 +13709,21 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
                 <p className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: 0 }}>{confirmingScan.no_nota}</p>
               </div>
             </div>
-            <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 20px" }}>{confirmingScan.clients?.nama}</p>
-            <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 18px" }}>Tambahkan paket ini ke daftar retur?</p>
+            <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 8px" }}>{confirmingScan.clients?.nama}</p>
+            {confirmingScan.totalBox && (
+              <p style={{ fontSize: 15, fontWeight: 700, color: "#8A6A1A", margin: "0 0 16px", padding: "8px 12px", background: "#FBF0D9", borderRadius: 8, display: "inline-block" }}>
+                No. Box: {confirmingScan.noBox} / {confirmingScan.totalBox}
+              </p>
+            )}
+            <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: "0 0 18px" }}>
+              {confirmingScan.totalBox ? `Konfirmasi box ke-${confirmingScan.noBox} paket retur ini?` : "Tambahkan paket ini ke daftar retur?"}
+            </p>
             <div style={{ display: "flex", gap: 10 }}>
               <button onClick={() => setConfirmingScan(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
                 Batalkan
               </button>
               <button onClick={konfirmasiTambahScan} style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#C0392B", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
-                Tambahkan
+                {confirmingScan.totalBox ? "Konfirmasi" : "Tambahkan"}
               </button>
             </div>
           </div>
