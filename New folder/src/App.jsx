@@ -151,12 +151,17 @@ function konversiOrdersKeDataBarcode(orders) {
       });
     }
 
+    // Total box dihitung dari GABUNGAN semua jenis barang dalam order ini
+    // (misal KZ-01 6pcs + KZ-02 6pcs = 12 box total, bukan 6+6 terpisah).
+    const totalBoxOrder = (o.order_items || []).reduce((sum, it) => sum + (Number(it.qty || 0) || 1), 0);
+    let counterBox = 0;
     (o.order_items || []).forEach((item) => {
       const qty = Number(item.qty || 0) || 1;
-      for (let b = 1; b <= qty; b++) {
+      for (let i = 0; i < qty; i++) {
+        counterBox++;
         // Label KEMASAN - per unit barang, ditempel di kemasan fisik
         hasil.push({
-          penerima: namaPenerima, noNota: o.no_nota, noBox: b, totalBox: qty, isQR: true,
+          penerima: namaPenerima, noNota: o.no_nota, noBox: counterBox, totalBox: totalBoxOrder, isQR: true,
           items: [{ kode: item.products?.kode || "-", nama: item.products?.nama || "-", qty: item.qty }],
         });
       }
@@ -273,10 +278,16 @@ function bukaTabPreviewBarcode(orders) {
       entries.push({ order: o, isPekanbaru: false, jenis: "inti", noBox: null, totalBox: null, item: null });
     }
 
+    // Total box dihitung dari GABUNGAN semua jenis barang dalam order ini
+    // (misal KZ-01 6pcs + KZ-02 6pcs = 12 box total, bukan 6+6 terpisah),
+    // dan penomoran box lanjut berurutan lintas jenis barang.
+    const totalBoxOrder = (o.order_items || []).reduce((sum, it) => sum + (Number(it.qty || 0) || 1), 0);
+    let counterBox = 0;
     (o.order_items || []).forEach((item) => {
       const qty = Number(item.qty || 0) || 1;
-      for (let b = 1; b <= qty; b++) {
-        entries.push({ order: o, isPekanbaru, jenis: "kemasan", noBox: b, totalBox: qty, item });
+      for (let i = 0; i < qty; i++) {
+        counterBox++;
+        entries.push({ order: o, isPekanbaru, jenis: "kemasan", noBox: counterBox, totalBox: totalBoxOrder, item });
       }
     });
   });
