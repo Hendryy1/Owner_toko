@@ -1576,6 +1576,7 @@ function OrdersPage({ token }) {
   const [error, setError] = useState("");
   const [processingId, setProcessingId] = useState(null);
   const [checkingOrder, setCheckingOrder] = useState(null);
+  const [namaSalesMap, setNamaSalesMap] = useState({}); // { sales_id: nama }
 
   async function load() {
     setLoading(true);
@@ -1584,7 +1585,13 @@ function OrdersPage({ token }) {
       // Ambil SEMUA order (limit wajar) - supaya ada riwayat permanen di sini,
       // bukan cuma yang masih di tahap ini. Nanti dipisah jadi 2 bagian:
       // "Menunggu Persetujuan" (aktif) dan "Riwayat" (sudah pernah diproses).
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan))&order=created_at.desc&limit=200");
+      const [rows, salesRows] = await Promise.all([
+        supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan))&order=created_at.desc&limit=200"),
+        supabaseFetch(token, "sales?select=id,nama"),
+      ]);
+      const salesMap = {};
+      salesRows.forEach((s) => { salesMap[s.id] = s.nama; });
+      setNamaSalesMap(salesMap);
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -1697,6 +1704,11 @@ function OrdersPage({ token }) {
             <p style={{ fontSize: 12, color: "#9CA0A6", margin: "4px 0 0" }}>
               {new Date(o.created_at).toLocaleString("id-ID")} · Channel: {o.channel}
               {o.is_dropship && <span style={{ marginLeft: 6, color: "#B8860B", fontWeight: 700 }}>DROPSHIP</span>}
+              {o.dibuat_oleh_sales && (
+                <span style={{ marginLeft: 6, color: "#8A6A1A", fontWeight: 700 }}>
+                  · Dibuat oleh Sales: {namaSalesMap[o.dibuat_oleh_sales] || "Tidak diketahui"}
+                </span>
+              )}
               {isChecked && isPending && (
                 <span style={{ marginLeft: 6, fontWeight: 700, color: isReady ? "#28685D" : "#C0392B" }}>
                   · Konfirmasi: {isReady ? "Ready" : "Stok Habis"}
