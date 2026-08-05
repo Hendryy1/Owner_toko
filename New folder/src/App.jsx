@@ -814,7 +814,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
     { key: "calendar", label: "Calendar", icon: CalendarDays, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
-    { key: "konfirmasi_bayar", label: "Konfirmasi Pesanan Selesai", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
+    { key: "konfirmasi_bayar", label: "Review Pengiriman", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
     { key: "laporan_pesanan", label: "Laporan Pesanan", icon: BarChart3, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "laporan_performa", label: "Laporan Performa", icon: TrendingUp, roles: ["owner"] },
     { key: "log_aktivitas", label: "Log Aktivitas", icon: History, roles: ["owner"] },
@@ -1576,19 +1576,42 @@ function OrdersPage({ token }) {
   async function updateStatus(orderId, status) {
     setProcessingId(orderId);
     try {
-      // Order COD tidak perlu tahap "Menunggu Pembayaran" sama sekali -
-      // uangnya baru diterima kurir saat barang sampai (dikonfirmasi lewat
-      // menu Proses Pengiriman), jadi begitu di-approve langsung lompat ke
-      // "Menunggu Pengiriman".
       const order = orders.find((o) => o.id === orderId);
-      const statusFinal = (status === "menunggu_pembayaran" && order?.metode_bayar === "cod") ? "menunggu_pengiriman" : status;
+      let statusFinal = status;
+      let bodyPatch = { status, disetujui_pada: new Date().toISOString() };
+
+      if (status === "menunggu_pembayaran" && order?.metode_bayar === "cod") {
+        // Order COD tidak perlu tahap "Menunggu Pembayaran" sama sekali -
+        // uangnya baru diterima kurir saat barang sampai (dikonfirmasi lewat
+        // menu Proses Pengiriman), jadi begitu di-approve langsung lompat ke
+        // "Menunggu Pengiriman".
+        statusFinal = "menunggu_pengiriman";
+        bodyPatch = { status: statusFinal, disetujui_pada: new Date().toISOString() };
+      } else if (status === "menunggu_pembayaran" && order?.metode_bayar === "transfer") {
+        // Transfer - cek dulu saldo toko. Kalau CUKUP, otomatis bayar pakai
+        // saldo (potong saldo_ledger) dan langsung lompat ke "Menunggu
+        // Pengiriman". Kalau TIDAK cukup, tetap "Menunggu Pembayaran" -
+        // toko perlu upload bukti transfer manual (direview di sini juga).
+        const totalOrder = (order.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+        const saldoRows = await supabaseFetch(token, `v_saldo_toko?select=saldo&client_id=eq.${order.client_id}`);
+        const saldoToko = Number(saldoRows[0]?.saldo || 0);
+
+        if (saldoToko >= totalOrder) {
+          await supabaseFetch(token, "saldo_ledger", {
+            method: "POST",
+            body: JSON.stringify({ client_id: order.client_id, jenis: "pakai_bayar_order", jumlah: -totalOrder, order_id: orderId, keterangan: "Bayar otomatis - saldo toko cukup saat approve" }),
+          });
+          statusFinal = "menunggu_pengiriman";
+          bodyPatch = { status: statusFinal, status_bayar: "lunas", disetujui_pada: new Date().toISOString() };
+        }
+      }
 
       await supabaseFetch(token, `orders?id=eq.${orderId}`, {
         method: "PATCH",
-        body: JSON.stringify({ status: statusFinal, disetujui_pada: new Date().toISOString() }),
+        body: JSON.stringify(bodyPatch),
       });
       // Tetap tampil di daftar, cuma statusnya diperbarui (bukan dihapus)
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: statusFinal } : o)));
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status: statusFinal, status_bayar: bodyPatch.status_bayar || o.status_bayar } : o)));
     } catch (e) {
       alert("Gagal update: " + e.message);
     }
@@ -1610,11 +1633,27 @@ function OrdersPage({ token }) {
     setProcessingId(null);
   }
 
+  // Konfirmasi manual bukti transfer yang diupload toko (untuk kasus saldo
+  // tidak cukup saat approve) - sekaligus memajukan order ke tahap
+  // "menunggu_pengiriman".
+  async function confirmPayment(orderId) {
+    setProcessingId(orderId);
+    try {
+      await supabaseFetch(token, `orders?id=eq.${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status_bayar: "lunas", status: "menunggu_pengiriman" }),
+      });
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status_bayar: "lunas", status: "menunggu_pengiriman" } : o)));
+    } catch (e) { alert("Gagal update: " + e.message); }
+    setProcessingId(null);
+  }
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
   const pending = orders.filter((o) => o.status === "menunggu_persetujuan");
-  const riwayat = orders.filter((o) => o.status !== "menunggu_persetujuan");
+  const menungguBuktiTransfer = orders.filter((o) => o.status === "menunggu_pembayaran" && o.metode_bayar === "transfer");
+  const riwayat = orders.filter((o) => o.status !== "menunggu_persetujuan" && o.status !== "menunggu_pembayaran");
 
   function renderOrderCard(o) {
     const isPending = o.status === "menunggu_persetujuan";
@@ -1696,6 +1735,41 @@ function OrdersPage({ token }) {
         <EmptyState text="Tidak ada pesanan yang menunggu persetujuan saat ini." />
       ) : (
         pending.map(renderOrderCard)
+      )}
+
+      {menungguBuktiTransfer.length > 0 && (
+        <>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Menunggu Bukti Transfer</h2>
+          {menungguBuktiTransfer.map((o) => {
+            const totalOrder = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+            const hasProof = !!o.bukti_transfer_url;
+            return (
+              <Card key={o.id} style={{ marginBottom: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div>
+                    <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+                    <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                    <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "4px 0 0" }}>{rupiah(totalOrder)}</p>
+                  </div>
+                  {hasProof ? (
+                    <a href={o.bukti_transfer_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#B8860B", fontWeight: 700, textDecoration: "underline" }}>
+                      Lihat Bukti Transfer
+                    </a>
+                  ) : (
+                    <span style={{ fontSize: 12, color: "#9CA0A6", fontStyle: "italic" }}>Menunggu bukti transfer</span>
+                  )}
+                </div>
+                <button
+                  disabled={processingId === o.id || !hasProof}
+                  onClick={() => confirmPayment(o.id)}
+                  style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: hasProof ? "#E8A426" : "#E4E1DA", color: hasProof ? "#24272B" : "#9CA0A6", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
+                >
+                  <Check size={14} /> Pembayaran Diterima
+                </button>
+              </Card>
+            );
+          })}
+        </>
       )}
 
       <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Riwayat</h2>
@@ -4248,7 +4322,7 @@ function KonfirmasiPembayaranPage({ token }) {
       // 3. COD/Transfer-Pekanbaru yang statusnya proses_dikirim - SEMUA,
       //    walau dokumennya BELUM lengkap - supaya Owner bisa lihat progres
       //    upload kapan saja, meski belum bisa selesaikan sampai lengkap.
-      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,dikonfirmasi_toko_at,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas,status.eq.proses_dikirim)&order=created_at.desc&limit=200");
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,dikonfirmasi_toko_at,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status_bayar.eq.lunas,status.eq.proses_dikirim)&order=created_at.desc&limit=200");
       setOrders(rows);
 
       // Order retur yang SUDAH dikonfirmasi (ada bukti+alasan) di Proses
@@ -4315,20 +4389,9 @@ function KonfirmasiPembayaranPage({ token }) {
     setProcessingReturId(null);
   }
 
-  async function confirmPayment(orderId) {
-    setProcessingId(orderId);
-    try {
-      // Konfirmasi pembayaran HARUS sekaligus memajukan tahap order ke
-      // "menunggu_pengiriman" - dulu cuma update status_bayar saja, jadi
-      // order-nya "macet" di tahap menunggu_pembayaran walau sudah dibayar.
-      await supabaseFetch(token, `orders?id=eq.${orderId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ status_bayar: "lunas", status: "menunggu_pengiriman" }),
-      });
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status_bayar: "lunas", status: "menunggu_pengiriman" } : o)));
-    } catch (e) { alert("Gagal update: " + e.message); }
-    setProcessingId(null);
-  }
+  // confirmPayment (konfirmasi bukti transfer manual) sudah DIPINDAH ke
+  // menu Approve Pesanan (OrdersPage) - halaman ini sekarang cuma review
+  // pengiriman.
 
   async function selesaikanPesananCod(orderId) {
     setProcessingId(orderId);
@@ -4346,7 +4409,8 @@ function KonfirmasiPembayaranPage({ token }) {
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
-  const menunggu = orders.filter((o) => o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas" && o.metode_bayar !== "cod");
+  // Halaman ini sekarang CUMA review pengiriman - konfirmasi bukti transfer
+  // manual sudah dipindah ke menu Approve Pesanan.
   // Bisa direview KAPAN SAJA: SEMUA order yang statusnya masih proses_dikirim
   // (belum selesai) - baik COD maupun Transfer, di kota manapun (Pekanbaru
   // atau luar kota) - baik dokumennya sudah lengkap maupun belum, supaya
@@ -4355,46 +4419,26 @@ function KonfirmasiPembayaranPage({ token }) {
   const riwayat = orders.filter((o) => o.status_bayar === "lunas" && !perluReviewCod.includes(o));
 
   function renderCard(o) {
-    const isLunas = o.status_bayar === "lunas";
-    const hasProof = !!o.bukti_transfer_url;
     const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
     return (
       <Card key={o.id} style={{ marginBottom: 12 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: isLunas ? 0 : 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
             <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
             <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode}) · {o.clients?.jenis_pembayaran}</p>
             <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "4px 0 0" }}>{rupiah(total)}</p>
           </div>
-          {isLunas ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
-              <Check size={14} /> Pembayaran Diterima
-            </span>
-          ) : hasProof ? (
-            <a href={o.bukti_transfer_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#B8860B", fontWeight: 700, textDecoration: "underline" }}>
-              Lihat Bukti Transfer
-            </a>
-          ) : (
-            <span style={{ fontSize: 12, color: "#9CA0A6", fontStyle: "italic" }}>Menunggu bukti transfer</span>
-          )}
-        </div>
-
-        {!isLunas && (
-          <button
-            disabled={processingId === o.id || !hasProof}
-            onClick={() => confirmPayment(o.id)}
-            style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: hasProof ? "#E8A426" : "#E4E1DA", color: hasProof ? "#24272B" : "#9CA0A6", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
-          >
+          <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
             <Check size={14} /> Pembayaran Diterima
-          </button>
-        )}
+          </span>
+        </div>
       </Card>
     );
   }
 
   return (
     <div>
-      <PageHeader title="Konfirmasi Pesanan Selesai" subtitle={`${menunggu.length} pesanan menunggu konfirmasi`} />
+      <PageHeader title="Review Pengiriman" subtitle={`${perluReviewCod.length} pesanan perlu direview`} />
 
       {returReviewList.length > 0 && (
         <>
