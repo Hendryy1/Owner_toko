@@ -4248,7 +4248,7 @@ function KonfirmasiPembayaranPage({ token }) {
       // 3. COD/Transfer-Pekanbaru yang statusnya proses_dikirim - SEMUA,
       //    walau dokumennya BELUM lengkap - supaya Owner bisa lihat progres
       //    upload kapan saja, meski belum bisa selesaikan sampai lengkap.
-      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas,status.eq.proses_dikirim)&order=created_at.desc&limit=200");
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,dikonfirmasi_toko_at,bukti_transfer_url,bukti_pengiriman_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status.eq.menunggu_pembayaran,status_bayar.eq.lunas,status.eq.proses_dikirim)&order=created_at.desc&limit=200");
       setOrders(rows);
 
       // Order retur yang SUDAH dikonfirmasi (ada bukti+alasan) di Proses
@@ -4444,12 +4444,15 @@ function KonfirmasiPembayaranPage({ token }) {
                       {o.metode_bayar === "cod" ? (
                         <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
                       ) : (
-                        <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#D8E9E6", color: "#28685D", verticalAlign: "middle" }}>Transfer - Pekanbaru</span>
+                        <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#D8E9E6", color: "#28685D", verticalAlign: "middle" }}>Transfer - {isPekanbaru ? "Pekanbaru" : "Luar Kota"}</span>
                       )}
                       {docsLengkap ? (
                         <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#D8E9E6", color: "#28685D", verticalAlign: "middle" }}>Dokumen Lengkap</span>
                       ) : (
                         <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B", verticalAlign: "middle" }}>Dokumen Belum Lengkap</span>
+                      )}
+                      {o.dikonfirmasi_toko_at && (
+                        <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>Sudah Dikonfirmasi Toko</span>
                       )}
                     </p>
                     <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
@@ -4504,6 +4507,20 @@ function KonfirmasiPembayaranPage({ token }) {
               <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Review Pesanan {isCodOrder ? "COD" : "Transfer"}</h2>
               <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 4px" }}>{o.no_nota} · {o.clients?.nama} ({o.clients?.kode})</p>
               <p className="disp" style={{ fontSize: 20, fontWeight: 700, color: "#24272B", margin: "0 0 16px" }}>{rupiah(total)}</p>
+
+              {o.dikonfirmasi_toko_at ? (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBF0D9", padding: "10px 12px", borderRadius: 10, marginBottom: 16 }}>
+                  <Check size={15} color="#8A6A1A" />
+                  <p style={{ fontSize: 12.5, color: "#8A6A1A", margin: 0, fontWeight: 600 }}>
+                    Toko sudah konfirmasi penerimaan pada {new Date(o.dikonfirmasi_toko_at).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#F7F5F1", padding: "10px 12px", borderRadius: 10, marginBottom: 16 }}>
+                  <AlertCircle size={15} color="#9CA0A6" />
+                  <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: 0 }}>Toko belum konfirmasi penerimaan barang.</p>
+                </div>
+              )}
 
               {infoKurirOrder === "loading" ? (
                 <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 16px" }}>Memuat info kurir...</p>
