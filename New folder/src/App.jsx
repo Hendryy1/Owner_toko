@@ -826,7 +826,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "picking_list", label: "Picking List", icon: ClipboardCheck, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "pesanan_siap", label: "Pesanan", icon: PackagePlus, roles: ["owner", "admin_transaksi", "staff_gudang"] },
     { key: "siap_dikirim_baru", label: "Siap Dikirim", icon: Truck, roles: ["owner", "admin_transaksi", "kurir", "staff_gudang"] },
-    { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "kurir"] },
+    { key: "proses_kirim", label: "Proses Pengiriman", icon: Truck, roles: ["owner", "kurir", "staff_gudang"] },
     { key: "outbound", label: "Outbound", icon: ScanLine, roles: ["owner", "staff_gudang"] },
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "transaksi", label: "Transaksi", icon: Table2, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
@@ -5626,6 +5626,11 @@ function ProsesPengirimanPage({ token, role }) {
           // Pembayaran COD" lagi (karena sudah lunas dari awal, sebelum
           // dikirim), begitu 2 dokumen lengkap langsung "Menunggu Review Owner".
           const wajibUploadBukti = isCod || (o.metode_bayar === "transfer" && isPekanbaru);
+          // Staff Gudang cuma bisa LIHAT (tidak upload apapun) untuk order
+          // tujuan Pekanbaru - itu tugas Kurir. Untuk luar kota, Staff
+          // Gudang tetap boleh upload (karena biasanya mereka yang serahkan
+          // ke ekspedisi/cargo, bukan kurir internal).
+          const bolehUpload = !(role === "staff_gudang" && isPekanbaru);
           return (
             <Card key={o.id} style={{ marginBottom: 12 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
@@ -5670,13 +5675,16 @@ function ProsesPengirimanPage({ token, role }) {
 
                   {wajibUploadBukti ? (
                     <>
-                      {(!hasBarangSampai || !hasNotaTtd) && (
+                      {(!hasBarangSampai || !hasNotaTtd) && bolehUpload && (
                         <button
                           onClick={() => setUploadModalOrder(o)}
                           style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12, fontWeight: 700, cursor: "pointer" }}
                         >
                           <UploadCloud size={13} /> Upload Bukti Pengiriman
                         </button>
+                      )}
+                      {(!hasBarangSampai || !hasNotaTtd) && !bolehUpload && (
+                        <span style={{ fontSize: 11.5, color: "#9CA0A6", fontStyle: "italic" }}>Menunggu upload dari Kurir</span>
                       )}
                       {hasBarangSampai && (
                         <a href={o.bukti_barang_sampai_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 11.5, color: "#28685D", fontWeight: 700, textDecoration: "underline" }}>
@@ -5693,13 +5701,15 @@ function ProsesPengirimanPage({ token, role }) {
                           <span style={{ padding: "8px 14px", borderRadius: 9, background: "#D8E9E6", color: "#28685D", fontSize: 12.5, fontWeight: 700 }}>
                             Menunggu Review Owner
                           </span>
-                        ) : (
+                        ) : bolehUpload ? (
                           <button
                             onClick={() => setShowKonfirmasiCod(o.id)}
                             style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
                           >
                             Konfirmasi Pembayaran COD
                           </button>
+                        ) : (
+                          <span style={{ fontSize: 11.5, color: "#9CA0A6", fontStyle: "italic" }}>Menunggu konfirmasi dari Kurir</span>
                         )
                       )}
                     </>
