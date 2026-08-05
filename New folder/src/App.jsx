@@ -1636,14 +1636,18 @@ function OrdersPage({ token }) {
   // Konfirmasi manual bukti transfer yang diupload toko (untuk kasus saldo
   // tidak cukup saat approve) - sekaligus memajukan order ke tahap
   // "menunggu_pengiriman".
+  // Konfirmasi ini CUMA menandai admin sudah verifikasi bukti transfer -
+  // TIDAK langsung menyelesaikan order. Order baru benar-benar lanjut
+  // (otomatis) setelah Owner isi saldo toko (menu Saldo & VA Toko) dan
+  // saldonya jadi cukup - biar pencatatan saldo tetap rapi/tercatat.
   async function confirmPayment(orderId) {
     setProcessingId(orderId);
     try {
       await supabaseFetch(token, `orders?id=eq.${orderId}`, {
         method: "PATCH",
-        body: JSON.stringify({ status_bayar: "lunas", status: "menunggu_pengiriman" }),
+        body: JSON.stringify({ dikonfirmasi_admin_at: new Date().toISOString() }),
       });
-      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, status_bayar: "lunas", status: "menunggu_pengiriman" } : o)));
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, dikonfirmasi_admin_at: new Date().toISOString() } : o)));
     } catch (e) { alert("Gagal update: " + e.message); }
     setProcessingId(null);
   }
@@ -1759,13 +1763,19 @@ function OrdersPage({ token }) {
                     <span style={{ fontSize: 12, color: "#9CA0A6", fontStyle: "italic" }}>Menunggu bukti transfer</span>
                   )}
                 </div>
-                <button
-                  disabled={processingId === o.id || !hasProof}
-                  onClick={() => confirmPayment(o.id)}
-                  style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: hasProof ? "#E8A426" : "#E4E1DA", color: hasProof ? "#24272B" : "#9CA0A6", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
-                >
-                  <Check size={14} /> Pembayaran Diterima
-                </button>
+                {o.dikonfirmasi_admin_at ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px", background: "#FBF0D9", borderRadius: 9, fontSize: 12, color: "#8A6A1A", fontWeight: 600 }}>
+                    <Check size={14} /> Sudah dikonfirmasi admin - menunggu Owner isi saldo (menu Saldo & VA Toko)
+                  </div>
+                ) : (
+                  <button
+                    disabled={processingId === o.id || !hasProof}
+                    onClick={() => confirmPayment(o.id)}
+                    style={{ padding: "8px 14px", borderRadius: 9, border: "none", background: hasProof ? "#E8A426" : "#E4E1DA", color: hasProof ? "#24272B" : "#9CA0A6", fontSize: 12.5, fontWeight: 700, display: "flex", alignItems: "center", gap: 5 }}
+                  >
+                    <Check size={14} /> Pembayaran Diterima
+                  </button>
+                )}
               </Card>
             );
           })}
