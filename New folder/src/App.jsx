@@ -13436,6 +13436,17 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
   const [berhasil, setBerhasil] = useState(false);
   const html5QrRef = useRef(null);
 
+  // Callback kamera (html5-qrcode) cuma didaftarkan SEKALI saat kamera
+  // dibuka, jadi kalau baca state React langsung, ia akan pegang versi LAMA
+  // terus (stale closure) kalau scan berturut-turut cepat - makanya baca
+  // dari ref ini yang selalu disinkron ke nilai TERBARU.
+  const boxProgressRef = useRef(boxProgress);
+  const scannedListRef = useRef(scannedList);
+  const orderSedangProsesRef = useRef(orderSedangProses);
+  useEffect(() => { boxProgressRef.current = boxProgress; }, [boxProgress]);
+  useEffect(() => { scannedListRef.current = scannedList; }, [scannedList]);
+  useEffect(() => { orderSedangProsesRef.current = orderSedangProses; }, [orderSedangProses]);
+
   useEffect(() => {
     return () => {
       if (html5QrRef.current) html5QrRef.current.stop().catch(() => {});
@@ -13490,14 +13501,15 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
       noBoxScan = parseInt(match2[2], 10);
     }
 
-    if (scannedList.some((s) => s.no_nota === kode)) {
+    if (scannedListRef.current.some((s) => s.no_nota === kode)) {
       setScanMsg({ type: "error", text: `${kode} sudah discan sebelumnya.` });
       return;
     }
     // Kalau masih ada order LAIN yang box-nya belum lengkap semua, tolak
     // scan order berbeda dulu (sama seperti mode serah terima).
-    if (orderSedangProses && orderSedangProses.orderId && kode !== orderSedangProses.noNota) {
-      setScanMsg({ type: "error", text: `Selesaikan dulu semua box ${orderSedangProses.noNota} sebelum scan order lain.` });
+    const sedangProses = orderSedangProsesRef.current;
+    if (sedangProses && sedangProses.orderId && kode !== sedangProses.noNota) {
+      setScanMsg({ type: "error", text: `Selesaikan dulu semua box ${sedangProses.noNota} sebelum scan order lain.` });
       return;
     }
     try {
@@ -13526,7 +13538,7 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
           setScanMsg({ type: "error", text: `Nomor box ${noBoxScan} tidak valid (order ini cuma punya ${totalBox} box).` });
           return;
         }
-        const sudahScan = boxProgress[rows[0].id] || [];
+        const sudahScan = boxProgressRef.current[rows[0].id] || [];
         if (sudahScan.includes(noBoxScan)) {
           setScanMsg({ type: "error", text: `Box ${noBoxScan} sudah discan sebelumnya.` });
           return;
