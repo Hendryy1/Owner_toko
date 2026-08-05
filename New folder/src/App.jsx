@@ -4364,7 +4364,7 @@ function KonfirmasiPembayaranPage({ token }) {
 
       // Order retur yang SUDAH dikonfirmasi (ada bukti+alasan) di Proses
       // Pengiriman - tinggal direview Owner sebelum ditutup
-      const returRows = await supabaseFetch(token, "orders?select=id,no_nota,alasan_retur,bukti_retur_url,tanggal_retur,status_bayar,metode_bayar,client_id,refund_metode,refund_diproses_at,clients(nama,kode),order_items(qty,subtotal_setelah_diskon)&status=eq.diretur&bukti_retur_url=not.is.null&order=tanggal_retur.desc");
+      const returRows = await supabaseFetch(token, "orders?select=id,no_nota,alasan_retur,bukti_retur_url,tanggal_retur,status_bayar,metode_bayar,client_id,refund_metode,refund_diproses_at,clients(nama,kode),order_items(qty,subtotal_setelah_diskon,products(kode,nama,satuan))&status=eq.diretur&bukti_retur_url=not.is.null&order=tanggal_retur.desc");
       setReturReviewList(returRows);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -4660,6 +4660,18 @@ function KonfirmasiPembayaranPage({ token }) {
           <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 460, maxHeight: "88vh", overflowY: "auto", padding: 26 }}>
             <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Detail Retur</h2>
             <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 16px" }}>{viewingRetur.no_nota} - {viewingRetur.clients?.nama}</p>
+
+            <div style={{ background: "#F7F5F1", borderRadius: 9, padding: 12, marginBottom: 16 }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Jumlah Pesanan</p>
+              <p style={{ fontSize: 13, color: "#24272B", margin: "0 0 6px", fontWeight: 700 }}>
+                {(viewingRetur.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0)} total unit/box
+              </p>
+              {(viewingRetur.order_items || []).map((it, i) => (
+                <p key={i} style={{ fontSize: 12, color: "#6B6F75", margin: "2px 0" }}>
+                  {it.products?.kode ? `${it.products.kode} - ` : ""}{it.products?.nama || "Barang"}: {it.qty} {it.products?.satuan || ""}
+                </p>
+              ))}
+            </div>
 
             {infoKurirOrder === "loading" ? (
               <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 16px" }}>Memuat info kurir...</p>
