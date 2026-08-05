@@ -5201,6 +5201,7 @@ function SiapDikirimPage({ token, role }) {
             const isCod = o.metode_bayar === "cod";
             const terlambatDiambil = o.status === "siap_dikirim" && cekTerlambatDiambilKurir(o);
             const terlambatDikirimKurir = o.status === "proses_dikirim" && cekTerlambatDikirimKurir(o);
+            const terlambatPengemasan = activeTab === "proses_pengemasan" && cekTerlambatPengemasan(o);
             const isRetur = o.status === "diretur" || !!o.alasan_retur;
             return (
               <Card key={o.id} style={{ marginBottom: 12 }}>
@@ -5229,6 +5230,11 @@ function SiapDikirimPage({ token, role }) {
                         )}
                       </p>
                       <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                      {terlambatPengemasan && (
+                        <p style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "#C0392B", fontWeight: 700, margin: "4px 0 0" }}>
+                          <AlertCircle size={13} /> Keterlambatan Pengemasan
+                        </p>
+                      )}
                     </div>
                   </div>
                   <button
