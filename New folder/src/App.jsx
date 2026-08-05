@@ -13237,35 +13237,56 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
                   : "Tambahkan paket ini ke daftar serah terima?"}
               </p>
 
-              <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>
-                Foto Bukti Pengiriman (wajib)
-              </label>
-              {confirmingScan.bukti_serah_terima_kurir_url ? (
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
-                  <img src={confirmingScan.bukti_serah_terima_kurir_url} alt="Bukti" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8 }} />
-                  <span style={{ display: "flex", alignItems: "center", gap: 5, color: "#28685D", fontSize: 12, fontWeight: 700 }}>
-                    <Check size={14} /> Foto terupload
-                  </span>
-                </div>
-              ) : (
-                <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", padding: "12px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer", marginBottom: 18 }}>
-                  <UploadCloud size={15} /> {uploadingFotoScan ? "Mengupload..." : "Ambil/Upload Foto"}
-                  <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploadingFotoScan} onChange={(e) => { if (e.target.files[0]) uploadFotoBuktiScan(e.target.files[0]); }} />
-                </label>
-              )}
+              {(() => {
+                // Untuk order multi-box (Kurir Toko + Pekanbaru) - foto CUMA
+                // wajib di box TERAKHIR (saat semua box sudah terkumpul),
+                // bukan di setiap box. Box-box sebelumnya boleh langsung
+                // dikonfirmasi tanpa foto.
+                const adalahBoxTerakhir = confirmingScan.totalBox
+                  ? (boxProgress[confirmingScan.id]?.length || 0) + 1 >= confirmingScan.totalBox
+                  : true;
+                const fotoWajib = adalahBoxTerakhir;
+                const fotoSudahAda = !!confirmingScan.bukti_serah_terima_kurir_url;
+                const bolehLanjut = !fotoWajib || fotoSudahAda;
 
-              <div style={{ display: "flex", gap: 10 }}>
-                <button onClick={() => setConfirmingScan(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
-                  Batalkan
-                </button>
-                <button
-                  onClick={konfirmasiTambahScan}
-                  disabled={!confirmingScan.bukti_serah_terima_kurir_url}
-                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: confirmingScan.bukti_pengiriman_url ? "#28685D" : "#E4E1DA", color: confirmingScan.bukti_pengiriman_url ? "#fff" : "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}
-                >
-                  {confirmingScan.totalBox ? "Konfirmasi" : "Tambahkan"}
-                </button>
-              </div>
+                return (
+                  <>
+                    {fotoWajib && (
+                      <>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>
+                          Foto Bukti Pengiriman (wajib)
+                        </label>
+                        {fotoSudahAda ? (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 18 }}>
+                            <img src={confirmingScan.bukti_serah_terima_kurir_url} alt="Bukti" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8 }} />
+                            <span style={{ display: "flex", alignItems: "center", gap: 5, color: "#28685D", fontSize: 12, fontWeight: 700 }}>
+                              <Check size={14} /> Foto terupload
+                            </span>
+                          </div>
+                        ) : (
+                          <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, width: "100%", padding: "12px", borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer", marginBottom: 18 }}>
+                            <UploadCloud size={15} /> {uploadingFotoScan ? "Mengupload..." : "Ambil/Upload Foto"}
+                            <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploadingFotoScan} onChange={(e) => { if (e.target.files[0]) uploadFotoBuktiScan(e.target.files[0]); }} />
+                          </label>
+                        )}
+                      </>
+                    )}
+
+                    <div style={{ display: "flex", gap: 10 }}>
+                      <button onClick={() => setConfirmingScan(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                        Batalkan
+                      </button>
+                      <button
+                        onClick={konfirmasiTambahScan}
+                        disabled={!bolehLanjut}
+                        style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: bolehLanjut ? "#28685D" : "#E4E1DA", color: bolehLanjut ? "#fff" : "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}
+                      >
+                        {confirmingScan.totalBox ? "Konfirmasi" : "Tambahkan"}
+                      </button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           </div>
         )}
