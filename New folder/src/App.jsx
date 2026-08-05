@@ -4348,19 +4348,10 @@ function KonfirmasiPembayaranPage({ token }) {
 
   const menunggu = orders.filter((o) => o.status === "menunggu_pembayaran" && o.status_bayar !== "lunas" && o.metode_bayar !== "cod");
   // Bisa direview KAPAN SAJA: SEMUA order yang statusnya masih proses_dikirim
-  // (belum selesai) - baik COD maupun Transfer, di kota manapun - baik
-  // dokumennya sudah lengkap maupun belum, supaya Owner bisa pantau progres.
-  // Bisa direview KAPAN SAJA: semua order COD, atau Transfer tujuan
-  // Pekanbaru, yang statusnya masih proses_dikirim (belum selesai) - baik
-  // dokumennya sudah lengkap maupun belum, supaya Owner bisa pantau progres.
-  const perluReviewCod = orders.filter((o) => {
-    const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
-    const isPekanbaru = !!(kotaTujuanAsli && kotaTujuanAsli.trim().toLowerCase() === "pekanbaru");
-    if (o.status !== "proses_dikirim") return false;
-    if (o.metode_bayar === "cod") return true;
-    if (o.metode_bayar === "transfer" && isPekanbaru) return true;
-    return false;
-  });
+  // (belum selesai) - baik COD maupun Transfer, di kota manapun (Pekanbaru
+  // atau luar kota) - baik dokumennya sudah lengkap maupun belum, supaya
+  // Owner bisa pantau progres semua pesanan sebelum ditutup jadi Selesai.
+  const perluReviewCod = orders.filter((o) => o.status === "proses_dikirim");
   const riwayat = orders.filter((o) => o.status_bayar === "lunas" && !perluReviewCod.includes(o));
 
   function renderCard(o) {
@@ -4436,7 +4427,7 @@ function KonfirmasiPembayaranPage({ token }) {
 
       {perluReviewCod.length > 0 && (
         <>
-          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Perlu Review Pengiriman (COD & Transfer Pekanbaru)</h2>
+          <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "28px 0 12px" }}>Perlu Review Pengiriman</h2>
           {perluReviewCod.map((o) => {
             const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
             const kotaTujuanAsli = o.tujuan_kota || o.clients?.kota;
@@ -4490,8 +4481,9 @@ function KonfirmasiPembayaranPage({ token }) {
         if (!o) return null;
         const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
         const isCodOrder = o.metode_bayar === "cod";
-        // Transfer-Pekanbaru cuma butuh 2 dokumen (barang sampai + nota TTD),
-        // tidak perlu bukti nota/cash COD (itu memang khusus COD)
+        // Transfer (Pekanbaru maupun luar kota) cuma butuh 3 dokumen (bukti
+        // pengiriman + barang sampai + nota TTD), tidak perlu bukti nota/cash
+        // COD (itu memang khusus COD)
         const dokumen = isCodOrder
           ? [
               { label: "Bukti Pengiriman", url: o.bukti_pengiriman_url },
