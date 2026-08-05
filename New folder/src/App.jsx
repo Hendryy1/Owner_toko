@@ -13610,7 +13610,7 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
         method: "POST",
         body: JSON.stringify({
           jenis_kurir: "toko", jenis_laporan: "retur",
-          nama_kurir: role === "kurir" ? (namaAkun || "Kurir Toko") : "Admin/Owner",
+          nama_kurir: namaAkun || "Tidak diketahui",
           jumlah_koli: totalPaketRetur,
           dibuat_oleh: role === "kurir" ? userId : null,
         }),
