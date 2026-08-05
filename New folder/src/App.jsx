@@ -5005,7 +5005,8 @@ function SiapDikirimPage({ token, role }) {
   });
 
   const orderBaru = ordersUrut.filter((o) => !cekTerlambatPengemasan(o));
-  const orderTerlambat = ordersUrut.filter((o) => cekTerlambatPengemasan(o));
+  // orderTerlambat dihapus - sudah digabung ke tab "Proses Pengemasan"
+  // (badge "Keterlambatan Pengemasan" tetap muncul di dalam kartu masing-masing)
 
   // Order tahap-tahap LAIN (siklus setelah pengemasan) - tab baru
   const orderSiapKirim = orders.filter((o) => o.status === "siap_dikirim");
@@ -5025,7 +5026,7 @@ function SiapDikirimPage({ token, role }) {
     terselesaikan: orderTerselesaikan,
   };
   const isTabLain = Object.keys(tabLainMap).includes(activeTab);
-  const orderTampil = isTabLain ? tabLainMap[activeTab] : (activeTab === "terlambat" ? orderTerlambat : activeTab === "baru" ? orderBaru : ordersUrut);
+  const orderTampil = isTabLain ? tabLainMap[activeTab] : (activeTab === "baru" ? orderBaru : ordersUrut);
 
   return (
     <div>
@@ -5043,12 +5044,6 @@ function SiapDikirimPage({ token, role }) {
           style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "baru" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: activeTab === "baru" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
         >
           Pesanan Baru ({orderBaru.length})
-        </button>
-        <button
-          onClick={() => setActiveTab("terlambat")}
-          style={{ padding: "9px 18px", borderRadius: 9, border: activeTab === "terlambat" ? "1.5px solid #C0392B" : "1.5px solid #E4E1DA", background: activeTab === "terlambat" ? "#FBEAEA" : "#fff", color: activeTab === "terlambat" ? "#C0392B" : "#24272B", fontSize: 13, fontWeight: 700 }}
-        >
-          Keterlambatan Pengemasan ({orderTerlambat.length})
         </button>
         <button
           onClick={() => setActiveTab("proses_pengemasan")}
@@ -5251,7 +5246,7 @@ function SiapDikirimPage({ token, role }) {
 
 
       {!isTabLain && (orderTampil.length === 0 ? (
-        <EmptyState text={activeTab === "terlambat" ? "Tidak ada pesanan yang terlambat pengemasannya. Kerja bagus!" : "Tidak ada pesanan baru yang siap dikirim saat ini."} />
+        <EmptyState text="Tidak ada pesanan di kategori ini saat ini." />
       ) : (
         orderTampil.map((o) => {
           const isCod = o.metode_bayar === "cod";
