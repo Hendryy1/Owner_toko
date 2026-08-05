@@ -8322,7 +8322,7 @@ function TokoSalesPage({ token, profile }) {
     setLoading(true);
     setError("");
     try {
-      const clients = await supabaseFetch(token, `clients?select=id,kode,nama,alamat,telp,kota&sales_id=eq.${profile.sales_id}&order=nama.asc`);
+      const clients = await supabaseFetch(token, `clients?select=id,kode,nama,alamat,telp,kota,nama_owner&sales_id=eq.${profile.sales_id}&order=nama.asc`);
       setDaftarToko(clients);
 
       if (clients.length > 0) {
@@ -8369,7 +8369,10 @@ function TokoSalesPage({ token, profile }) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                 <div style={{ flex: 1 }}>
                   <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700 }}>{c.kode}</p>
-                  <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>{c.nama}</p>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{c.nama}</p>
+                  {c.nama_owner && (
+                    <p style={{ fontSize: 12, color: "#8A6A1A", margin: "0 0 6px", fontWeight: 600 }}>Pemilik: {c.nama_owner}</p>
+                  )}
                   <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>{c.alamat || "-"}{c.kota ? `, ${c.kota}` : ""}</p>
                   <p style={{ fontSize: 12.5, color: "#6B6F75", margin: 0 }}>{c.telp || "-"}</p>
                 </div>
