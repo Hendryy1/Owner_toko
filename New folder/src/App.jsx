@@ -710,6 +710,7 @@ export default function OwnerDashboard() {
         {page === "profil_sales" && <ProfilSalesPage token={token} profile={profile} />}
         {page === "omzet_sales" && <OmzetSalesPage token={token} profile={profile} />}
         {page === "kunjungan_sales" && <KunjunganSalesPage token={token} profile={profile} />}
+        {page === "toko_sales" && <TokoSalesPage token={token} profile={profile} />}
         {page === "absen_sales" && <AbsenSalesPage token={token} profile={profile} />}
         {page === "area_sales" && <AreaSalesPage token={token} profile={profile} />}
         {page === "request_area" && <RequestAreaOwnerPage token={token} />}
@@ -826,6 +827,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "profil_sales", label: "Profil Saya", icon: User, roles: ["sales"] },
     { key: "omzet_sales", label: "Omzet Saya", icon: TrendingUp, roles: ["sales"] },
     { key: "kunjungan_sales", label: "Laporan Kunjungan", icon: MapPin, roles: ["sales"] },
+    { key: "toko_sales", label: "Toko", icon: Store, roles: ["sales"] },
     { key: "absen_sales", label: "Absen", icon: Clock, roles: ["sales"] },
     { key: "area_sales", label: "Area", icon: MapPin, roles: ["sales"] },
     { key: "request_area", label: "Request Area Sales", icon: MapPin, roles: ["owner"] },
@@ -8303,6 +8305,104 @@ function OmzetSalesPage({ token, profile }) {
 // LAPORAN KUNJUNGAN (khusus akun Sales) - target 3x/bulan/toko, selfie + GPS
 // ============================================================
 const TARGET_KUNJUNGAN_PER_BULAN = 3;
+
+// ============================================================
+// TOKO (Sales) - daftar toko yang ditangani sales ini, lengkap dengan
+// titik GPS terakhir (diambil dari laporan kunjungan sebelumnya) supaya
+// sales tidak bingung cari alamat toko, atau saat pergantian anggota sales.
+// ============================================================
+function TokoSalesPage({ token, profile }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [daftarToko, setDaftarToko] = useState([]);
+  const [gpsMap, setGpsMap] = useState({}); // { client_id: { latitude, longitude } }
+  const [search, setSearch] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const clients = await supabaseFetch(token, `clients?select=id,kode,nama,alamat,telp,kota&sales_id=eq.${profile.sales_id}&order=nama.asc`);
+      setDaftarToko(clients);
+
+      if (clients.length > 0) {
+        const clientIds = clients.map((c) => c.id);
+        // Ambil titik GPS TERBARU per toko dari riwayat kunjungan - kalau
+        // toko yang sama dikunjungi berkali-kali, pakai yang paling baru.
+        const kunjungan = await supabaseFetch(
+          token,
+          `kunjungan_sales?select=client_id,latitude,longitude,created_at&client_id=in.(${clientIds.join(",")})&latitude=not.is.null&order=created_at.desc`
+        );
+        const map = {};
+        kunjungan.forEach((k) => {
+          if (!map[k.client_id]) map[k.client_id] = { latitude: k.latitude, longitude: k.longitude };
+        });
+        setGpsMap(map);
+      }
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const filtered = daftarToko.filter((c) => c.nama.toLowerCase().includes(search.toLowerCase()) || c.kode.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div>
+      <PageHeader title="Toko" subtitle={`${daftarToko.length} toko yang Anda tangani`} />
+
+      <input
+        value={search} onChange={(e) => setSearch(e.target.value)}
+        placeholder="Cari nama/kode toko..."
+        style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, width: 260, marginBottom: 16 }}
+      />
+
+      {filtered.length === 0 ? (
+        <EmptyState text="Belum ada toko yang Anda tangani." />
+      ) : (
+        filtered.map((c) => {
+          const gps = gpsMap[c.id];
+          return (
+            <Card key={c.id} style={{ marginBottom: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700 }}>{c.kode}</p>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>{c.nama}</p>
+                  <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 2px" }}>{c.alamat || "-"}{c.kota ? `, ${c.kota}` : ""}</p>
+                  <p style={{ fontSize: 12.5, color: "#6B6F75", margin: 0 }}>{c.telp || "-"}</p>
+                </div>
+                {gps ? (
+                  <a
+                    href={`https://www.google.com/maps?q=${gps.latitude},${gps.longitude}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ width: 44, height: 44, borderRadius: "50%", background: "#D8E9E6", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                    title="Buka lokasi di Google Maps"
+                  >
+                    <Navigation size={20} color="#28685D" />
+                  </a>
+                ) : (
+                  <div
+                    style={{ width: 44, height: 44, borderRadius: "50%", background: "#F7F5F1", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+                    title="Belum ada titik GPS - kunjungi toko ini dulu lewat Laporan Kunjungan"
+                  >
+                    <Navigation size={20} color="#B5B2AA" />
+                  </div>
+                )}
+              </div>
+              {!gps && (
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: "8px 0 0" }}>
+                  Belum ada titik GPS - akan otomatis tersimpan setelah Anda buat Laporan Kunjungan ke toko ini.
+                </p>
+              )}
+            </Card>
+          );
+        })
+      )}
+    </div>
+  );
+}
 
 function KunjunganSalesPage({ token, profile }) {
   const [loading, setLoading] = useState(true);
