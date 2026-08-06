@@ -11345,7 +11345,7 @@ function AbsenSalesPage({ token, profile }) {
   if (mode === "pilih_toko") {
     return (
       <div>
-        <button onClick={() => setMode(null)} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+        <button onClick={() => setMode("checkin")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
           <ChevronLeft size={16} /> Batal
         </button>
         <PageHeader title="Pilih Toko" subtitle="Anda sedang di depan toko yang mana sekarang?" />
@@ -11378,6 +11378,11 @@ function AbsenSalesPage({ token, profile }) {
           <ChevronLeft size={16} /> Batal
         </button>
         <PageHeader title="Absen" subtitle={selectedClient ? `Di depan ${selectedClient.nama}` : "Absen harian"} />
+        {!selectedClient && handledClients.length > 0 && (
+          <button onClick={() => setMode("pilih_toko")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#8A6A1A", fontSize: 12.5, fontWeight: 600, marginBottom: 14, padding: 0 }}>
+            <MapPin size={14} /> Sedang kunjungan ke toko? Pilih toko di sini (opsional)
+          </button>
+        )}
         <Card style={{ textAlign: "center", padding: 30 }}>
           {gettingLocation ? (
             <p style={{ fontSize: 13, color: "#6B6F75" }}>Mengambil lokasi GPS Anda...</p>
@@ -11438,7 +11443,7 @@ function AbsenSalesPage({ token, profile }) {
             <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>Belum Absen Hari Ini</p>
             <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 16px" }}>Perlu foto saat kunjungan ke toko.</p>
             <button
-              onClick={() => (handledClients.length === 0 ? mulaiAbsen(null) : setMode("pilih_toko"))}
+              onClick={() => mulaiAbsen(null)}
               style={{ padding: "13px 32px", borderRadius: 12, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14.5 }}
             >
               Absen Sekarang
