@@ -196,7 +196,7 @@ function hitungEntriesLabelBarcode(orders) {
       for (let i = 0; i < qty; i++) {
         counterBox++;
         // Label KEMASAN - per unit barang, ditempel di kemasan fisik
-        hasil.push({ order: o, noBox: counterBox, totalBox: totalBoxOrder });
+        hasil.push({ order: o, noBox: counterBox, totalBox: totalBoxOrder, item });
       }
     });
   });
