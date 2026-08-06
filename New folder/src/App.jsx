@@ -5734,7 +5734,7 @@ function ProsesPengirimanPage({ token, role }) {
         // Laporan Kunjungan - supaya ada bukti lokasi asli saat barang
         // benar-benar sampai, dan bisa dideteksi kalau lokasinya janggal.
         coords = await ambilLokasiSekarang();
-        const { blob } = await buatFotoDenganWatermark(file, coords, `Barang Sampai - ${order.no_nota}`);
+        const { blob } = await buatFotoDenganWatermark(file, coords, `Barang Sampai - ${order.clients?.nama || "-"} (${order.no_nota})`);
         fileUntukUpload = blob;
       }
 
