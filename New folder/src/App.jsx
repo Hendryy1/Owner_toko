@@ -2839,10 +2839,15 @@ function BarangTerlarisPage({ token }) {
     setError("");
     try {
       const awalTahun = filterBulan === 0 ? `${filterTahun}-01-01` : `${filterTahun}-${String(filterBulan).padStart(2, "0")}-01`;
-      const akhir = filterBulan === 0
-        ? new Date(filterTahun + 1, 0, 1)
-        : new Date(filterTahun, filterBulan, 1);
-      const akhirStr = akhir.toISOString().slice(0, 10);
+      // PENTING: hitung string tanggal akhir LANGSUNG (bukan lewat Date +
+      // toISOString) - toISOString() konversi ke UTC, yang di timezone
+      // Indonesia (UTC+7) bisa bikin tanggal MUNDUR 1 hari, jadi data
+      // tanggal terakhir bulan itu (misal 31 Juli) ikut terpotong/hilang.
+      const akhirStr = filterBulan === 0
+        ? `${filterTahun + 1}-01-01`
+        : filterBulan === 12
+          ? `${filterTahun + 1}-01-01`
+          : `${filterTahun}-${String(filterBulan + 1).padStart(2, "0")}-01`;
 
       // Hitung langsung di database (RPC) - lebih akurat & cepat daripada
       // fetch semua baris mentah lalu jumlahkan manual di JavaScript.
