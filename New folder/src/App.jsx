@@ -1252,11 +1252,23 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
 // ============================================================
 // HELPER UI KECIL
 // ============================================================
-function PageHeader({ title, subtitle }) {
+function PageHeader({ title, subtitle, onRefresh, refreshing }) {
   return (
-    <div style={{ marginBottom: 22 }}>
-      <h1 className="disp" style={{ fontSize: 28, fontWeight: 700, color: "#24272B", margin: 0 }}>{title}</h1>
-      {subtitle && <p style={{ color: "#9CA0A6", fontSize: 13, margin: "4px 0 0" }}>{subtitle}</p>}
+    <div style={{ marginBottom: 22, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+      <div>
+        <h1 className="disp" style={{ fontSize: 28, fontWeight: 700, color: "#24272B", margin: 0 }}>{title}</h1>
+        {subtitle && <p style={{ color: "#9CA0A6", fontSize: 13, margin: "4px 0 0" }}>{subtitle}</p>}
+      </div>
+      {onRefresh && (
+        <button
+          onClick={onRefresh}
+          disabled={refreshing}
+          title="Refresh halaman ini"
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", flexShrink: 0, marginTop: 2 }}
+        >
+          <RefreshCw size={16} className={refreshing ? "spin" : ""} />
+        </button>
+      )}
     </div>
   );
 }
@@ -1999,7 +2011,7 @@ function OrdersPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Approve Pesanan" subtitle={`${pending.length} menunggu persetujuan`} />
+      <PageHeader title="Approve Pesanan" subtitle={`${pending.length} menunggu persetujuan`} onRefresh={load} refreshing={loading} />
       {pending.length === 0 ? (
         <EmptyState text="Tidak ada pesanan yang menunggu persetujuan saat ini." />
       ) : (
@@ -4952,7 +4964,7 @@ function KonfirmasiPembayaranPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Review Pengiriman" subtitle={`${perluReviewCod.length} pesanan perlu direview`} />
+      <PageHeader title="Review Pengiriman" subtitle={`${perluReviewCod.length} pesanan perlu direview`} onRefresh={load} refreshing={loading} />
 
       {returReviewList.length > 0 && (
         <>
@@ -6193,7 +6205,7 @@ function ProsesPengirimanPage({ token, role }) {
 
   return (
     <div>
-      <PageHeader title="Proses Pengiriman" subtitle={`${orders.length} pesanan dalam proses pengiriman`} />
+      <PageHeader title="Proses Pengiriman" subtitle={`${orders.length} pesanan dalam proses pengiriman`} onRefresh={load} refreshing={loading} />
 
       {returOrders.length > 0 && (
         <>
@@ -13226,7 +13238,7 @@ function SiapDikirimBaruPage({ token, role }) {
 
   return (
     <div>
-      <PageHeader title="Siap Dikirim" subtitle={`${orders.length} pesanan sudah discan outbound, menunggu diserahkan ke kurir`} />
+      <PageHeader title="Siap Dikirim" subtitle={`${orders.length} pesanan sudah discan outbound, menunggu diserahkan ke kurir`} onRefresh={load} refreshing={loading} />
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         <button
@@ -15052,7 +15064,7 @@ function PickingListPage({ token, role, userId }) {
   // ---------- TAMPILAN DAFTAR ORDER ----------
   return (
     <div>
-      <PageHeader title="Picking List" subtitle={`${orders.length} pesanan menunggu diambil barangnya`} />
+      <PageHeader title="Picking List" subtitle={`${orders.length} pesanan menunggu diambil barangnya`} onRefresh={load} refreshing={loading} />
 
       {ordersTertunda.length > 0 && (
         <>
