@@ -11148,6 +11148,7 @@ function AbsenSalesPage({ token, profile }) {
   const [keteranganLibur, setKeteranganLibur] = useState("");
   const [riwayat, setRiwayat] = useState([]);
   const [handledClients, setHandledClients] = useState([]);
+  const [clientIdSudahKunjunganHariIni, setClientIdSudahKunjunganHariIni] = useState([]);
 
   const [mode, setMode] = useState(null); // null | "pilih_toko" | "checkin"
   const [selectedClient, setSelectedClient] = useState(null);
@@ -11177,17 +11178,19 @@ function AbsenSalesPage({ token, profile }) {
     setLoading(true);
     setError("");
     try {
-      const [absenHariIni, liburRows, riwayatRows, clients] = await Promise.all([
+      const [absenHariIni, liburRows, riwayatRows, clients, kunjunganHariIni] = await Promise.all([
         supabaseFetch(token, `absen_sales?select=id&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `hari_libur?select=keterangan&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `absen_sales?select=tanggal,waktu_absen,foto_url,clients(nama)&sales_id=eq.${profile.sales_id}&order=tanggal.desc&limit=14`),
         supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&status=eq.aktif&order=nama.asc`),
+        supabaseFetch(token, `kunjungan_sales?select=client_id&sales_id=eq.${profile.sales_id}&created_at=gte.${todayStr}T00:00:00&created_at=lte.${todayStr}T23:59:59`),
       ]);
       setSudahAbsenHariIni(absenHariIni.length > 0);
       setIsLibur(liburRows.length > 0);
       setKeteranganLibur(liburRows[0]?.keterangan || "");
       setRiwayat(riwayatRows);
       setHandledClients(clients);
+      setClientIdSudahKunjunganHariIni(kunjunganHariIni.map((k) => k.client_id));
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -11376,19 +11379,29 @@ function AbsenSalesPage({ token, profile }) {
         {handledClients.length === 0 ? (
           <EmptyState text="Belum ada toko yang ditugaskan ke Anda." />
         ) : (
-          handledClients.map((c) => (
-            <Card key={c.id} style={{ marginBottom: 10, padding: 14 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.nama}</p>
-                  <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{c.kode}</p>
+          handledClients.map((c) => {
+            const sudahDikunjungi = clientIdSudahKunjunganHariIni.includes(c.id);
+            return (
+              <Card key={c.id} style={{ marginBottom: 10, padding: 14, opacity: sudahDikunjungi ? 0.6 : 1 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.nama}</p>
+                    <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{c.kode}</p>
+                    {sudahDikunjungi && (
+                      <p style={{ fontSize: 11, color: "#8A6A1A", margin: "4px 0 0", fontWeight: 600 }}>Sudah ada kunjungan hari ini</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => mulaiAbsen(c)}
+                    disabled={sudahDikunjungi}
+                    style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: sudahDikunjungi ? "#E4E1DA" : "#E8A426", color: sudahDikunjungi ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                  >
+                    Pilih
+                  </button>
                 </div>
-                <button onClick={() => mulaiAbsen(c)} style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}>
-                  Pilih
-                </button>
-              </div>
-            </Card>
-          ))
+              </Card>
+            );
+          })
         )}
       </div>
     );
