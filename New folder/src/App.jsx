@@ -822,6 +822,53 @@ export default function OwnerDashboard() {
     return () => { supabaseRealtimeClient.removeChannel(channel); };
   }, [profile, token]);
 
+  // Tracking durasi Dashboard "aktif di layar depan" (bukan di-minimize/
+  // pindah ke home screen atau aplikasi lain) - buat Owner lihat gambaran
+  // durasi kerja staff. Detik ditambahkan cuma selagi tab ini BENAR-BENAR
+  // di layar depan (Page Visibility API), lalu dikirim ke database
+  // berkala (bukan tiap detik, supaya tidak bikin banyak request).
+  useEffect(() => {
+    if (!profile?.id || !token) return;
+    let detikBelumTersimpan = 0;
+
+    async function kirimKeServer() {
+      if (detikBelumTersimpan <= 0) return;
+      const tambahan = detikBelumTersimpan;
+      detikBelumTersimpan = 0;
+      const todayStr = new Date().toISOString().slice(0, 10);
+      try {
+        const existing = await supabaseFetch(token, `aktivitas_layar?select=id,detik_aktif&user_id=eq.${profile.id}&tanggal=eq.${todayStr}`);
+        if (existing.length > 0) {
+          await supabaseFetch(token, `aktivitas_layar?id=eq.${existing[0].id}`, {
+            method: "PATCH",
+            body: JSON.stringify({ detik_aktif: existing[0].detik_aktif + tambahan, updated_at: new Date().toISOString() }),
+          });
+        } else {
+          await supabaseFetch(token, "aktivitas_layar", {
+            method: "POST",
+            body: JSON.stringify({ user_id: profile.id, nama_user: profile.nama, role_user: profile.role, tanggal: todayStr, detik_aktif: tambahan }),
+          });
+        }
+      } catch (e) {
+        detikBelumTersimpan += tambahan; // gagal kirim - coba lagi nanti
+        console.log("Gagal simpan durasi aktif:", e.message);
+      }
+    }
+
+    const tickInterval = setInterval(() => {
+      if (document.visibilityState === "visible") detikBelumTersimpan += 5;
+    }, 5000);
+    const kirimInterval = setInterval(kirimKeServer, 60000);
+    window.addEventListener("beforeunload", kirimKeServer);
+
+    return () => {
+      clearInterval(tickInterval);
+      clearInterval(kirimInterval);
+      window.removeEventListener("beforeunload", kirimKeServer);
+      kirimKeServer();
+    };
+  }, [profile?.id, token]);
+
   async function handleLogin() {
     setLoginError("");
     setLoggingIn(true);
@@ -901,6 +948,7 @@ export default function OwnerDashboard() {
         {page === "area_sales" && <AreaSalesPage token={token} profile={profile} />}
         {page === "request_area" && <RequestAreaOwnerPage token={token} />}
         {page === "rekap_absen" && <RekapAbsenPage token={token} setPage={setPage} />}
+        {page === "aktivitas_layar" && <AktivitasLayarPage token={token} />}
         {page === "calendar" && <CalendarPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
@@ -1020,6 +1068,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "area_sales", label: "Area", icon: MapPin, roles: ["sales"] },
     { key: "request_area", label: "Request Area Sales", icon: MapPin, roles: ["owner"] },
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
+    { key: "aktivitas_layar", label: "Aktivitas Layar Staff", icon: Eye, roles: ["owner"] },
     { key: "calendar", label: "Calendar", icon: CalendarDays, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Review Pengiriman", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
@@ -11995,6 +12044,75 @@ function AbsenSalesPage({ token, profile }) {
 // ============================================================
 // REKAP ABSEN SALES - Owner lihat rekap semua sales + kelola tanggal merah
 // ============================================================
+// ============================================================
+// AKTIVITAS LAYAR STAFF - Owner lihat gambaran durasi Dashboard "aktif
+// di layar depan" per staff per hari (murni pemantauan, bukan penguncian).
+// ============================================================
+function AktivitasLayarPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [rows, setRows] = useState([]);
+  const [tanggal, setTanggal] = useState(new Date().toISOString().slice(0, 10));
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await supabaseFetch(token, `aktivitas_layar?select=*&tanggal=eq.${tanggal}&order=detik_aktif.desc`);
+      setRows(data);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [tanggal]);
+
+  function formatDurasi(detik) {
+    const jam = Math.floor(detik / 3600);
+    const menit = Math.floor((detik % 3600) / 60);
+    if (jam > 0) return `${jam} jam ${menit} menit`;
+    return `${menit} menit`;
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  return (
+    <div>
+      <PageHeader title="Aktivitas Layar Staff" subtitle="Durasi Dashboard aktif di layar depan HP/laptop staff (bukan di-minimize/ganti aplikasi lain)" onRefresh={load} refreshing={loading} />
+
+      <input
+        type="date" value={tanggal} onChange={(e) => setTanggal(e.target.value)}
+        style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, marginBottom: 16 }}
+      />
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: "#F7F5F1" }}>
+              {["Nama", "Role", "Durasi Aktif"].map((h) => (
+                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "12px 14px", fontWeight: 600 }}>{r.nama_user}</td>
+                <td style={{ padding: "12px 14px", color: "#6B6F75", textTransform: "capitalize" }}>{r.role_user?.replace("_", " ")}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{formatDurasi(r.detik_aktif)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length === 0 && <EmptyState text="Belum ada data aktivitas untuk tanggal ini." />}
+      </Card>
+
+      <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "14px 0 0", lineHeight: 1.5 }}>
+        Catatan: ini menghitung durasi Dashboard aktif di LAYAR DEPAN saja (bukan di-minimize/pindah ke aplikasi/tab lain) - bukan indikator produktivitas yang pasti, cuma gambaran umum saja.
+      </p>
+    </div>
+  );
+}
+
 function RekapAbsenPage({ token, setPage }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
