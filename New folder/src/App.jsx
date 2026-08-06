@@ -6129,7 +6129,7 @@ function ProsesPengirimanPage({ token, role }) {
                 ) : (
                   <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
                     {uploadingId === o.id && uploadingField === "barang_sampai" ? "Mengupload..." : <><UploadCloud size={15} /> Upload Foto</>}
-                    <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadFotoOrder(o, e.target.files[0], "bukti_barang_sampai_url", "barang_sampai"); }} />
+                    <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadFotoOrder(o, e.target.files[0], "bukti_barang_sampai_url", "barang_sampai"); }} />
                   </label>
                 )}
               </div>
