@@ -5,7 +5,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
-  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3, Star, CalendarDays, CreditCard, Phone
+  Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3, Star, CalendarDays, CreditCard, Phone, Lock
 } from "lucide-react";
 
 const COMPANY_NAME = "PT INDO GARUDA ABADI";
@@ -723,6 +723,7 @@ export default function OwnerDashboard() {
         {page === "log_aktivitas" && <LogAktivitasPage token={token} />}
         {page === "rating_komplain" && <RatingKomplainPage token={token} />}
         {page === "backup_data" && <BackupDataPage token={token} />}
+        {page === "pin_atasan" && <PinAtasanPage token={token} />}
         {page === "permintaan_hapus_akun" && <PermintaanHapusAkunPage token={token} />}
         {page === "program_loyalitas" && <ProgramLoyalitasPage token={token} />}
         {page === "kelola_gudang" && <KelolaGudangPage token={token} />}
@@ -840,6 +841,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "log_aktivitas", label: "Log Aktivitas", icon: History, roles: ["owner"] },
     { key: "rating_komplain", label: "Rating & Komplain Toko", icon: Star, roles: ["owner", "admin_transaksi"] },
     { key: "backup_data", label: "Backup Data", icon: Download, roles: ["owner"] },
+    { key: "pin_atasan", label: "PIN Atasan", icon: Lock, roles: ["owner"] },
     { key: "permintaan_hapus_akun", label: "Permintaan Hapus Akun", icon: X, roles: ["owner", "admin_transaksi"] },
     { key: "program_loyalitas", label: "Program Loyalitas", icon: Gift, roles: ["owner"] },
     { key: "kelola_gudang", label: "Kelola Gudang", icon: Boxes, roles: ["owner"] },
@@ -1579,6 +1581,10 @@ function OrdersPage({ token }) {
   const [processingId, setProcessingId] = useState(null);
   const [checkingOrder, setCheckingOrder] = useState(null);
   const [namaSalesMap, setNamaSalesMap] = useState({}); // { sales_id: nama }
+  const [pinModal, setPinModal] = useState(null); // { orderId } - order yang butuh PIN atasan
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [verifyingPin, setVerifyingPin] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -1600,6 +1606,41 @@ function OrdersPage({ token }) {
   }
   useEffect(() => { load(); }, []);
 
+  const pinResolveRef = useRef(null);
+
+  // Tampilkan modal PIN dan tunggu (via Promise) sampai user submit PIN
+  // yang benar (true) atau batal (false).
+  function mintaPinAtasan() {
+    return new Promise((resolve) => {
+      pinResolveRef.current = resolve;
+      setPinInput("");
+      setPinError("");
+      setPinModal(true);
+    });
+  }
+
+  async function submitPinAtasan() {
+    setVerifyingPin(true);
+    setPinError("");
+    try {
+      const rows = await supabaseFetch(token, "pengaturan_pin_atasan?select=pin&id=eq.1");
+      if (rows[0]?.pin === pinInput) {
+        setPinModal(null);
+        pinResolveRef.current?.(true);
+      } else {
+        setPinError("PIN salah. Coba lagi.");
+      }
+    } catch (e) {
+      setPinError("Gagal cek PIN: " + e.message);
+    }
+    setVerifyingPin(false);
+  }
+
+  function batalkanPinAtasan() {
+    setPinModal(null);
+    pinResolveRef.current?.(false);
+  }
+
   async function updateStatus(orderId, status) {
     setProcessingId(orderId);
     try {
@@ -1608,6 +1649,21 @@ function OrdersPage({ token }) {
       let bodyPatch = { status, disetujui_pada: new Date().toISOString() };
 
       if (status === "menunggu_pembayaran" && order?.metode_bayar === "cod") {
+        // Kalau toko ini punya order COD LAIN yang belum "Selesai" (masih
+        // dalam proses apapun), approve order COD ini perlu PIN atasan
+        // dulu - supaya Admin tidak sembarangan approve COD berulang kalau
+        // COD sebelumnya belum jelas beres/terbayarkan.
+        const codBelumSelesai = await supabaseFetch(
+          token,
+          `orders?select=id&client_id=eq.${order.client_id}&metode_bayar=eq.cod&status=neq.selesai&id=neq.${orderId}&limit=1`
+        );
+        if (codBelumSelesai.length > 0) {
+          const pinBenar = await mintaPinAtasan();
+          if (!pinBenar) {
+            setProcessingId(null);
+            return;
+          }
+        }
         // Order COD tidak perlu tahap "Menunggu Pembayaran" sama sekali -
         // uangnya baru diterima kurir saat barang sampai (dikonfirmasi lewat
         // menu Proses Pengiriman), jadi begitu di-approve langsung lompat ke
@@ -1830,6 +1886,37 @@ function OrdersPage({ token }) {
           onClose={() => setCheckingOrder(null)}
           processing={processingId === checkingOrder.id}
         />
+      )}
+
+      {pinModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 500 }}>
+          <div style={{ background: "#fff", borderRadius: 18, width: "90%", maxWidth: 360, padding: 24 }}>
+            <p style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>PIN Atasan Diperlukan</p>
+            <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 16px", lineHeight: 1.5 }}>
+              Toko ini masih punya pesanan COD lain yang belum selesai. Masukkan PIN 6 angka dari atasan untuk lanjut approve pesanan COD ini.
+            </p>
+            <input
+              type="password" inputMode="numeric" maxLength={6} value={pinInput}
+              onChange={(e) => setPinInput(e.target.value.replace(/\D/g, ""))}
+              placeholder="Masukkan PIN 6 angka"
+              style={{ width: "100%", padding: "12px 14px", borderRadius: 10, border: "1.5px solid #E4E1DA", fontSize: 18, letterSpacing: "0.3em", textAlign: "center", marginBottom: 8 }}
+              autoFocus
+            />
+            {pinError && <p style={{ fontSize: 12, color: "#C0392B", margin: "0 0 8px" }}>{pinError}</p>}
+            <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+              <button onClick={batalkanPinAtasan} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
+                Batalkan
+              </button>
+              <button
+                onClick={submitPinAtasan}
+                disabled={pinInput.length !== 6 || verifyingPin}
+                style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: pinInput.length === 6 ? "#28685D" : "#E4E1DA", color: pinInput.length === 6 ? "#fff" : "#9CA0A6", fontWeight: 700, fontSize: 13.5 }}
+              >
+                {verifyingPin ? "Memeriksa..." : "Konfirmasi"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -15506,6 +15593,84 @@ function RatingKomplainPage({ token }) {
 // ============================================================
 // BACKUP DATA - lihat & download backup terjadwal, atau backup manual
 // ============================================================
+// ============================================================
+// PIN ATASAN - PIN 6 angka yang diminta saat Admin approve pesanan COD
+// berulang untuk toko yang masih punya COD lain belum selesai.
+// ============================================================
+function PinAtasanPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [pinLama, setPinLama] = useState("000000");
+  const [pinBaru, setPinBaru] = useState("");
+  const [pinKonfirmasi, setPinKonfirmasi] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [pesan, setPesan] = useState(null);
+
+  useEffect(() => {
+    supabaseFetch(token, "pengaturan_pin_atasan?select=pin&id=eq.1")
+      .then((rows) => setPinLama(rows[0]?.pin || "000000"))
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function simpanPin() {
+    if (pinBaru.length !== 6) { setPesan({ type: "error", text: "PIN harus 6 angka." }); return; }
+    if (pinBaru !== pinKonfirmasi) { setPesan({ type: "error", text: "Konfirmasi PIN tidak cocok." }); return; }
+    setSaving(true);
+    setPesan(null);
+    try {
+      await supabaseFetch(token, "pengaturan_pin_atasan?id=eq.1", {
+        method: "PATCH",
+        body: JSON.stringify({ pin: pinBaru, updated_at: new Date().toISOString() }),
+      });
+      setPinLama(pinBaru);
+      setPinBaru("");
+      setPinKonfirmasi("");
+      setPesan({ type: "ok", text: "PIN berhasil diperbarui." });
+    } catch (e) {
+      setPesan({ type: "error", text: "Gagal simpan: " + e.message });
+    }
+    setSaving(false);
+  }
+
+  if (loading) return <LoadingState />;
+
+  return (
+    <div>
+      <PageHeader title="PIN Atasan" subtitle="PIN ini diminta saat Admin approve pesanan COD berulang untuk toko yang masih punya COD lain belum selesai." />
+
+      <Card style={{ maxWidth: 420 }}>
+        <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 4px", fontWeight: 700, textTransform: "uppercase" }}>PIN Saat Ini</p>
+        <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#24272B", letterSpacing: "0.3em", margin: "0 0 20px" }}>{pinLama}</p>
+
+        <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>PIN Baru (6 Angka)</label>
+        <input
+          type="text" inputMode="numeric" maxLength={6} value={pinBaru}
+          onChange={(e) => setPinBaru(e.target.value.replace(/\D/g, ""))}
+          style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 16, letterSpacing: "0.2em", marginBottom: 14 }}
+        />
+
+        <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Konfirmasi PIN Baru</label>
+        <input
+          type="text" inputMode="numeric" maxLength={6} value={pinKonfirmasi}
+          onChange={(e) => setPinKonfirmasi(e.target.value.replace(/\D/g, ""))}
+          style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 16, letterSpacing: "0.2em", marginBottom: 16 }}
+        />
+
+        {pesan && (
+          <p style={{ fontSize: 12.5, color: pesan.type === "ok" ? "#28685D" : "#C0392B", margin: "0 0 12px" }}>{pesan.text}</p>
+        )}
+
+        <button
+          onClick={simpanPin}
+          disabled={saving}
+          style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+        >
+          {saving ? "Menyimpan..." : "Simpan PIN Baru"}
+        </button>
+      </Card>
+    </div>
+  );
+}
+
 function BackupDataPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [fileList, setFileList] = useState([]);
