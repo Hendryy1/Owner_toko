@@ -2827,27 +2827,72 @@ function PiutangPage({ token }) {
 // BARANG TERLARIS
 // ============================================================
 function BarangTerlarisPage({ token }) {
+  const now = new Date();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
+  const [filterBulan, setFilterBulan] = useState(now.getMonth() + 1); // 0 = semua bulan
+  const [filterTahun, setFilterTahun] = useState(now.getFullYear());
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const data = await supabaseFetch(token, "v_barang_terlaris?select=*&order=peringkat.asc&limit=20");
-      setRows(data);
+      const awalTahun = filterBulan === 0 ? `${filterTahun}-01-01` : `${filterTahun}-${String(filterBulan).padStart(2, "0")}-01`;
+      const akhir = filterBulan === 0
+        ? new Date(filterTahun + 1, 0, 1)
+        : new Date(filterTahun, filterBulan, 1);
+      const akhirStr = akhir.toISOString().slice(0, 10);
+
+      // Ambil semua order_items dalam rentang tanggal terpilih (kecuali
+      // order yang dibatalkan) - lalu jumlahkan per produk di JS, karena
+      // view v_barang_terlaris tidak mendukung filter tanggal.
+      const items = await supabaseFetch(
+        token,
+        `order_items?select=qty,subtotal_setelah_diskon,products(id,nama,kategori),orders!inner(created_at,status)&orders.created_at=gte.${awalTahun}&orders.created_at=lt.${akhirStr}&orders.status=neq.ditolak`
+      );
+
+      const map = {};
+      items.forEach((it) => {
+        const pid = it.products?.id;
+        if (!pid) return;
+        if (!map[pid]) map[pid] = { product_id: pid, nama: it.products.nama, kategori: it.products.kategori, qty_terjual: 0, total_omzet: 0 };
+        map[pid].qty_terjual += Number(it.qty || 0);
+        map[pid].total_omzet += Number(it.subtotal_setelah_diskon || 0);
+      });
+      const hasil = Object.values(map)
+        .sort((a, b) => b.qty_terjual - a.qty_terjual)
+        .slice(0, 20)
+        .map((r, i) => ({ ...r, peringkat: i + 1 }));
+      setRows(hasil);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [filterBulan, filterTahun]);
 
-  if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const NAMA_BULAN = ["Semua Bulan", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const daftarTahun = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
 
   return (
     <div>
       <PageHeader title="Barang Terlaris" subtitle="Diurutkan dari qty terjual tertinggi" />
+
+      <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+        <select value={filterBulan} onChange={(e) => setFilterBulan(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }}>
+          {NAMA_BULAN.map((b, i) => (
+            <option key={i} value={i}>{b}</option>
+          ))}
+        </select>
+        <select value={filterTahun} onChange={(e) => setFilterTahun(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }}>
+          {daftarTahun.map((y) => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+      </div>
+
+      {loading ? <LoadingState /> : (
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
@@ -2869,8 +2914,9 @@ function BarangTerlarisPage({ token }) {
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && <EmptyState text="Belum ada data penjualan." />}
+        {rows.length === 0 && <EmptyState text="Belum ada data penjualan di periode ini." />}
       </Card>
+      )}
     </div>
   );
 }
