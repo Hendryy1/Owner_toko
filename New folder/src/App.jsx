@@ -616,7 +616,7 @@ export default function OwnerDashboard() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [notifCounts, setNotifCounts] = useState({});
-  const prevNotifTotalRef = useRef(null);
+  const prevNotifCountsRef = useRef(null);
 
   useEffect(() => {
     function handleResize() {
@@ -777,11 +777,16 @@ export default function OwnerDashboard() {
         hitung("orders?select=id&status=eq.proses_dikirim&dikonfirmasi_toko_at=not.is.null&limit=1"),
       ]);
       const counts = { orders, picking_list: pickingList, siap_dikirim_baru: siapDikirim, proses_kirim: prosesKirim, konfirmasi_bayar: reviewKirim };
-      const total = orders + pickingList + siapDikirim + prosesKirim + reviewKirim;
-      if (prevNotifTotalRef.current !== null && total > prevNotifTotalRef.current) {
-        mainkanSuaraNotif();
+      // Cek NAIK per kategori (bukan total gabungan) - order yang cuma
+      // "pindah tahap" (misal dari Approve ke Picking List) bikin satu
+      // kategori turun & satu naik, totalnya bisa tetap sama walau
+      // sebenarnya ada perubahan berarti di kategori itu.
+      const prev = prevNotifCountsRef.current;
+      if (prev !== null) {
+        const adaKenaikan = Object.keys(counts).some((key) => counts[key] > (prev[key] || 0));
+        if (adaKenaikan) mainkanSuaraNotif();
       }
-      prevNotifTotalRef.current = total;
+      prevNotifCountsRef.current = counts;
       setNotifCounts(counts);
     } catch (e) { console.log("Gagal cek notifikasi:", e.message); }
   }
