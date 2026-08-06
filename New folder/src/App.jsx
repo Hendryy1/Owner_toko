@@ -5551,7 +5551,7 @@ function SiapDikirimPage({ token, role }) {
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
   // Order tahap PENGEMASAN (belum di-picking/outbound) - tab lama
-  const orderPengemasanSemua = orders.filter((o) => ["menunggu_pembayaran", "menunggu_pengiriman"].includes(o.status));
+  const orderPengemasanSemua = orders.filter((o) => o.status === "menunggu_pengiriman");
   const ordersUrut = [...orderPengemasanSemua].sort((a, b) => {
     const aTerlambat = cekTerlambatPengemasan(a);
     const bTerlambat = cekTerlambatPengemasan(b);
