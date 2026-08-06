@@ -11151,6 +11151,8 @@ function AbsenSalesPage({ token, profile }) {
 
   const [mode, setMode] = useState(null); // null | "pilih_toko" | "checkin"
   const [selectedClient, setSelectedClient] = useState(null);
+  const [namaTokoManual, setNamaTokoManual] = useState("");
+  const [alamatTokoManual, setAlamatTokoManual] = useState("");
   const [gettingLocation, setGettingLocation] = useState(false);
   const [locationError, setLocationError] = useState("");
   const [coords, setCoords] = useState(null);
@@ -11322,13 +11324,32 @@ function AbsenSalesPage({ token, profile }) {
         method: "POST",
         body: JSON.stringify({
           sales_id: profile.sales_id, tanggal: todayStr, client_id: selectedClient?.id || null,
+          nama_toko_manual: selectedClient ? null : namaTokoManual.trim(),
+          alamat_toko_manual: selectedClient ? null : alamatTokoManual.trim(),
           foto_url: url, latitude: coords.lat, longitude: coords.lng,
         }),
       });
 
+      // Kalau absen ini dipilih di toko yang TERDAFTAR (bukan toko manual) -
+      // otomatis catat juga sebagai kunjungan, supaya jumlah kunjungan
+      // toko itu (0/3 dst) langsung ikut bertambah tanpa perlu isi laporan
+      // kunjungan terpisah lagi.
+      if (selectedClient) {
+        await supabaseFetch(token, "kunjungan_sales", {
+          method: "POST",
+          body: JSON.stringify({
+            sales_id: profile.sales_id, client_id: selectedClient.id,
+            foto_url: url, latitude: coords.lat, longitude: coords.lng,
+            catatan: "Kunjungan otomatis tercatat dari absen harian",
+          }),
+        }).catch((e) => console.log("Gagal catat kunjungan otomatis:", e.message));
+      }
+
       await load();
       setMode(null);
       setSelectedClient(null);
+      setNamaTokoManual("");
+      setAlamatTokoManual("");
     } catch (e) {
       alert("Gagal simpan absen: " + e.message);
     }
@@ -11374,7 +11395,7 @@ function AbsenSalesPage({ token, profile }) {
   if (mode === "checkin") {
     return (
       <div>
-        <button onClick={() => { setMode(null); setSelectedClient(null); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+        <button onClick={() => { setMode(null); setSelectedClient(null); setNamaTokoManual(""); setAlamatTokoManual(""); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
           <ChevronLeft size={16} /> Batal
         </button>
         <PageHeader title="Absen" subtitle={selectedClient ? `Di depan ${selectedClient.nama}` : "Absen harian"} />
@@ -11382,6 +11403,22 @@ function AbsenSalesPage({ token, profile }) {
           <button onClick={() => setMode("pilih_toko")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#8A6A1A", fontSize: 12.5, fontWeight: 600, marginBottom: 14, padding: 0 }}>
             <MapPin size={14} /> Sedang kunjungan ke toko? Pilih toko di sini (opsional)
           </button>
+        )}
+        {!selectedClient && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Nama Toko</label>
+            <input
+              value={namaTokoManual} onChange={(e) => setNamaTokoManual(e.target.value)}
+              placeholder="Isi nama toko tempat Anda absen sekarang"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, marginBottom: 12 }}
+            />
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Alamat</label>
+            <input
+              value={alamatTokoManual} onChange={(e) => setAlamatTokoManual(e.target.value)}
+              placeholder="Isi alamat toko tempat Anda absen sekarang"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5 }}
+            />
+          </div>
         )}
         <Card style={{ textAlign: "center", padding: 30 }}>
           {gettingLocation ? (
@@ -11398,10 +11435,19 @@ function AbsenSalesPage({ token, profile }) {
             <>
               <Check size={30} color="#28685D" style={{ marginBottom: 10 }} />
               <p style={{ fontSize: 13, color: "#28685D", fontWeight: 600, marginBottom: 18 }}>Lokasi berhasil diambil.</p>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 28px", borderRadius: 12, border: "none", background: uploading ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>
-                <Camera size={17} /> {uploading ? "Menyimpan..." : "Ambil Foto & Absen"}
-                <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploading} onChange={handleFotoSelfie} />
-              </label>
+              {(() => {
+                const belumIsiNamaToko = !selectedClient && (!namaTokoManual.trim() || !alamatTokoManual.trim());
+                const disabledTombol = uploading || belumIsiNamaToko;
+                return (
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 28px", borderRadius: 12, border: "none", background: disabledTombol ? "#E4E1DA" : "#E8A426", color: disabledTombol ? "#9CA0A6" : "#24272B", fontWeight: 700, fontSize: 14, cursor: disabledTombol ? "not-allowed" : "pointer" }}>
+                    <Camera size={17} /> {uploading ? "Menyimpan..." : "Ambil Foto & Absen"}
+                    <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={disabledTombol} onChange={handleFotoSelfie} />
+                  </label>
+                );
+              })()}
+              {!selectedClient && (!namaTokoManual.trim() || !alamatTokoManual.trim()) && (
+                <p style={{ fontSize: 11.5, color: "#C0392B", margin: "10px 0 0" }}>Isi dulu nama toko dan alamat di atas.</p>
+              )}
             </>
           ) : null}
         </Card>
@@ -11493,6 +11539,9 @@ function RekapAbsenPage({ token, setPage }) {
   const [absenBulanIni, setAbsenBulanIni] = useState([]);
   const [hariLibur, setHariLibur] = useState([]);
   const [viewDate, setViewDate] = useState(new Date());
+  const [detailSales, setDetailSales] = useState(null); // { id, nama } - sales yang lagi dilihat detailnya
+  const [detailAbsenList, setDetailAbsenList] = useState([]);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
   const now = viewDate;
   const isBulanIni = now.getFullYear() === new Date().getFullYear() && now.getMonth() === new Date().getMonth();
@@ -11522,6 +11571,21 @@ function RekapAbsenPage({ token, setPage }) {
 
   function gantiBulan(delta) {
     setViewDate(new Date(now.getFullYear(), now.getMonth() + delta, 1));
+  }
+
+  async function bukaDetailAbsen(s) {
+    setDetailSales(s);
+    setLoadingDetail(true);
+    try {
+      const rows = await supabaseFetch(
+        token,
+        `absen_sales?select=tanggal,foto_url,nama_toko_manual,alamat_toko_manual,clients(nama,kode,alamat)&sales_id=eq.${s.id}&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=tanggal.desc`
+      );
+      setDetailAbsenList(rows);
+    } catch (e) {
+      setDetailAbsenList([]);
+    }
+    setLoadingDetail(false);
   }
 
   if (loading) return <LoadingState />;
@@ -11564,7 +11628,7 @@ function RekapAbsenPage({ token, setPage }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
-              {["Kode", "Nama Sales", "Jumlah Absen Bulan Ini", "Dari Hari Kerja"].map((h) => (
+              {["Kode", "Nama Sales", "Jumlah Absen Bulan Ini", "Dari Hari Kerja", ""].map((h) => (
                 <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
               ))}
             </tr>
@@ -11583,6 +11647,11 @@ function RekapAbsenPage({ token, setPage }) {
                     </span>
                   </td>
                   <td style={{ padding: "12px 14px", color: "#6B6F75" }}>dari {hariKerja} hari</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <button onClick={() => bukaDetailAbsen(s)} style={{ padding: "6px 12px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11.5, fontWeight: 700 }}>
+                      Detail
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -11590,6 +11659,52 @@ function RekapAbsenPage({ token, setPage }) {
         </table>
         {salesList.length === 0 && <EmptyState text="Belum ada akun sales." />}
       </Card>
+
+      {detailSales && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "flex-end", justifyContent: "center", zIndex: 200 }}>
+          <div style={{ background: "#fff", borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 480, maxHeight: "82vh", overflowY: "auto", padding: "20px 20px 28px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+              <div>
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700, textTransform: "uppercase" }}>Detail Absen</p>
+                <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: 0 }}>{detailSales.nama}</h2>
+              </div>
+              <button onClick={() => setDetailSales(null)} style={{ background: "#F7F5F1", border: "none", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <X size={16} color="#6B6F75" />
+              </button>
+            </div>
+
+            {loadingDetail ? (
+              <p style={{ fontSize: 12.5, color: "#9CA0A6", textAlign: "center", padding: "20px 0" }}>Memuat...</p>
+            ) : detailAbsenList.length === 0 ? (
+              <EmptyState text="Belum ada riwayat absen bulan ini." />
+            ) : (
+              detailAbsenList.map((a, i) => (
+                <div key={i} style={{ display: "flex", gap: 12, padding: "12px 0", borderBottom: i < detailAbsenList.length - 1 ? "1px solid #F0EDE6" : "none" }}>
+                  {a.foto_url && (
+                    <img src={a.foto_url} alt="Bukti absen" style={{ width: 64, height: 64, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
+                  )}
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 4px" }}>
+                      {new Date(a.tanggal).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+                    </p>
+                    {a.clients ? (
+                      <>
+                        <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{a.clients.nama} ({a.clients.kode})</p>
+                        <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{a.clients.alamat || "-"}</p>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{a.nama_toko_manual || "Absen Harian"}</p>
+                        {a.alamat_toko_manual && <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{a.alamat_toko_manual}</p>}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
