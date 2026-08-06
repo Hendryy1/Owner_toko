@@ -14511,7 +14511,7 @@ function PickingListPage({ token, role, userId }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,tujuan_kota,tujuan_telp,tujuan_alamat,tujuan_nama,is_dropship,nama_pengirim_dropship,metode_bayar,clients(nama,kode,kota,alamat,telp),order_items(id,qty,products(kode,nama,satuan,nomor_produk))&status=not.in.(menunggu_persetujuan,ditolak)&picking_selesai_at=is.null&order=created_at.asc"
+        "orders?select=id,no_nota,created_at,tujuan_kota,tujuan_telp,tujuan_alamat,tujuan_nama,is_dropship,nama_pengirim_dropship,metode_bayar,clients(nama,kode,kota,alamat,telp),order_items(id,qty,products(kode,nama,satuan,nomor_produk))&status=eq.menunggu_pengiriman&picking_selesai_at=is.null&order=created_at.asc"
       );
       setOrders(rows);
 
