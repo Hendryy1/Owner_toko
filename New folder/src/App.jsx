@@ -10026,7 +10026,7 @@ function BannerPromoPage({ token }) {
 // ============================================================
 // SALDO & VA TOKO (kelola Virtual Account Xendit + lihat saldo semua toko)
 // ============================================================
-const DAFTAR_BANK_VA = ["BCA", "MANDIRI", "BRI"];
+const DAFTAR_BANK_VA = ["BNI", "MANDIRI", "BRI"];
 
 function SaldoVaPage({ token }) {
   const [loading, setLoading] = useState(true);
