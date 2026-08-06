@@ -769,14 +769,28 @@ export default function OwnerDashboard() {
         const range = res.headers.get("content-range"); // format "0-0/N"
         return Number(range?.split("/")[1] || 0);
       };
-      const [orders, pickingList, siapDikirim, prosesKirim, reviewKirim] = await Promise.all([
-        hitung("orders?select=id&status=eq.menunggu_persetujuan&limit=1"),
-        hitung("orders?select=id&status=eq.menunggu_pengiriman&picking_selesai_at=is.null&limit=1"),
-        hitung("orders?select=id&status=eq.siap_dikirim&limit=1"),
-        hitung("orders?select=id&status=eq.proses_dikirim&bukti_barang_sampai_url=is.null&limit=1"),
-        hitung("orders?select=id&status=eq.proses_dikirim&dikonfirmasi_toko_at=not.is.null&limit=1"),
-      ]);
-      const counts = { orders, picking_list: pickingList, siap_dikirim_baru: siapDikirim, proses_kirim: prosesKirim, konfirmasi_bayar: reviewKirim };
+      // Cuma hitung kategori yang memang MUNCUL di sidebar role ini -
+      // supaya Kurir/Sales/dll tidak dengar notifikasi untuk menu yang
+      // bahkan tidak mereka punya aksesnya.
+      const role = profile.role;
+      const kategoriUntukRole = {
+        orders: ["owner", "admin_transaksi"],
+        konfirmasi_bayar: ["owner", "admin_keuangan", "admin_transaksi"],
+        picking_list: ["owner", "admin_transaksi", "staff_gudang"],
+        siap_dikirim_baru: ["owner", "admin_transaksi", "kurir", "staff_gudang"],
+        proses_kirim: ["owner", "kurir", "staff_gudang"],
+      };
+      const queryPerKategori = {
+        orders: "orders?select=id&status=eq.menunggu_persetujuan&limit=1",
+        picking_list: "orders?select=id&status=eq.menunggu_pengiriman&picking_selesai_at=is.null&limit=1",
+        siap_dikirim_baru: "orders?select=id&status=eq.siap_dikirim&limit=1",
+        proses_kirim: "orders?select=id&status=eq.proses_dikirim&bukti_barang_sampai_url=is.null&limit=1",
+        konfirmasi_bayar: "orders?select=id&status=eq.proses_dikirim&dikonfirmasi_toko_at=not.is.null&limit=1",
+      };
+      const kategoriRelevan = Object.keys(kategoriUntukRole).filter((key) => kategoriUntukRole[key].includes(role));
+      const hasil = await Promise.all(kategoriRelevan.map((key) => hitung(queryPerKategori[key])));
+      const counts = {};
+      kategoriRelevan.forEach((key, i) => { counts[key] = hasil[i]; });
       // Cek NAIK per kategori (bukan total gabungan) - order yang cuma
       // "pindah tahap" (misal dari Approve ke Picking List) bikin satu
       // kategori turun & satu naik, totalnya bisa tetap sama walau
