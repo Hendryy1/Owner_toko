@@ -493,6 +493,99 @@ function infoFileTerkompresi(compressed, fileAsli) {
   return { ext, contentType: compressed.type || fileAsli.type };
 }
 
+function loadImageFromFileGlobal(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+// Tempel watermark peta mini + pin lokasi + label + waktu + koordinat ke
+// sebuah foto - dipakai bareng oleh Absen, Laporan Kunjungan, dan Bukti
+// Barang Sampai supaya semuanya konsisten formatnya. Mengembalikan blob
+// hasil watermark siap upload.
+async function buatFotoDenganWatermark(file, coords, labelUtama) {
+  const img = await loadImageFromFileGlobal(file);
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+
+  const mapSize = Math.round(Math.min(img.width, img.height) * 0.32);
+  try {
+    const mapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${coords.lat},${coords.lng}&zoom=16&size=${mapSize}x${mapSize}&maptype=mapnik`;
+    const mapRes = await fetch(mapUrl, { mode: "cors" });
+    if (!mapRes.ok) throw new Error("gagal ambil peta");
+    const mapBlob = await mapRes.blob();
+    const mapImg = await loadImageFromFileGlobal(mapBlob);
+    const mx = img.width - mapSize - 14;
+    const my = 14;
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(mx - 4, my - 4, mapSize + 8, mapSize + 8);
+    ctx.drawImage(mapImg, mx, my, mapSize, mapSize);
+    ctx.beginPath();
+    ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
+    ctx.fillStyle = "#E4453A";
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  } catch (mapErr) {
+    console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
+  }
+
+  const barHeight = Math.max(90, img.height * 0.12);
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+
+  const pinSize = barHeight * 0.55;
+  const pinCenterX = 14 + pinSize / 2;
+  const pinCenterY = img.height - barHeight / 2;
+  ctx.save();
+  ctx.translate(pinCenterX, pinCenterY - pinSize * 0.15);
+  ctx.beginPath();
+  ctx.arc(0, 0, pinSize / 2, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.lineTo(0, pinSize * 0.75);
+  ctx.closePath();
+  ctx.fillStyle = "#E4453A";
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, -pinSize * 0.05, pinSize * 0.22, 0, Math.PI * 2);
+  ctx.fillStyle = "#fff";
+  ctx.fill();
+  ctx.restore();
+
+  const textX = 14 + pinSize + 14;
+  ctx.fillStyle = "#fff";
+  const fontSize = Math.max(14, Math.round(img.width / 40));
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
+  ctx.fillText(labelUtama, textX, img.height - barHeight + fontSize + 10);
+  ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
+  ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
+  ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
+
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
+  const extBlob = blob?.type === "image/webp" ? "webp" : "png";
+  return { blob, extBlob };
+}
+
+function ambilLokasiSekarang() {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) { reject(new Error("HP/browser ini tidak mendukung deteksi lokasi.")); return; }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => reject(new Error("Gagal ambil lokasi: " + err.message + " - pastikan izin lokasi diizinkan.")),
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  });
+}
+
 // ============================================================
 // APP UTAMA
 // ============================================================
@@ -4460,7 +4553,7 @@ function KonfirmasiPembayaranPage({ token }) {
       // 3. COD/Transfer-Pekanbaru yang statusnya proses_dikirim - SEMUA,
       //    walau dokumennya BELUM lengkap - supaya Owner bisa lihat progres
       //    upload kapan saja, meski belum bisa selesaikan sampai lengkap.
-      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,dikonfirmasi_toko_at,bukti_transfer_url,bukti_pengiriman_url,bukti_serah_terima_kurir_url,bukti_barang_sampai_url,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status_bayar.eq.lunas,status.eq.proses_dikirim)&order=created_at.desc&limit=200");
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,status,status_bayar,metode_bayar,tujuan_kota,dikonfirmasi_toko_at,bukti_transfer_url,bukti_pengiriman_url,bukti_serah_terima_kurir_url,bukti_barang_sampai_url,bukti_barang_sampai_perlu_review,bukti_barang_sampai_jarak_meter,bukti_nota_ttd_url,bukti_nota_cod_url,bukti_cash_cod_url,clients(nama,kode,jenis_pembayaran,kota),order_items(subtotal_setelah_diskon)&or=(status_bayar.eq.lunas,status.eq.proses_dikirim)&order=created_at.desc&limit=200");
       setOrders(rows);
 
       // Order retur yang SUDAH dikonfirmasi (ada bukti+alasan) di Proses
@@ -4727,6 +4820,15 @@ function KonfirmasiPembayaranPage({ token }) {
                   </div>
                 ))}
               </div>
+
+              {o.bukti_barang_sampai_perlu_review && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+                  <AlertCircle size={15} color="#C0392B" style={{ flexShrink: 0 }} />
+                  <p style={{ fontSize: 12, color: "#C0392B", margin: 0, fontWeight: 600 }}>
+                    Cek GPS Bukti Barang Sampai - titik ini {Math.round(o.bukti_barang_sampai_jarak_meter)}m dari pengiriman sebelumnya ke toko ini.
+                  </p>
+                </div>
+              )}
 
               {!docsLengkap && (
                 <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 16 }}>
@@ -5623,8 +5725,23 @@ function ProsesPengirimanPage({ token, role }) {
     setUploadingId(order.id);
     setUploadingField(fieldKey);
     try {
-      const compressed = await compressImage(file);
-      const { ext, contentType } = infoFileTerkompresi(compressed, file);
+      const isBarangSampai = kolom === "bukti_barang_sampai_url";
+      let fileUntukUpload = file;
+      let coords = null;
+
+      if (isBarangSampai) {
+        // Ambil GPS + tempel watermark peta+koordinat, sama seperti Absen/
+        // Laporan Kunjungan - supaya ada bukti lokasi asli saat barang
+        // benar-benar sampai, dan bisa dideteksi kalau lokasinya janggal.
+        coords = await ambilLokasiSekarang();
+        const { blob } = await buatFotoDenganWatermark(file, coords, `Barang Sampai - ${order.no_nota}`);
+        fileUntukUpload = blob;
+      }
+
+      const compressed = isBarangSampai ? fileUntukUpload : await compressImage(file);
+      const { ext, contentType } = isBarangSampai
+        ? { ext: "webp", contentType: "image/webp" }
+        : infoFileTerkompresi(compressed, file);
       const filePath = `${kolom}-${order.id}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
         method: "POST",
@@ -5633,9 +5750,12 @@ function ProsesPengirimanPage({ token, role }) {
       });
       if (!res.ok) throw new Error(await res.text());
       const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bukti-pengiriman/${filePath}`;
-      await supabaseFetch(token, `orders?id=eq.${order.id}`, { method: "PATCH", body: JSON.stringify({ [kolom]: publicUrl }) });
-      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, [kolom]: publicUrl } : o)));
-      setUploadModalOrder((prev) => (prev && prev.id === order.id ? { ...prev, [kolom]: publicUrl } : prev));
+      const bodyPatch = isBarangSampai
+        ? { [kolom]: publicUrl, bukti_barang_sampai_lat: coords.lat, bukti_barang_sampai_lng: coords.lng }
+        : { [kolom]: publicUrl };
+      await supabaseFetch(token, `orders?id=eq.${order.id}`, { method: "PATCH", body: JSON.stringify(bodyPatch) });
+      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, ...bodyPatch } : o)));
+      setUploadModalOrder((prev) => (prev && prev.id === order.id ? { ...prev, ...bodyPatch } : prev));
     } catch (e) {
       alert("Gagal upload: " + e.message);
     }
