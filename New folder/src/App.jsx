@@ -11181,7 +11181,7 @@ function AbsenSalesPage({ token, profile }) {
       const [absenHariIni, liburRows, riwayatRows, clients, kunjunganHariIni] = await Promise.all([
         supabaseFetch(token, `absen_sales?select=id&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `hari_libur?select=keterangan&tanggal=eq.${todayStr}`),
-        supabaseFetch(token, `absen_sales?select=tanggal,waktu_absen,foto_url,clients(nama)&sales_id=eq.${profile.sales_id}&order=tanggal.desc&limit=14`),
+        supabaseFetch(token, `absen_sales?select=tanggal,waktu_absen,foto_url,nama_toko_manual,clients(nama)&sales_id=eq.${profile.sales_id}&order=tanggal.desc&limit=14`),
         supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&status=eq.aktif&order=nama.asc`),
         supabaseFetch(token, `kunjungan_sales?select=client_id&sales_id=eq.${profile.sales_id}&created_at=gte.${todayStr}T00:00:00&created_at=lte.${todayStr}T23:59:59`),
       ]);
@@ -11308,7 +11308,7 @@ function AbsenSalesPage({ token, profile }) {
       const fontSize = Math.max(14, Math.round(img.width / 40));
       ctx.font = `bold ${fontSize}px sans-serif`;
       const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-      ctx.fillText(selectedClient ? `Absen - ${selectedClient.nama} (${selectedClient.kode})` : "Absen Harian", textX, img.height - barHeight + fontSize + 10);
+      ctx.fillText(selectedClient ? `Absen - ${selectedClient.nama} (${selectedClient.kode})` : (namaTokoManual.trim() ? `Absen - ${namaTokoManual.trim()}` : "Absen Harian"), textX, img.height - barHeight + fontSize + 10);
       ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
       ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
       ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
@@ -11538,7 +11538,7 @@ function AbsenSalesPage({ token, profile }) {
                 <p style={{ fontSize: 13, color: "#24272B", fontWeight: 600, margin: 0 }}>
                   {new Date(r.tanggal + "T00:00:00").toLocaleDateString("id-ID", { weekday: "short", day: "numeric", month: "short", year: "numeric" })}
                 </p>
-                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{r.clients?.nama || "-"}</p>
+                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{r.clients?.nama || r.nama_toko_manual || "Absen Harian"}</p>
               </div>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                 <p style={{ fontSize: 12, color: "#9CA0A6", margin: 0 }}>
