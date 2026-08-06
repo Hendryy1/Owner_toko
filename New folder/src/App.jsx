@@ -3,6 +3,7 @@ import ReactDOMServer from "react-dom/server";
 import { createRoot } from "react-dom/client";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
+import { createClient } from "@supabase/supabase-js";
 import {
   LayoutDashboard, ClipboardCheck, Store, TrendingUp, Wallet, Package,
   Users, LogOut, Check, X, ChevronRight, ChevronLeft, AlertCircle, Loader2, RefreshCw, Printer, FileEdit, History, Download, Boxes, PackagePlus, Receipt, Eye, Truck, UploadCloud, Table2, Gift, Navigation, Clock, MessageCircle, Menu, User, MapPin, Camera, Image as ImageIcon, Barcode, ScanLine, BarChart3, Star, CalendarDays, CreditCard, Phone, Lock
@@ -393,6 +394,11 @@ function bukaTabPreviewBarcode(orders) {
 const SUPABASE_URL = "https://bzlktpveupyxtcuhrmgg.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ6bGt0cHZldXB5eHRjdWhybWdnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQyMTIwNjQsImV4cCI6MjA5OTc4ODA2NH0.DKvaQ-_Gdi5nj5DFkhu-8IttPCztYuKCoMoXxcIUdEI";
 
+// Client Supabase JS (dipakai KHUSUS untuk Realtime - fetch data biasa
+// tetap pakai supabaseFetch/fetch langsung seperti sebelumnya, tidak ada
+// yang berubah di situ).
+const supabaseRealtimeClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
 async function supabaseAuth(email, password) {
   const res = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
     method: "POST",
@@ -609,6 +615,8 @@ export default function OwnerDashboard() {
   const [salesTerverifikasi, setSalesTerverifikasi] = useState(true); // default true supaya role lain tidak kena batasan
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+  const [notifCounts, setNotifCounts] = useState({});
+  const prevNotifTotalRef = useRef(null);
 
   useEffect(() => {
     function handleResize() {
@@ -728,6 +736,73 @@ export default function OwnerDashboard() {
     return () => clearInterval(interval);
   }, [profile]);
 
+  // Polling notifikasi pesanan baru di semua tahap proses - kalau ada
+  // kategori yang jumlahnya BERTAMBAH sejak pengecekan terakhir, mainkan
+  // suara notifikasi. Badge merah di sidebar selalu tampilkan jumlah
+  // TERKINI, terlepas dari suara (suara cuma nanda ada yang BARU).
+  function mainkanSuaraNotif() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.15].forEach((delay) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = "sine";
+        osc.frequency.value = 880;
+        gain.gain.setValueAtTime(0.001, ctx.currentTime + delay);
+        gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + delay + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + 0.25);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + delay);
+        osc.stop(ctx.currentTime + delay + 0.3);
+      });
+    } catch (e) { /* browser tidak izinkan audio otomatis - abaikan */ }
+  }
+
+  async function cekNotifikasiPesanan() {
+    if (!token || !profile?.role) return;
+    try {
+      const hitung = async (query) => {
+        const res = await fetch(`${SUPABASE_URL}/rest/v1/${query}`, {
+          headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, Prefer: "count=exact" },
+        });
+        const range = res.headers.get("content-range"); // format "0-0/N"
+        return Number(range?.split("/")[1] || 0);
+      };
+      const [orders, pickingList, siapDikirim, prosesKirim, reviewKirim] = await Promise.all([
+        hitung("orders?select=id&status=eq.menunggu_persetujuan&limit=1"),
+        hitung("orders?select=id&status=eq.menunggu_pengiriman&picking_selesai_at=is.null&limit=1"),
+        hitung("orders?select=id&status=eq.siap_dikirim&limit=1"),
+        hitung("orders?select=id&status=eq.proses_dikirim&bukti_barang_sampai_url=is.null&limit=1"),
+        hitung("orders?select=id&status=eq.proses_dikirim&dikonfirmasi_toko_at=not.is.null&limit=1"),
+      ]);
+      const counts = { orders, picking_list: pickingList, siap_dikirim_baru: siapDikirim, proses_kirim: prosesKirim, konfirmasi_bayar: reviewKirim };
+      const total = orders + pickingList + siapDikirim + prosesKirim + reviewKirim;
+      if (prevNotifTotalRef.current !== null && total > prevNotifTotalRef.current) {
+        mainkanSuaraNotif();
+      }
+      prevNotifTotalRef.current = total;
+      setNotifCounts(counts);
+    } catch (e) { console.log("Gagal cek notifikasi:", e.message); }
+  }
+
+  useEffect(() => {
+    if (!profile || !token) return;
+    cekNotifikasiPesanan(); // hitung sekali di awal
+
+    // Realtime - database langsung "kabari" begitu ada baris orders yang
+    // berubah (insert/update/delete), jadi notifikasi kerasa INSTAN tanpa
+    // perlu terus-menerus nanya ke server tiap detik (lebih ringan).
+    const channel = supabaseRealtimeClient
+      .channel("notif-orders")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
+        cekNotifikasiPesanan();
+      })
+      .subscribe();
+
+    return () => { supabaseRealtimeClient.removeChannel(channel); };
+  }, [profile, token]);
+
   async function handleLogin() {
     setLoginError("");
     setLoggingIn(true);
@@ -783,7 +858,7 @@ export default function OwnerDashboard() {
         .disp { font-family: 'Barlow Condensed', sans-serif; }
         button { font-family: inherit; cursor: pointer; }
       `}</style>
-      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} isMobile={isMobile} salesTerverifikasi={salesTerverifikasi} urutanMenu={urutanMenu} setUrutanMenu={setUrutanMenu} token={token} />
+      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} isMobile={isMobile} salesTerverifikasi={salesTerverifikasi} urutanMenu={urutanMenu} setUrutanMenu={setUrutanMenu} token={token} notifCounts={notifCounts} />
       <div style={{ flex: 1, padding: isMobile ? "16px 16px 28px" : "28px 36px", overflowY: "auto", overflowX: "hidden", minWidth: 0 }}>
         {isMobile && (
           <button
@@ -913,7 +988,7 @@ function LoginScreen({ form, setForm, onLogin, error, loading }) {
 // ============================================================
 // SIDEBAR
 // ============================================================
-function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, isMobile, salesTerverifikasi, urutanMenu, setUrutanMenu, token }) {
+function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, isMobile, salesTerverifikasi, urutanMenu, setUrutanMenu, token, notifCounts }) {
   const [modeAturUrutan, setModeAturUrutan] = useState(false);
   const allItems = [
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_keuangan"] },
@@ -1144,12 +1219,18 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
         itemsUrut.map((it) => {
           const Icon = it.icon;
           const active = page === it.key;
+          const jumlahNotif = notifCounts?.[it.key] || 0;
           return (
             <button
               key={it.key} onClick={() => { setPage(it.key); if (isMobile) setCollapsed(true); }}
-              style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 10, border: "none", background: active ? "#E8A426" : "none", color: active ? "#24272B" : "#9CA0A6", fontSize: 13.5, fontWeight: 600, marginBottom: 4, textAlign: "left" }}
+              style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 10, border: "none", background: active ? "#E8A426" : "none", color: active ? "#24272B" : "#9CA0A6", fontSize: 13.5, fontWeight: 600, marginBottom: 4, textAlign: "left", position: "relative" }}
             >
               <Icon size={17} /> {it.label}
+              {jumlahNotif > 0 && (
+                <span style={{ marginLeft: "auto", background: "#C0392B", color: "#fff", fontSize: 10.5, fontWeight: 700, borderRadius: 999, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", flexShrink: 0 }}>
+                  {jumlahNotif > 99 ? "99+" : jumlahNotif}
+                </span>
+              )}
             </button>
           );
         })
