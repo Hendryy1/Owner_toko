@@ -661,10 +661,10 @@ export default function OwnerDashboard() {
       supabaseFetch(accessToken, "log_aktivitas", {
         method: "POST",
         body: JSON.stringify({
-          user_id: userId, nama_user: profRows[0].nama, role_user: profRows[0].role,
-          aksi: "login", deskripsi: `${profRows[0].nama} login ke Dashboard`,
+          user_id: userId, nama_user: profRows[0]?.nama || "-", role_user: profRows[0]?.role || "-",
+          aksi: "login", deskripsi: `${profRows[0]?.nama || "-"} login ke Dashboard`,
         }),
-      }).catch(() => {});
+      }).catch((e) => console.error("[catat log login] Gagal:", e.message));
     }
     // Kurir cuma bisa akses Proses Pengiriman - langsung arahkan ke situ,
     // karena halaman default (Ringkasan) tidak bisa diakses kurir.
