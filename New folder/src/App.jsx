@@ -12313,6 +12313,7 @@ function LaporanKunjunganOwnerPage({ token }) {
   const [salesList, setSalesList] = useState([]);
   const [filterSales, setFilterSales] = useState("");
   const [filterTanggal, setFilterTanggal] = useState("");
+  const [hanyaPerluReview, setHanyaPerluReview] = useState(false);
   const [lightboxUrl, setLightboxUrl] = useState(null);
 
   async function load() {
@@ -12339,6 +12340,7 @@ function LaporanKunjunganOwnerPage({ token }) {
       const tglKunjungan = new Date(k.created_at).toISOString().slice(0, 10);
       if (tglKunjungan !== filterTanggal) return false;
     }
+    if (hanyaPerluReview && !k.perlu_review_gps) return false;
     return true;
   });
 
@@ -12354,8 +12356,14 @@ function LaporanKunjunganOwnerPage({ token }) {
           ))}
         </select>
         <input type="date" value={filterTanggal} onChange={(e) => setFilterTanggal(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }} />
-        {(filterSales || filterTanggal) && (
-          <button onClick={() => { setFilterSales(""); setFilterTanggal(""); }} style={{ padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12.5, fontWeight: 600 }}>
+        <button
+          onClick={() => setHanyaPerluReview((v) => !v)}
+          style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: hanyaPerluReview ? "1.5px solid #C0392B" : "1.5px solid #E4E1DA", background: hanyaPerluReview ? "#FBEAEA" : "#fff", color: hanyaPerluReview ? "#C0392B" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
+        >
+          <AlertCircle size={14} /> Perlu Review GPS
+        </button>
+        {(filterSales || filterTanggal || hanyaPerluReview) && (
+          <button onClick={() => { setFilterSales(""); setFilterTanggal(""); setHanyaPerluReview(false); }} style={{ padding: "9px 14px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12.5, fontWeight: 600 }}>
             Reset Filter
           </button>
         )}
@@ -12376,6 +12384,14 @@ function LaporanKunjunganOwnerPage({ token }) {
               )}
               <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{k.clients?.nama}</p>
               <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 8px" }}>{k.clients?.kode}</p>
+              {k.perlu_review_gps && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#FBEAEA", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
+                  <AlertCircle size={14} color="#C0392B" style={{ flexShrink: 0 }} />
+                  <p style={{ fontSize: 11.5, color: "#C0392B", margin: 0, fontWeight: 600 }}>
+                    Cek GPS - titik ini {Math.round(k.jarak_dari_sebelumnya_meter)}m dari kunjungan sebelumnya ke toko ini
+                  </p>
+                </div>
+              )}
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 8 }}>
                 <User size={13} color="#8A6A1A" />
                 <p style={{ fontSize: 12, color: "#8A6A1A", fontWeight: 600, margin: 0 }}>{k.sales?.nama} ({k.sales?.kode})</p>
