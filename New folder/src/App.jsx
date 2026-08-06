@@ -13998,6 +13998,9 @@ function PickingListPage({ token, role, userId }) {
   const [selectedOrder, setSelectedOrder] = useState(null); // order yang lagi dipicking
   const [inputJumlah, setInputJumlah] = useState({}); // { order_item_id: string }
   const [saving, setSaving] = useState(false);
+  const [mencetakBarcode, setMencetakBarcode] = useState(false);
+  const [errorCetakBarcode, setErrorCetakBarcode] = useState("");
+  const [ukuranLabelBarcode, setUkuranLabelBarcode] = useState({ lebar: 100, tinggi: 150, modeFit: false });
   const [confirmingBoxOrder, setConfirmingBoxOrder] = useState(null); // order yang picking-nya baru selesai, nunggu konfirmasi jumlah box
   const [jumlahBoxInput, setJumlahBoxInput] = useState("");
   const [savingBox, setSavingBox] = useState(false);
@@ -14220,9 +14223,21 @@ function PickingListPage({ token, role, userId }) {
     }
   }
 
-  function cetakBarcodeDariPacking() {
+  async function cetakBarcodeDariPacking() {
     if (!packingSelesaiOrder) return;
-    bukaTabPreviewBarcode([packingSelesaiOrder]);
+    setMencetakBarcode(true);
+    setErrorCetakBarcode("");
+    try {
+      const lebarIn = ukuranLabelBarcode.lebar / 25.4;
+      const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
+      const entries = hitungEntriesLabelBarcode([packingSelesaiOrder]);
+      for (const entry of entries) {
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
+      }
+    } catch (e) {
+      setErrorCetakBarcode("Gagal cetak otomatis: " + e.message + " - pastikan print server jalan. Coba tombol cetak manual sebagai cadangan, atau ulangi.");
+    }
+    setMencetakBarcode(false);
   }
 
   // Upload bukti pengemasan = foto pesanan di area penjemputan. Begitu
@@ -14363,10 +14378,14 @@ function PickingListPage({ token, role, userId }) {
           </div>
           <button
             onClick={cetakBarcodeDariPacking}
+            disabled={mencetakBarcode}
             style={{ width: "100%", padding: 12, borderRadius: 10, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
           >
-            <Barcode size={16} /> Cetak Barcode ({packingSelesaiOrder.jumlah_box_konfirmasi} box)
+            <Barcode size={16} /> {mencetakBarcode ? "Mencetak..." : `Cetak Barcode (${packingSelesaiOrder.jumlah_box_konfirmasi} box)`}
           </button>
+          {errorCetakBarcode && (
+            <p style={{ fontSize: 11.5, color: "#C0392B", margin: "8px 0 0", lineHeight: 1.5 }}>{errorCetakBarcode}</p>
+          )}
         </Card>
 
         <Card style={{ maxWidth: 460, marginBottom: 16 }}>
