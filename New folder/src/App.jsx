@@ -11302,7 +11302,7 @@ function AbsenSalesPage({ token, profile }) {
       const fontSize = Math.max(14, Math.round(img.width / 40));
       ctx.font = `bold ${fontSize}px sans-serif`;
       const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-      ctx.fillText(`Absen - ${selectedClient.nama} (${selectedClient.kode})`, textX, img.height - barHeight + fontSize + 10);
+      ctx.fillText(selectedClient ? `Absen - ${selectedClient.nama} (${selectedClient.kode})` : "Absen Harian", textX, img.height - barHeight + fontSize + 10);
       ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
       ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
       ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
@@ -11321,7 +11321,7 @@ function AbsenSalesPage({ token, profile }) {
       await supabaseFetch(token, "absen_sales", {
         method: "POST",
         body: JSON.stringify({
-          sales_id: profile.sales_id, tanggal: todayStr, client_id: selectedClient.id,
+          sales_id: profile.sales_id, tanggal: todayStr, client_id: selectedClient?.id || null,
           foto_url: url, latitude: coords.lat, longitude: coords.lng,
         }),
       });
@@ -11371,13 +11371,13 @@ function AbsenSalesPage({ token, profile }) {
   }
 
   // ---------- MODE CHECKIN (ambil lokasi + foto) ----------
-  if (mode === "checkin" && selectedClient) {
+  if (mode === "checkin") {
     return (
       <div>
         <button onClick={() => { setMode(null); setSelectedClient(null); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
           <ChevronLeft size={16} /> Batal
         </button>
-        <PageHeader title="Absen" subtitle={`Di depan ${selectedClient.nama}`} />
+        <PageHeader title="Absen" subtitle={selectedClient ? `Di depan ${selectedClient.nama}` : "Absen harian"} />
         <Card style={{ textAlign: "center", padding: 30 }}>
           {gettingLocation ? (
             <p style={{ fontSize: 13, color: "#6B6F75" }}>Mengambil lokasi GPS Anda...</p>
@@ -11436,9 +11436,9 @@ function AbsenSalesPage({ token, profile }) {
               <Clock size={26} color="#8A6A1A" />
             </div>
             <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>Belum Absen Hari Ini</p>
-            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 16px" }}>Perlu foto di depan salah satu toko Anda + lokasi GPS.</p>
+            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 16px" }}>Perlu foto saat kunjungan ke toko.</p>
             <button
-              onClick={() => setMode("pilih_toko")}
+              onClick={() => (handledClients.length === 0 ? mulaiAbsen(null) : setMode("pilih_toko"))}
               style={{ padding: "13px 32px", borderRadius: 12, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14.5 }}
             >
               Absen Sekarang
