@@ -2844,27 +2844,13 @@ function BarangTerlarisPage({ token }) {
         : new Date(filterTahun, filterBulan, 1);
       const akhirStr = akhir.toISOString().slice(0, 10);
 
-      // Ambil semua order_items dalam rentang tanggal terpilih (kecuali
-      // order yang dibatalkan) - lalu jumlahkan per produk di JS, karena
-      // view v_barang_terlaris tidak mendukung filter tanggal.
-      const items = await supabaseFetch(
-        token,
-        `order_items?select=qty,subtotal_setelah_diskon,products(id,nama,kategori),orders!inner(created_at,status)&orders.created_at=gte.${awalTahun}&orders.created_at=lt.${akhirStr}&orders.status=neq.ditolak`
-      );
-
-      const map = {};
-      items.forEach((it) => {
-        const pid = it.products?.id;
-        if (!pid) return;
-        if (!map[pid]) map[pid] = { product_id: pid, nama: it.products.nama, kategori: it.products.kategori, qty_terjual: 0, total_omzet: 0 };
-        map[pid].qty_terjual += Number(it.qty || 0);
-        map[pid].total_omzet += Number(it.subtotal_setelah_diskon || 0);
+      // Hitung langsung di database (RPC) - lebih akurat & cepat daripada
+      // fetch semua baris mentah lalu jumlahkan manual di JavaScript.
+      const hasil = await supabaseFetch(token, "rpc/barang_terlaris_periode", {
+        method: "POST",
+        body: JSON.stringify({ tgl_mulai: awalTahun, tgl_akhir: akhirStr }),
       });
-      const hasil = Object.values(map)
-        .sort((a, b) => b.qty_terjual - a.qty_terjual)
-        .slice(0, 20)
-        .map((r, i) => ({ ...r, peringkat: i + 1 }));
-      setRows(hasil);
+      setRows(hasil.map((r, i) => ({ ...r, peringkat: i + 1 })));
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
