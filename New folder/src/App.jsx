@@ -840,6 +840,7 @@ export default function OwnerDashboard() {
         {page === "produk" && <ProductPage token={token} />}
         {page === "stock" && <StockItemPage token={token} role={profile?.role} />}
         {page === "inbound" && <InboundPage token={token} />}
+        {page === "penyesuaian_stok" && <PenyesuaianStokPage token={token} />}
         {page === "cashback" && <CashbackPage token={token} />}
         {page === "ongkir" && <FreeOngkirPage token={token} />}
         {page === "rekap_toko" && <RekapTokoPage token={token} />}
@@ -958,6 +959,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "produk", label: "Product", icon: Package, roles: ["owner"] },
     { key: "stock", label: "Stock Item", icon: Boxes, roles: ["owner", "admin_transaksi"] },
     { key: "inbound", label: "Inbound", icon: PackagePlus, roles: ["owner"] },
+    { key: "penyesuaian_stok", label: "Penyesuaian Stok", icon: Boxes, roles: ["owner"] },
     { key: "cashback", label: "Cashback", icon: Gift, roles: ["owner"] },
     { key: "ongkir", label: "Free Ongkir", icon: Navigation, roles: ["owner"] },
     { key: "rekap_toko", label: "Rekap Toko", icon: Store, roles: ["owner", "admin_keuangan"] },
@@ -4098,6 +4100,168 @@ function StockItemPage({ token, role }) {
 // ============================================================
 // INBOUND (khusus Owner) - catat stock barang masuk
 // ============================================================
+// ============================================================
+// PENYESUAIAN STOK (STOCK OPNAME) - Owner input stok fisik SEBENARNYA di
+// gudang per produk, sistem otomatis hitung selisih dari stok sistem dan
+// catat sebagai riwayat penyesuaian (bisa nambah atau kurangi).
+// ============================================================
+function PenyesuaianStokPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [products, setProducts] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [error, setError] = useState("");
+  const [productId, setProductId] = useState("");
+  const [stokFisik, setStokFisik] = useState("");
+  const [keterangan, setKeterangan] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const [productRows, stockRows, historyRows] = await Promise.all([
+        supabaseFetch(token, "products?select=id,kode,nama,satuan&aktif=eq.true&order=kode.asc"),
+        supabaseFetch(token, "v_stock_akhir?select=product_id,stock_akhir"),
+        supabaseFetch(token, "stock_movements?select=*,products(kode,nama,satuan)&jenis=eq.penyesuaian&order=created_at.desc&limit=30"),
+      ]);
+      const stockMap = {};
+      stockRows.forEach((s) => { stockMap[s.product_id] = s.stock_akhir; });
+      setProducts(productRows.map((p) => ({ ...p, stock_sistem: stockMap[p.id] ?? 0 })));
+      setHistory(historyRows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  const produkTerpilih = products.find((p) => p.id === productId);
+  const selisih = produkTerpilih && stokFisik !== "" ? Number(stokFisik) - produkTerpilih.stock_sistem : null;
+
+  async function submit() {
+    if (!productId || stokFisik === "") {
+      alert("Pilih barang dan isi jumlah stok fisik dulu.");
+      return;
+    }
+    if (selisih === 0) {
+      alert("Stok fisik sama dengan stok sistem - tidak ada yang perlu disesuaikan.");
+      return;
+    }
+    setSaving(true);
+    setSaveMsg("");
+    try {
+      const [inserted] = await supabaseFetch(token, "stock_movements", {
+        method: "POST",
+        body: JSON.stringify({
+          product_id: productId,
+          tanggal: new Date().toISOString().slice(0, 10),
+          jenis: "penyesuaian",
+          qty: selisih,
+          keterangan: keterangan || `Stock opname - stok fisik ${stokFisik}, sistem ${produkTerpilih.stock_sistem}, selisih ${selisih > 0 ? "+" : ""}${selisih}`,
+        }),
+      });
+      setHistory((prev) => [{ ...inserted, products: produkTerpilih }, ...prev]);
+      setProducts((prev) => prev.map((p) => (p.id === productId ? { ...p, stock_sistem: Number(stokFisik) } : p)));
+      setProductId("");
+      setStokFisik("");
+      setKeterangan("");
+      setSaveMsg("Penyesuaian stok berhasil dicatat.");
+      setTimeout(() => setSaveMsg(""), 3000);
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
+  const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
+
+  return (
+    <div>
+      <PageHeader title="Penyesuaian Stok" subtitle="Cocokkan stok sistem dengan hasil hitung fisik di gudang (stock opname)" />
+
+      <Card style={{ maxWidth: 520, marginBottom: 24 }}>
+        <label style={labelStyle}>Pilih Barang</label>
+        <select value={productId} onChange={(e) => { setProductId(e.target.value); setStokFisik(""); }} style={{ ...fieldStyle, marginBottom: 14 }}>
+          <option value="">-- Pilih Barang --</option>
+          {products.map((p) => (
+            <option key={p.id} value={p.id}>{p.kode} - {p.nama}</option>
+          ))}
+        </select>
+
+        {produkTerpilih && (
+          <div style={{ background: "#F7F5F1", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+            <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>
+              Stok sistem saat ini: <strong style={{ color: "#24272B" }}>{produkTerpilih.stock_sistem} {produkTerpilih.satuan}</strong>
+            </p>
+          </div>
+        )}
+
+        <label style={labelStyle}>Stok Fisik Sebenarnya (Hasil Hitung di Gudang)</label>
+        <input
+          type="number" value={stokFisik} onChange={(e) => setStokFisik(e.target.value)}
+          placeholder="Isi jumlah stok fisik yang sebenarnya"
+          style={{ ...fieldStyle, marginBottom: 14 }}
+          disabled={!productId}
+        />
+
+        {selisih !== null && (
+          <div style={{ background: selisih === 0 ? "#D8E9E6" : selisih > 0 ? "#D8E9E6" : "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+            <p style={{ fontSize: 12.5, color: selisih === 0 ? "#28685D" : selisih > 0 ? "#28685D" : "#C0392B", margin: 0, fontWeight: 700 }}>
+              Selisih: {selisih > 0 ? "+" : ""}{selisih} {produkTerpilih?.satuan}
+              {selisih !== 0 && (selisih > 0 ? " (stok akan bertambah)" : " (stok akan berkurang)")}
+            </p>
+          </div>
+        )}
+
+        <label style={labelStyle}>Keterangan (Opsional)</label>
+        <textarea
+          value={keterangan} onChange={(e) => setKeterangan(e.target.value)}
+          placeholder="Misal: hasil stock opname bulanan, ada barang rusak, dll"
+          rows={2}
+          style={{ ...fieldStyle, marginBottom: 16, resize: "vertical", fontFamily: "inherit" }}
+        />
+
+        <button
+          onClick={submit}
+          disabled={saving || !productId || stokFisik === ""}
+          style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+        >
+          {saving ? "Menyimpan..." : "Simpan Penyesuaian"}
+        </button>
+        {saveMsg && <p style={{ fontSize: 12.5, color: "#28685D", margin: "10px 0 0", textAlign: "center" }}>{saveMsg}</p>}
+      </Card>
+
+      <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Riwayat Penyesuaian</h2>
+      {history.length === 0 ? (
+        <EmptyState text="Belum ada riwayat penyesuaian stok." />
+      ) : (
+        history.map((h) => (
+          <Card key={h.id} style={{ marginBottom: 8, padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{h.products?.nama}</p>
+                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 6px" }}>{h.products?.kode}</p>
+                {h.keterangan && <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{h.keterangan}</p>}
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: Number(h.qty) >= 0 ? "#28685D" : "#C0392B" }}>
+                  {Number(h.qty) >= 0 ? "+" : ""}{h.qty} {h.products?.satuan}
+                </span>
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: "4px 0 0" }}>
+                  {new Date(h.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+                </p>
+              </div>
+            </div>
+          </Card>
+        ))
+      )}
+    </div>
+  );
+}
+
 function InboundPage({ token }) {
   const today = new Date().toISOString().slice(0, 10);
   const [loading, setLoading] = useState(true);
