@@ -1276,7 +1276,7 @@ function QRCodeLabel({ value, size = 160 }) {
 // ============================================================
 // KONTEN LABEL BARCODE - dipakai untuk cetak satuan maupun massal
 // ============================================================
-function BarcodeLabelContent({ order: o, noBox, totalBox }) {
+function BarcodeLabelContent({ order: o, noBox, totalBox, item }) {
   const jumlahBarang = (o.order_items || []).reduce((sum, it) => sum + Number(it.qty || 0), 0);
   const teleponPenerima = o.tujuan_telp || o.clients?.telp;
   const alamatPenerima = o.tujuan_alamat || o.clients?.alamat;
@@ -1314,8 +1314,10 @@ function BarcodeLabelContent({ order: o, noBox, totalBox }) {
       ) : null}
       <div style={{ display: "flex", justifyContent: "center", alignItems: "flex-end", gap: 20, marginBottom: 16 }}>
         {noBox ? (
-          // Label KEMASAN (per box) - QR saja, berlaku sama untuk Pekanbaru maupun luar kota
-          <QRCodeLabel value={`${o.no_nota}-${String(noBox).padStart(2, "0")}`} />
+          // Label KEMASAN (per box) - QR saja, sertakan nomor produk di
+          // belakangnya (kalau ada) supaya "Checker Produk" bisa mengenali
+          // kode ini sebagai barcode-nya-sendiri (format 3 bagian).
+          <QRCodeLabel value={item?.products?.nomor_produk ? `${o.no_nota}-${String(noBox).padStart(2, "0")}-${item.products.nomor_produk}` : `${o.no_nota}-${String(noBox).padStart(2, "0")}`} />
         ) : (
           // Label INTI (cuma muncul untuk luar kota) - Barcode128 + QR bersamaan
           <>
@@ -5351,7 +5353,7 @@ function SiapDikirimPage({ token, role }) {
       const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
       const entries = hitungEntriesLabelBarcode([order]);
       for (const entry of entries) {
-        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} item={entry.item} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
       }
       await tandaiSudahDicetak(order.id);
     } catch (e) {
@@ -5368,7 +5370,7 @@ function SiapDikirimPage({ token, role }) {
       const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
       const entries = hitungEntriesLabelBarcode(bulkBarcode);
       for (const entry of entries) {
-        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} item={entry.item} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
       }
 
       setMarkingPrinted(true);
@@ -14720,7 +14722,7 @@ function PickingListPage({ token, role, userId }) {
       const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
       const entries = hitungEntriesLabelBarcode([packingSelesaiOrder]);
       for (const entry of entries) {
-        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} item={entry.item} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
       }
     } catch (e) {
       setErrorCetakBarcode("Gagal cetak otomatis: " + e.message + " - pastikan print server jalan. Coba tombol cetak manual sebagai cadangan, atau ulangi.");
