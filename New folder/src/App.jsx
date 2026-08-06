@@ -658,11 +658,10 @@ export default function OwnerDashboard() {
     // (isi email+password), BUKAN saat sesi dipulihkan otomatis karena
     // refresh halaman - diamkan kalau gagal simpan.
     if (isManualLogin) {
-      supabaseFetch(accessToken, "log_aktivitas", {
+      supabaseFetch(accessToken, "rpc/catat_login", {
         method: "POST",
         body: JSON.stringify({
-          user_id: userId, nama_user: profRows[0]?.nama || "-", role_user: profRows[0]?.role || "-",
-          aksi: "login", deskripsi: `${profRows[0]?.nama || "-"} login ke Dashboard`,
+          p_user_id: userId, p_nama: profRows[0]?.nama || "-", p_role: profRows[0]?.role || "-",
         }),
       }).catch((e) => console.error("[catat log login] Gagal:", e.message));
     }
