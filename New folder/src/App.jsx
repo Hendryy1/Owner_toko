@@ -13562,6 +13562,21 @@ function ScanBoxSiapKirimModal({ order, token, onClose, onSelesai }) {
     return () => { if (html5QrRef.current) html5QrRef.current.stop().catch(() => {}); };
   }, []);
 
+  // Hentikan kamera dengan AMAN - tunggu proses stop() BENAR-BENAR selesai
+  // (async) sebelum jalankan callback lanjutan (misal tutup modal/unmount
+  // komponen) - kalau tidak ditunggu, komponen bisa keburu dihapus dari
+  // layar sementara library kamera masih coba akses elemen yang sudah
+  // tidak ada lagi, menyebabkan crash.
+  function hentikanKameraLaluLanjut(callback) {
+    if (html5QrRef.current) {
+      const qr = html5QrRef.current;
+      html5QrRef.current = null;
+      qr.stop().catch(() => {}).finally(() => { callback(); });
+    } else {
+      callback();
+    }
+  }
+
   async function prosesScan(kodeMentah) {
     const kode = kodeMentah.trim();
     // Format: NONOTA-NN atau NONOTA-NN-NOMORPRODUK
@@ -13596,8 +13611,10 @@ function ScanBoxSiapKirimModal({ order, token, onClose, onSelesai }) {
       }
       await supabaseFetch(token, `orders?id=eq.${order.id}`, { method: "PATCH", body: JSON.stringify(bodyPatch) });
       if (updated.length >= totalBox) {
-        if (html5QrRef.current) { html5QrRef.current.stop().catch(() => {}); }
-        setTimeout(() => onSelesai(), 800);
+        // JANGAN stop() langsung di sini - masih di dalam callback decode
+        // milik scanner itu sendiri, hentikan di luar tick ini (setTimeout 0)
+        // supaya tidak bentrok dengan proses internal library kamera.
+        setTimeout(() => { hentikanKameraLaluLanjut(() => onSelesai()); }, 500);
       }
     } catch (e) {
       setPesan({ type: "error", text: "Gagal simpan: " + e.message });
@@ -13630,9 +13647,13 @@ function ScanBoxSiapKirimModal({ order, token, onClose, onSelesai }) {
   }
 
   function tutupKamera() {
-    if (html5QrRef.current) { html5QrRef.current.stop().catch(() => {}).finally(() => { html5QrRef.current = null; }); }
-    setShowCamera(false);
+    hentikanKameraLaluLanjut(() => setShowCamera(false));
   }
+
+  function tutupModal() {
+    hentikanKameraLaluLanjut(() => onClose());
+  }
+
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -13642,7 +13663,7 @@ function ScanBoxSiapKirimModal({ order, token, onClose, onSelesai }) {
             <p className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: 0 }}>{order.no_nota}</p>
             <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "2px 0 0" }}>{order.clients?.nama}</p>
           </div>
-          <button onClick={() => { tutupKamera(); onClose(); }} style={{ background: "none", border: "none", color: "#6B6F75" }}><X size={20} /></button>
+          <button onClick={tutupModal} style={{ background: "none", border: "none", color: "#6B6F75" }}><X size={20} /></button>
         </div>
 
         <div style={{ background: "#F7F5F1", borderRadius: 10, padding: 12, marginBottom: 14, textAlign: "center" }}>
