@@ -6446,7 +6446,7 @@ function ProsesPengirimanPage({ token, role }) {
                 <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Bukti Nota</p>
                 <label style={{ display: "block", width: "100%", height: 120, borderRadius: 10, border: buktiNotaCod ? "none" : "1.5px dashed #E8A426", background: buktiNotaCod ? `url(${buktiNotaCod}) center/cover` : "#FFFBF0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                   {!buktiNotaCod && (uploadingCod === "nota" ? <span style={{ fontSize: 12, color: "#8A6A1A" }}>Mengupload...</span> : <span style={{ fontSize: 12, color: "#8A6A1A", fontWeight: 700 }}>Tap untuk upload foto nota</span>)}
-                  <input type="file" accept="image/*" style={{ display: "none" }} disabled={!!uploadingCod} onChange={(e) => { if (e.target.files[0]) uploadFotoCod(order, e.target.files[0], "nota"); }} />
+                  <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={!!uploadingCod} onChange={(e) => { if (e.target.files[0]) uploadFotoCod(order, e.target.files[0], "nota"); }} />
                 </label>
               </div>
 
@@ -6454,7 +6454,7 @@ function ProsesPengirimanPage({ token, role }) {
                 <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Bukti Cash</p>
                 <label style={{ display: "block", width: "100%", height: 120, borderRadius: 10, border: buktiCashCod ? "none" : "1.5px dashed #E8A426", background: buktiCashCod ? `url(${buktiCashCod}) center/cover` : "#FFFBF0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
                   {!buktiCashCod && (uploadingCod === "cash" ? <span style={{ fontSize: 12, color: "#8A6A1A" }}>Mengupload...</span> : <span style={{ fontSize: 12, color: "#8A6A1A", fontWeight: 700 }}>Tap untuk upload foto uang cash</span>)}
-                  <input type="file" accept="image/*" style={{ display: "none" }} disabled={!!uploadingCod} onChange={(e) => { if (e.target.files[0]) uploadFotoCod(order, e.target.files[0], "cash"); }} />
+                  <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={!!uploadingCod} onChange={(e) => { if (e.target.files[0]) uploadFotoCod(order, e.target.files[0], "cash"); }} />
                 </label>
               </div>
 
@@ -6512,7 +6512,7 @@ function ProsesPengirimanPage({ token, role }) {
                 ) : (
                   <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 16, borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
                     {uploadingId === o.id && uploadingField === "nota_ttd" ? "Mengupload..." : <><UploadCloud size={15} /> Upload Foto</>}
-                    <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadFotoOrder(o, e.target.files[0], "bukti_nota_ttd_url", "nota_ttd"); }} />
+                    <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploadingId === o.id} onChange={(e) => { if (e.target.files[0]) uploadFotoOrder(o, e.target.files[0], "bukti_nota_ttd_url", "nota_ttd"); }} />
                   </label>
                 )}
               </div>
@@ -6540,7 +6540,7 @@ function ProsesPengirimanPage({ token, role }) {
                 ) : (
                   <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 20, borderRadius: 9, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
                     {uploadingBuktiRetur ? "Mengupload..." : <><UploadCloud size={16} /> Tap untuk upload foto</>}
-                    <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingBuktiRetur} onChange={(e) => { if (e.target.files[0]) uploadBuktiRetur(e.target.files[0]); }} />
+                    <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploadingBuktiRetur} onChange={(e) => { if (e.target.files[0]) uploadBuktiRetur(e.target.files[0]); }} />
                   </label>
                 )}
               </div>
@@ -8734,7 +8734,7 @@ function ProfilSalesPage({ token, profile }) {
                 <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 9, border: d.val ? "1.5px solid #28685D" : "1.5px dashed #E8A426", background: d.val ? "#D8E9E6" : "#FFFBF0", color: d.val ? "#28685D" : "#8A6A1A", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>
                   {d.val ? <Check size={15} /> : <UploadCloud size={15} />}
                   {uploadingDoc === d.key ? "Mengupload..." : d.val ? "Sudah diupload - tap untuk ganti" : "Tap untuk upload"}
-                  <input type="file" accept="image/*" style={{ display: "none" }} disabled={!!uploadingDoc} onChange={(e) => { if (e.target.files[0]) uploadDokumen(e.target.files[0], d.key); }} />
+                  <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={!!uploadingDoc} onChange={(e) => { if (e.target.files[0]) uploadDokumen(e.target.files[0], d.key); }} />
                 </label>
               </div>
             ))}
@@ -15192,7 +15192,7 @@ function PickingListPage({ token, role, userId }) {
                 <span style={{ fontSize: 13, fontWeight: 700 }}>Tap untuk Upload Foto</span>
               </>
             )}
-            <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingBukti} onChange={(e) => { if (e.target.files[0]) uploadBuktiPengemasan(e.target.files[0]); }} />
+            <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploadingBukti} onChange={(e) => { if (e.target.files[0]) uploadBuktiPengemasan(e.target.files[0]); }} />
           </label>
         </Card>
         ) : (
