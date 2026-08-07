@@ -8982,37 +8982,75 @@ function ProfilSalesPage({ token, profile }) {
           </p>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-          <div>
-            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Nama Lengkap</p>
-            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.nama || "-"}</p>
+        {dataTerkunci ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            <div>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Nama Lengkap</p>
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.nama || "-"}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>No. HP</p>
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.noHp || "-"}</p>
+            </div>
+            <div style={{ gridColumn: "1 / -1" }}>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Alamat</p>
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.alamat || "-"}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Kota/Kabupaten</p>
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.kota || "-"}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Provinsi</p>
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.provinsi || "-"}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Kode Pos</p>
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.kodePos || "-"}</p>
+            </div>
+            <div>
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Email</p>
+              <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.email || "-"}</p>
+            </div>
           </div>
-          <div>
-            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>No. HP</p>
-            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.noHp || "-"}</p>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
+            {[
+              { key: "nama", label: "Nama Lengkap", full: false },
+              { key: "noHp", label: "No. HP", full: false },
+              { key: "alamat", label: "Alamat", full: true },
+              { key: "kota", label: "Kota/Kabupaten", full: false },
+              { key: "provinsi", label: "Provinsi", full: false },
+              { key: "kodePos", label: "Kode Pos", full: false },
+              { key: "email", label: "Email", full: false },
+            ].map((f) => (
+              <div key={f.key} style={f.full ? { gridColumn: "1 / -1" } : undefined}>
+                <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>{f.label}</p>
+                <input
+                  type="text"
+                  value={form[f.key]}
+                  onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                  placeholder={`Isi ${f.label.toLowerCase()}...`}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, marginBottom: 14, boxSizing: "border-box" }}
+                />
+              </div>
+            ))}
+            <div style={{ gridColumn: "1 / -1" }}>
+              {error && <p style={{ fontSize: 12, color: "#C0392B", margin: "0 0 10px" }}>{error}</p>}
+              {saved && <p style={{ fontSize: 12, color: "#28685D", margin: "0 0 10px" }}>Berhasil disimpan!</p>}
+              <button
+                onClick={simpan}
+                disabled={saving || !form.nama.trim()}
+                style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: saving || !form.nama.trim() ? "#E4E1DA" : "#28685D", color: saving || !form.nama.trim() ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 13.5 }}
+              >
+                {saving ? "Menyimpan..." : "Simpan Data Profil"}
+              </button>
+              <p style={{ fontSize: 11, color: "#9CA0A6", margin: "8px 0 0", textAlign: "center" }}>
+                Data ini cuma bisa diisi <strong>1 kali</strong> - setelah disimpan, untuk perubahan berikutnya harus hubungi Owner.
+              </p>
+            </div>
           </div>
-          <div style={{ gridColumn: "1 / -1" }}>
-            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Alamat</p>
-            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.alamat || "-"}</p>
-          </div>
-          <div>
-            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Kota/Kabupaten</p>
-            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.kota || "-"}</p>
-          </div>
-          <div>
-            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Provinsi</p>
-            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.provinsi || "-"}</p>
-          </div>
-          <div>
-            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Kode Pos</p>
-            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.kodePos || "-"}</p>
-          </div>
-          <div>
-            <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 4px" }}>Email</p>
-            <p style={{ fontSize: 13.5, fontWeight: 600, color: "#24272B", margin: "0 0 14px" }}>{form.email || "-"}</p>
-          </div>
-        </div>
-      </Card>
+        )}
 
       {/* VERIFIKASI DOKUMEN */}
       <Card style={{ maxWidth: 480 }}>
