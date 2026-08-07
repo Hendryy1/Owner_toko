@@ -15753,6 +15753,11 @@ function PickingListPage({ token, role, userId }) {
               <p style={{ color: "#fff", fontSize: 14, fontWeight: 700, marginBottom: 14 }}>Arahkan kamera ke barcode ATAU kode produk di kemasan</p>
               <div id="reader-kamera-checker" style={{ width: "100%", maxWidth: 400, borderRadius: 12, overflow: "hidden" }} />
               {cameraErrorChecker && <p style={{ color: "#F5A9A0", fontSize: 12.5, marginTop: 14, textAlign: "center" }}>{cameraErrorChecker}</p>}
+              {checkerPesan && (
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", borderRadius: 9, background: checkerPesan.type === "ok" ? "#28685D" : "#C0392B", color: "#fff", fontSize: 13, fontWeight: 600, marginTop: 16, maxWidth: 400, width: "100%" }}>
+                  {checkerPesan.type === "ok" ? <Check size={16} /> : <AlertCircle size={16} />} {checkerPesan.text}
+                </div>
+              )}
               <button onClick={tutupKameraChecker} style={{ marginTop: 20, padding: "12px 24px", borderRadius: 10, border: "1.5px solid #fff", background: "none", color: "#fff", fontWeight: 700, fontSize: 13.5 }}>
                 Tutup Kamera
               </button>
