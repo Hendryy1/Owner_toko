@@ -2019,6 +2019,11 @@ function OrdersPage({ token }) {
             <p style={{ fontSize: 12, color: "#9CA0A6", margin: "4px 0 0" }}>
               {new Date(o.created_at).toLocaleString("id-ID")} · Channel: {o.channel}
               {o.is_dropship && <span style={{ marginLeft: 6, color: "#B8860B", fontWeight: 700 }}>DROPSHIP</span>}
+              {Number(o.diskon_tambahan_nilai || 0) > 0 && (
+                <span style={{ marginLeft: 6, color: "#8A6A1A", fontWeight: 700 }}>
+                  · Pakai Poin: {rupiah(Number(o.diskon_tambahan_nilai))}
+                </span>
+              )}
               {o.dibuat_oleh_sales && (
                 <span style={{ marginLeft: 6, color: "#8A6A1A", fontWeight: 700 }}>
                   · Dibuat oleh Sales: {namaSalesMap[o.dibuat_oleh_sales] || "Tidak diketahui"}
@@ -2244,6 +2249,14 @@ function CekPesananModal({ order, allOrders, token, onConfirm, onClose, processi
             <a href={order.bukti_transfer_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#8A6A1A", fontWeight: 700, textDecoration: "underline", flexShrink: 0 }}>
               Lihat Bukti
             </a>
+          </div>
+        )}
+
+        {Number(order.diskon_tambahan_nilai || 0) > 0 && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBF0D9", borderRadius: 10, padding: 12, marginBottom: 16 }}>
+            <p style={{ fontSize: 12, color: "#8A6A1A", margin: 0, fontWeight: 600 }}>
+              {order.diskon_tambahan_keterangan || `Toko pakai potongan poin sebesar ${rupiah(Number(order.diskon_tambahan_nilai))}`}
+            </p>
           </div>
         )}
 
@@ -4830,7 +4843,12 @@ function RekapNotaPage({ token }) {
               const st = statusPerjalanan(o);
               return (
                 <tr key={o.id} style={{ borderTop: "1px solid #EDEAE3" }}>
-                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{o.no_nota}</td>
+                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>
+                    {o.no_nota}
+                    {Number(o.diskon_tambahan_nilai || 0) > 0 && (
+                      <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#8A6A1A" }}>Pakai Poin: {rupiah(Number(o.diskon_tambahan_nilai))}</span>
+                    )}
+                  </td>
                   <td style={{ padding: "12px 14px" }}>{o.clients?.nama}</td>
                   <td style={{ padding: "12px 14px" }}>{o.metode_bayar === "cod" ? "COD" : o.clients?.jenis_pembayaran}</td>
                   <td style={{ padding: "12px 14px" }}>{o.jatuh_tempo ? new Date(o.jatuh_tempo).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
