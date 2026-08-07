@@ -779,6 +779,7 @@ export default function OwnerDashboard() {
         picking_list: ["owner", "admin_transaksi", "staff_gudang"],
         siap_dikirim_baru: ["owner", "admin_transaksi", "kurir", "staff_gudang"],
         proses_kirim: ["owner", "kurir", "staff_gudang"],
+        review_stok_kurang: ["owner", "admin_transaksi"],
       };
       const queryPerKategori = {
         orders: "orders?select=id&status=eq.menunggu_persetujuan&limit=1",
@@ -786,6 +787,7 @@ export default function OwnerDashboard() {
         siap_dikirim_baru: "orders?select=id&status=eq.siap_dikirim&limit=1",
         proses_kirim: "orders?select=id&status=eq.proses_dikirim&bukti_barang_sampai_url=is.null&limit=1",
         konfirmasi_bayar: "orders?select=id&status=eq.proses_dikirim&dikonfirmasi_toko_at=not.is.null&limit=1",
+        review_stok_kurang: "orders?select=id&stok_kurang_menunggu_admin_at=not.is.null&stok_kurang_disetujui_admin_at=is.null&stok_kurang_ditolak_admin_at=is.null&limit=1",
       };
       const kategoriRelevan = Object.keys(kategoriUntukRole).filter((key) => kategoriUntukRole[key].includes(role));
       const hasil = await Promise.all(kategoriRelevan.map((key) => hitung(queryPerKategori[key])));
@@ -951,6 +953,7 @@ export default function OwnerDashboard() {
         {page === "aktivitas_layar" && <AktivitasLayarPage token={token} />}
         {page === "calendar" && <CalendarPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
+        {page === "review_stok_kurang" && <ReviewStokKurangPage token={token} userId={userId} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "laporan_pesanan" && <LaporanPesananPage token={token} />}
         {page === "laporan_performa" && <LaporanPerformaPage token={token} />}
@@ -1071,6 +1074,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "aktivitas_layar", label: "Aktivitas Layar Staff", icon: Eye, roles: ["owner"] },
     { key: "calendar", label: "Calendar", icon: CalendarDays, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
+    { key: "review_stok_kurang", label: "Review Stock Kurang", icon: AlertCircle, roles: ["owner", "admin_transaksi"] },
     { key: "konfirmasi_bayar", label: "Review Pengiriman", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
     { key: "laporan_pesanan", label: "Laporan Pesanan", icon: BarChart3, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "laporan_performa", label: "Laporan Performa", icon: TrendingUp, roles: ["owner"] },
@@ -1831,6 +1835,124 @@ function ErrorBox({ error, onRetry }) {
 // ============================================================
 // APPROVE PESANAN
 // ============================================================
+// ============================================================
+// REVIEW STOCK KURANG - Admin review order yang stocknya kurang saat
+// picking, wajib isi catatan (hasil konfirmasi ke toko) sebelum bisa
+// Setuju/Tolak.
+// ============================================================
+function ReviewStokKurangPage({ token, userId }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [orders, setOrders] = useState([]);
+  const [catatanForm, setCatatanForm] = useState({}); // { order_id: text }
+  const [processingId, setProcessingId] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token,
+        "orders?select=id,no_nota,created_at,clients(nama,kode,telp),order_items(id,qty,qty_diajukan_staff,stock_kurang_dikonfirmasi,products(kode,nama,satuan))&stok_kurang_menunggu_admin_at=not.is.null&stok_kurang_disetujui_admin_at=is.null&stok_kurang_ditolak_admin_at=is.null&order=stok_kurang_menunggu_admin_at.asc"
+      );
+      setOrders(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function setujui(order) {
+    const catatan = (catatanForm[order.id] || "").trim();
+    if (!catatan) { alert("Isi catatan dulu (misal hasil konfirmasi ke toko) sebelum menyetujui."); return; }
+    setProcessingId(order.id);
+    try {
+      await supabaseFetch(token, "rpc/setujui_stok_kurang", {
+        method: "POST",
+        body: JSON.stringify({ p_order_id: order.id, p_catatan: catatan, p_admin_id: userId }),
+      });
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    } catch (e) {
+      alert("Gagal setujui: " + e.message);
+    }
+    setProcessingId(null);
+  }
+
+  async function tolak(order) {
+    const catatan = (catatanForm[order.id] || "").trim();
+    if (!catatan) { alert("Isi catatan dulu (alasan penolakan) sebelum menolak."); return; }
+    if (!confirm("Yakin tolak? Staff picking perlu mengulang input jumlah aktual untuk order ini.")) return;
+    setProcessingId(order.id);
+    try {
+      await supabaseFetch(token, "rpc/tolak_stok_kurang", {
+        method: "POST",
+        body: JSON.stringify({ p_order_id: order.id, p_catatan: catatan, p_admin_id: userId }),
+      });
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+    } catch (e) {
+      alert("Gagal tolak: " + e.message);
+    }
+    setProcessingId(null);
+  }
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  return (
+    <div>
+      <PageHeader title="Review Stock Kurang" subtitle={`${orders.length} pesanan menunggu review`} onRefresh={load} refreshing={loading} />
+      {orders.length === 0 ? (
+        <EmptyState text="Tidak ada pesanan yang perlu direview saat ini." />
+      ) : (
+        orders.map((o) => {
+          const itemsKurang = (o.order_items || []).filter((it) => it.stock_kurang_dikonfirmasi);
+          return (
+            <Card key={o.id} style={{ marginBottom: 16, maxWidth: 560 }}>
+              <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+              <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 4px" }}>{o.clients?.nama} ({o.clients?.kode}) - {o.clients?.telp}</p>
+              <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 14px" }}>{new Date(o.created_at).toLocaleString("id-ID")}</p>
+
+              <div style={{ background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                {itemsKurang.map((it) => (
+                  <p key={it.id} style={{ fontSize: 12.5, color: "#C0392B", margin: "0 0 4px", fontWeight: 600 }}>
+                    {it.products?.kode} - {it.products?.nama}: pesan {it.qty}, ready {it.qty_diajukan_staff} {it.products?.satuan} (kurang {it.qty - it.qty_diajukan_staff})
+                  </p>
+                ))}
+              </div>
+
+              <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>
+                Catatan (wajib - misal hasil konfirmasi ke toko)
+              </label>
+              <textarea
+                value={catatanForm[o.id] || ""}
+                onChange={(e) => setCatatanForm((prev) => ({ ...prev, [o.id]: e.target.value }))}
+                placeholder='Misal: "Toko setuju dikirim barang ready, sisa direfund"'
+                rows={2}
+                style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, marginBottom: 14, resize: "vertical", fontFamily: "inherit" }}
+              />
+
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={() => setujui(o)}
+                  disabled={processingId === o.id}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+                >
+                  {processingId === o.id ? "Memproses..." : "Setujui"}
+                </button>
+                <button
+                  onClick={() => tolak(o)}
+                  disabled={processingId === o.id}
+                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#C0392B", fontWeight: 700, fontSize: 13.5 }}
+                >
+                  Tolak
+                </button>
+              </div>
+            </Card>
+          );
+        })
+      )}
+    </div>
+  );
+}
+
 function OrdersPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
@@ -14746,6 +14868,7 @@ function PickingListPage({ token, role, userId }) {
   const [error, setError] = useState("");
   const [selectedOrder, setSelectedOrder] = useState(null); // order yang lagi dipicking
   const [inputJumlah, setInputJumlah] = useState({}); // { order_item_id: string }
+  const [stockKurangConfirmed, setStockKurangConfirmed] = useState({}); // { order_item_id: true }
   const [saving, setSaving] = useState(false);
   const [mencetakBarcode, setMencetakBarcode] = useState(false);
   const [errorCetakBarcode, setErrorCetakBarcode] = useState("");
@@ -14770,7 +14893,7 @@ function PickingListPage({ token, role, userId }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,tujuan_kota,tujuan_telp,tujuan_alamat,tujuan_nama,is_dropship,nama_pengirim_dropship,metode_bayar,clients(nama,kode,kota,alamat,telp),order_items(id,qty,products(kode,nama,satuan,nomor_produk))&status=eq.menunggu_pengiriman&picking_selesai_at=is.null&order=created_at.asc"
+        "orders?select=id,no_nota,created_at,tujuan_kota,tujuan_telp,tujuan_alamat,tujuan_nama,is_dropship,nama_pengirim_dropship,metode_bayar,stok_kurang_menunggu_admin_at,stok_kurang_disetujui_admin_at,stok_kurang_ditolak_admin_at,stok_kurang_catatan_admin,clients(nama,kode,kota,alamat,telp),order_items(id,qty,products(kode,nama,satuan,nomor_produk))&status=eq.menunggu_pengiriman&picking_selesai_at=is.null&order=created_at.asc"
       );
       setOrders(rows);
 
@@ -14810,16 +14933,36 @@ function PickingListPage({ token, role, userId }) {
     setInputJumlah(initial);
   }
 
+  // "Valid" = jumlah aktual PERSIS cocok, ATAU sudah dikonfirmasi sebagai
+  // stock kurang (staff sengaja akui kurang, bukan salah ketik).
   function semuaCocok() {
     if (!selectedOrder) return false;
     return (selectedOrder.order_items || []).every((it) => {
       const val = inputJumlah[it.id];
-      return val !== "" && Number(val) === Number(it.qty);
+      if (val === "" || val === undefined) return false;
+      if (Number(val) === Number(it.qty)) return true;
+      // Kurang dari pesanan DAN sudah dikonfirmasi lewat tombol "Stock Kurang"
+      return Number(val) < Number(it.qty) && !!stockKurangConfirmed[it.id];
     });
   }
 
+  // Ada minimal 1 item yang stock-nya dikonfirmasi kurang - kalau ada,
+  // order ini perlu persetujuan Admin dulu (bukan langsung lanjut picking).
+  function adaStockKurang() {
+    if (!selectedOrder) return false;
+    return (selectedOrder.order_items || []).some((it) => stockKurangConfirmed[it.id]);
+  }
+
   async function konfirmasiPicking() {
-    if (!semuaCocok()) return;
+    // Kalau sudah disetujui Admin sebelumnya, qty di database sudah FINAL
+    // (sudah diupdate RPC setujui_stok_kurang) - langsung lanjut, tidak
+    // perlu cek input lokal lagi (yang mungkin sudah kosong/tidak relevan).
+    const sudahDisetujuiAdmin = !!selectedOrder.stok_kurang_disetujui_admin_at;
+    if (!sudahDisetujuiAdmin && !semuaCocok()) return;
+    if (!sudahDisetujuiAdmin && adaStockKurang()) {
+      await konfirmasiAdmin();
+      return;
+    }
     setSaving(true);
     try {
       await supabaseFetch(token, `orders?id=eq.${selectedOrder.id}`, {
@@ -14836,6 +14979,39 @@ function PickingListPage({ token, role, userId }) {
       setInputJumlah({});
     } catch (e) {
       alert("Gagal konfirmasi picking: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  // Ada stock kurang - kirim ke Admin untuk direview, JANGAN lanjut ke
+  // tahap box/pengemasan dulu. Staff "tertahan" di halaman ini sampai
+  // Admin memutuskan (Setuju/Tolak) di menu Review terpisah.
+  async function konfirmasiAdmin() {
+    setSaving(true);
+    try {
+      const itemsPayload = (selectedOrder.order_items || []).map((it) => {
+        const val = inputJumlah[it.id];
+        const isKurang = !!stockKurangConfirmed[it.id];
+        return {
+          id: it.id,
+          stock_kurang_dikonfirmasi: isKurang,
+          qty_diajukan_staff: isKurang ? Number(val) : null,
+        };
+      });
+      await Promise.all(itemsPayload.map((p) =>
+        supabaseFetch(token, `order_items?id=eq.${p.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ stock_kurang_dikonfirmasi: p.stock_kurang_dikonfirmasi, qty_diajukan_staff: p.qty_diajukan_staff }),
+        })
+      ));
+      await supabaseFetch(token, `orders?id=eq.${selectedOrder.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ stok_kurang_menunggu_admin_at: new Date().toISOString() }),
+      });
+      setOrders((prev) => prev.map((o) => (o.id === selectedOrder.id ? { ...o, stok_kurang_menunggu_admin_at: new Date().toISOString() } : o)));
+      setSelectedOrder((prev) => ({ ...prev, stok_kurang_menunggu_admin_at: new Date().toISOString() }));
+    } catch (e) {
+      alert("Gagal kirim ke Admin: " + e.message);
     }
     setSaving(false);
   }
@@ -15062,7 +15238,11 @@ function PickingListPage({ token, role, userId }) {
             const val = inputJumlah[it.id] ?? "";
             const sudahDiisi = val !== "";
             const cocok = sudahDiisi && Number(val) === Number(it.qty);
-            const salah = sudahDiisi && Number(val) !== Number(it.qty);
+            const kurangDariPesanan = sudahDiisi && Number(val) < Number(it.qty);
+            const lebihDariPesanan = sudahDiisi && Number(val) > Number(it.qty);
+            const sudahKonfirmasiKurang = !!stockKurangConfirmed[it.id];
+            const salah = sudahDiisi && Number(val) !== Number(it.qty) && !sudahKonfirmasiKurang;
+            const selisih = kurangDariPesanan ? Number(it.qty) - Number(val) : 0;
             return (
               <div key={it.id} style={{ paddingBottom: 16, marginBottom: 16, borderBottom: i < selectedOrder.order_items.length - 1 ? "1px solid #EDEAE3" : "none" }}>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
@@ -15078,31 +15258,83 @@ function PickingListPage({ token, role, userId }) {
                     <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 3px" }}>Jumlah Pesanan</p>
                     <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: 0 }}>{it.qty} {it.products?.satuan}</p>
                   </div>
+                  {kurangDariPesanan && (
+                    <div style={{ display: "flex", alignItems: "flex-end" }}>
+                      <button
+                        type="button"
+                        onClick={() => setStockKurangConfirmed((prev) => ({ ...prev, [it.id]: !prev[it.id] }))}
+                        style={{
+                          display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, fontSize: 12, fontWeight: 700, width: "100%", justifyContent: "center",
+                          border: sudahKonfirmasiKurang ? "1.5px solid #8A6A1A" : "1.5px solid #E4E1DA",
+                          background: sudahKonfirmasiKurang ? "#FBF0D9" : "#fff",
+                          color: sudahKonfirmasiKurang ? "#8A6A1A" : "#6B6F75",
+                        }}
+                      >
+                        {sudahKonfirmasiKurang ? <Check size={13} /> : null} Stock Kurang
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <label style={labelStyle}>Jumlah Aktual</label>
                 <input
                   type="number"
                   value={val}
-                  onChange={(e) => setInputJumlah((prev) => ({ ...prev, [it.id]: e.target.value }))}
+                  onChange={(e) => { setInputJumlah((prev) => ({ ...prev, [it.id]: e.target.value })); setStockKurangConfirmed((prev) => ({ ...prev, [it.id]: false })); }}
                   placeholder={`Isi jumlah ${it.products?.satuan}...`}
                   style={{
                     width: "100%", padding: "10px 12px", borderRadius: 9, fontSize: 14, fontWeight: 700, outline: "none",
-                    border: salah ? "1.5px solid #C0392B" : cocok ? "1.5px solid #28685D" : "1.5px solid #E4E1DA",
-                    background: salah ? "#FBEAEA" : cocok ? "#D8E9E6" : "#fff",
-                    color: salah ? "#C0392B" : cocok ? "#28685D" : "#24272B",
+                    border: salah ? "1.5px solid #C0392B" : sudahKonfirmasiKurang ? "1.5px solid #8A6A1A" : cocok ? "1.5px solid #28685D" : "1.5px solid #E4E1DA",
+                    background: salah ? "#FBEAEA" : sudahKonfirmasiKurang ? "#FBF0D9" : cocok ? "#D8E9E6" : "#fff",
+                    color: salah ? "#C0392B" : sudahKonfirmasiKurang ? "#8A6A1A" : cocok ? "#28685D" : "#24272B",
                   }}
                 />
-                {salah && <p style={{ fontSize: 11.5, color: "#C0392B", margin: "6px 0 0", fontWeight: 600 }}>Tidak cocok - seharusnya {it.qty} {it.products?.satuan}</p>}
+                {lebihDariPesanan && <p style={{ fontSize: 11.5, color: "#C0392B", margin: "6px 0 0", fontWeight: 600 }}>Tidak cocok - seharusnya {it.qty} {it.products?.satuan}</p>}
+                {kurangDariPesanan && !sudahKonfirmasiKurang && <p style={{ fontSize: 11.5, color: "#C0392B", margin: "6px 0 0", fontWeight: 600 }}>Tidak cocok - seharusnya {it.qty} {it.products?.satuan} (kalau memang stock kurang, klik tombol "Stock Kurang" di atas)</p>}
+                {kurangDariPesanan && sudahKonfirmasiKurang && <p style={{ fontSize: 11.5, color: "#8A6A1A", margin: "6px 0 0", fontWeight: 600 }}>Stock {it.products?.kode} kurang {selisih} {it.products?.satuan}</p>}
               </div>
             );
           })}
 
+          {selectedOrder.stok_kurang_menunggu_admin_at && !selectedOrder.stok_kurang_disetujui_admin_at && !selectedOrder.stok_kurang_ditolak_admin_at && (
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBF0D9", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+              <Clock size={15} color="#8A6A1A" style={{ flexShrink: 0, marginTop: 1 }} />
+              <p style={{ fontSize: 12.5, color: "#8A6A1A", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+                Menunggu Persetujuan Admin - ada barang yang stocknya kurang. Admin akan menghubungi toko dulu sebelum bisa lanjut.
+              </p>
+            </div>
+          )}
+          {selectedOrder.stok_kurang_disetujui_admin_at && (
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#D8E9E6", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+              <Check size={15} color="#28685D" style={{ flexShrink: 0, marginTop: 1 }} />
+              <p style={{ fontSize: 12.5, color: "#28685D", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+                Telah Disetujui Admin{selectedOrder.stok_kurang_catatan_admin ? ` - "${selectedOrder.stok_kurang_catatan_admin}"` : ""}. Silakan lanjutkan proses pengemasan.
+              </p>
+            </div>
+          )}
+          {selectedOrder.stok_kurang_ditolak_admin_at && (
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+              <X size={15} color="#C0392B" style={{ flexShrink: 0, marginTop: 1 }} />
+              <p style={{ fontSize: 12.5, color: "#C0392B", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+                Ditolak Admin{selectedOrder.stok_kurang_catatan_admin ? ` - "${selectedOrder.stok_kurang_catatan_admin}"` : ""}. Silakan ulangi isi jumlah aktual di bawah.
+              </p>
+            </div>
+          )}
+
           <button
             onClick={konfirmasiPicking}
-            disabled={!semuaCocok() || saving}
-            style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", fontWeight: 700, fontSize: 14, background: (!semuaCocok() || saving) ? "#E4E1DA" : "#28685D", color: (!semuaCocok() || saving) ? "#9CA0A6" : "#fff" }}
+            disabled={
+              saving
+              || !!(selectedOrder.stok_kurang_menunggu_admin_at && !selectedOrder.stok_kurang_disetujui_admin_at && !selectedOrder.stok_kurang_ditolak_admin_at)
+              || (!selectedOrder.stok_kurang_disetujui_admin_at && !semuaCocok())
+            }
+            style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", fontWeight: 700, fontSize: 14, background: (!semuaCocok() && !selectedOrder.stok_kurang_disetujui_admin_at || saving) ? "#E4E1DA" : "#28685D", color: (!semuaCocok() && !selectedOrder.stok_kurang_disetujui_admin_at || saving) ? "#9CA0A6" : "#fff" }}
           >
-            {saving ? "Menyimpan..." : semuaCocok() ? "Konfirmasi Picking" : "Isi Semua Jumlah dengan Benar Dulu"}
+            {saving ? "Menyimpan..."
+              : selectedOrder.stok_kurang_disetujui_admin_at ? "Lanjutkan ke Pengemasan"
+              : (selectedOrder.stok_kurang_menunggu_admin_at && !selectedOrder.stok_kurang_ditolak_admin_at) ? "Menunggu Persetujuan Admin"
+              : !semuaCocok() ? "Isi Semua Jumlah dengan Benar Dulu"
+              : adaStockKurang() ? "Konfirmasi Admin"
+              : "Konfirmasi Picking"}
           </button>
         </Card>
       </div>
