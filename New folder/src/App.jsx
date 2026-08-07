@@ -1879,7 +1879,7 @@ function ReviewStokKurangPage({ token, userId }) {
   async function tolak(order) {
     const catatan = (catatanForm[order.id] || "").trim();
     if (!catatan) { alert("Isi catatan dulu (alasan penolakan) sebelum menolak."); return; }
-    if (!confirm("Yakin tolak? Staff picking perlu mengulang input jumlah aktual untuk order ini.")) return;
+    if (!confirm("Yakin tolak? Ini akan MEMBATALKAN SELURUH pesanan, refund PENUH ke saldo toko, dan stok yang sempat terpotong akan dikembalikan.")) return;
     setProcessingId(order.id);
     try {
       await supabaseFetch(token, "rpc/tolak_stok_kurang", {
@@ -1924,7 +1924,7 @@ function ReviewStokKurangPage({ token, userId }) {
               <textarea
                 value={catatanForm[o.id] || ""}
                 onChange={(e) => setCatatanForm((prev) => ({ ...prev, [o.id]: e.target.value }))}
-                placeholder='Misal: "Toko setuju dikirim barang ready, sisa direfund"'
+                placeholder='Misal: "Toko setuju dikirim barang ready, sisa direfund" (kalau Setujui) atau "Toko tidak setuju, minta dibatalkan semua" (kalau Tolak)'
                 rows={2}
                 style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, marginBottom: 14, resize: "vertical", fontFamily: "inherit" }}
               />
@@ -1942,7 +1942,7 @@ function ReviewStokKurangPage({ token, userId }) {
                   disabled={processingId === o.id}
                   style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#C0392B", fontWeight: 700, fontSize: 13.5 }}
                 >
-                  Tolak
+                  Tolak (Batalkan & Refund Penuh)
                 </button>
               </div>
             </Card>
