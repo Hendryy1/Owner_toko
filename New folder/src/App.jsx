@@ -15205,6 +15205,7 @@ function PickingListPage({ token, role, userId }) {
   const [checkerInput, setCheckerInput] = useState(""); // input manual/scanner fisik
   const [checkerPesan, setCheckerPesan] = useState(null);
   const [showCameraChecker, setShowCameraChecker] = useState(false);
+  const lastScanCheckerRef = useRef({ kode: null, waktu: 0 }); // debounce - kamera tidak lagi auto-tutup tiap scan, jadi cegah kode yang sama kepencet berkali-kali selagi kamera masih mengarah ke situ
   const [cameraErrorChecker, setCameraErrorChecker] = useState("");
   const html5QrCheckerRef = useRef(null);
 
@@ -15393,6 +15394,15 @@ function PickingListPage({ token, role, userId }) {
   function prosesCheckerScan(kodeScan) {
     const kode = kodeScan.trim();
     if (!kode) return;
+    // Debounce - kalau kode PERSIS sama baru saja diproses (dalam 1.5
+    // detik terakhir), abaikan diam-diam - kamera tidak lagi auto-tutup
+    // tiap scan, jadi kode yang sama bisa kebaca berkali-kali selagi
+    // kamera masih mengarah ke barcode yang sama.
+    const sekarang = Date.now();
+    if (lastScanCheckerRef.current.kode === kode && sekarang - lastScanCheckerRef.current.waktu < 1500) {
+      return;
+    }
+    lastScanCheckerRef.current = { kode, waktu: sekarang };
     const hasil = parseKode(kode);
 
     if (hasil.tipe === "barcode_lain") {
@@ -15455,7 +15465,7 @@ function PickingListPage({ token, role, userId }) {
             { facingMode: "environment" },
             { fps: 5, qrbox: { width: 300, height: 150 }, formatsToSupport: [window.Html5QrcodeSupportedFormats.CODE_128, window.Html5QrcodeSupportedFormats.CODE_39, window.Html5QrcodeSupportedFormats.QR_CODE] },
             (decodedText) => {
-              tutupKameraChecker();
+              mainkanBeepScan();
               prosesCheckerScan(decodedText);
             },
             () => {}
