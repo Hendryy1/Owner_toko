@@ -3849,7 +3849,7 @@ function RiwayatOrderPage({ token }) {
     if (o.status === "dikirim") return { label: "Terkirim", bg: "#D8E9E6", fg: "#28685D" };
     if (o.status === "selesai" && o.alasan_retur) return { label: "Retur Selesai", bg: "#FBEAEA", fg: "#C0392B" };
     if (o.status === "selesai") return { label: "Selesai", bg: "#EFE1BE", fg: "#8A6A1A" };
-    return { label: "Ditolak", bg: "#FBEAEA", fg: "#C0392B" };
+    return o.alasan_dibatalkan ? { label: "Dibatalkan Toko", bg: "#FBEAEA", fg: "#C0392B" } : { label: "Ditolak Admin", bg: "#FBEAEA", fg: "#C0392B" };
   }
 
   function exportCSV() {
@@ -4693,7 +4693,7 @@ function RekapNotaPage({ token }) {
   }
 
   function statusPerjalanan(o) {
-    if (o.status === "ditolak") return { label: "Ditolak", bg: "#FBEAEA", fg: "#C0392B" };
+    if (o.status === "ditolak") return o.alasan_dibatalkan ? { label: "Dibatalkan Toko", bg: "#FBEAEA", fg: "#C0392B" } : { label: "Ditolak Admin", bg: "#FBEAEA", fg: "#C0392B" };
     if (o.status === "menunggu_persetujuan") return { label: "Menunggu Persetujuan", bg: "#F7F5F1", fg: "#6B6F75" };
     if (o.status === "menunggu_pembayaran" && o.metode_bayar !== "cod" && o.status_bayar !== "lunas") return { label: "Menunggu Pembayaran", bg: "#FBEAEA", fg: "#C0392B" };
     // Sudah lunas (atau COD, yang tidak perlu tunggu bukti transfer) tapi
