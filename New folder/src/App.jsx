@@ -1846,6 +1846,9 @@ function ReviewStokKurangPage({ token, userId }) {
   const [orders, setOrders] = useState([]);
   const [catatanForm, setCatatanForm] = useState({}); // { order_id: text }
   const [processingId, setProcessingId] = useState(null);
+  const [tab, setTab] = useState("menunggu"); // "menunggu" | "riwayat"
+  const [riwayat, setRiwayat] = useState([]);
+  const [loadingRiwayat, setLoadingRiwayat] = useState(true);
 
   async function load() {
     setLoading(true);
@@ -1859,6 +1862,18 @@ function ReviewStokKurangPage({ token, userId }) {
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  async function loadRiwayat() {
+    setLoadingRiwayat(true);
+    try {
+      const rows = await supabaseFetch(token,
+        "orders?select=id,no_nota,created_at,stok_kurang_menunggu_admin_at,stok_kurang_disetujui_admin_at,stok_kurang_ditolak_admin_at,stok_kurang_catatan_admin,clients(nama,kode),profiles!orders_stok_kurang_approved_by_fkey(nama),order_items(id,qty,qty_pesanan_asli,qty_diajukan_staff,stock_kurang_dikonfirmasi,products(kode,nama,satuan))&stok_kurang_menunggu_admin_at=not.is.null&or=(stok_kurang_disetujui_admin_at.not.is.null,stok_kurang_ditolak_admin_at.not.is.null)&order=stok_kurang_menunggu_admin_at.desc&limit=100"
+      );
+      setRiwayat(rows);
+    } catch (e) { console.log("Gagal load riwayat:", e.message); }
+    setLoadingRiwayat(false);
+  }
+  useEffect(() => { if (tab === "riwayat") loadRiwayat(); }, [tab]);
 
   async function setujui(order) {
     const catatan = (catatanForm[order.id] || "").trim();
@@ -1898,56 +1913,110 @@ function ReviewStokKurangPage({ token, userId }) {
 
   return (
     <div>
-      <PageHeader title="Review Stock Kurang" subtitle={`${orders.length} pesanan menunggu review`} onRefresh={load} refreshing={loading} />
-      {orders.length === 0 ? (
-        <EmptyState text="Tidak ada pesanan yang perlu direview saat ini." />
-      ) : (
-        orders.map((o) => {
-          const itemsKurang = (o.order_items || []).filter((it) => it.stock_kurang_dikonfirmasi);
-          return (
-            <Card key={o.id} style={{ marginBottom: 16, maxWidth: 560 }}>
-              <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
-              <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 4px" }}>{o.clients?.nama} ({o.clients?.kode}) - {o.clients?.telp}</p>
-              <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 14px" }}>{new Date(o.created_at).toLocaleString("id-ID")}</p>
+      <PageHeader title="Review Stock Kurang" subtitle={tab === "menunggu" ? `${orders.length} pesanan menunggu review` : `${riwayat.length} riwayat keputusan`} onRefresh={tab === "menunggu" ? load : loadRiwayat} refreshing={tab === "menunggu" ? loading : loadingRiwayat} />
 
-              <div style={{ background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 14 }}>
-                {itemsKurang.map((it) => (
-                  <p key={it.id} style={{ fontSize: 12.5, color: "#C0392B", margin: "0 0 4px", fontWeight: 600 }}>
-                    {it.products?.kode} - {it.products?.nama}: pesan {it.qty}, ready {it.qty_diajukan_staff} {it.products?.satuan} (kurang {it.qty - it.qty_diajukan_staff})
-                  </p>
-                ))}
-              </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <button onClick={() => setTab("menunggu")} style={{ padding: "9px 18px", borderRadius: 9, border: tab === "menunggu" ? "1.5px solid #28685D" : "1.5px solid #E4E1DA", background: tab === "menunggu" ? "#D8E9E6" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}>
+          Menunggu Review
+        </button>
+        <button onClick={() => setTab("riwayat")} style={{ padding: "9px 18px", borderRadius: 9, border: tab === "riwayat" ? "1.5px solid #28685D" : "1.5px solid #E4E1DA", background: tab === "riwayat" ? "#D8E9E6" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}>
+          Riwayat
+        </button>
+      </div>
 
-              <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>
-                Catatan (wajib - misal hasil konfirmasi ke toko)
-              </label>
-              <textarea
-                value={catatanForm[o.id] || ""}
-                onChange={(e) => setCatatanForm((prev) => ({ ...prev, [o.id]: e.target.value }))}
-                placeholder='Misal: "Toko setuju dikirim barang ready, sisa direfund" (kalau Setujui) atau "Toko tidak setuju, minta dibatalkan semua" (kalau Tolak)'
-                rows={2}
-                style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, marginBottom: 14, resize: "vertical", fontFamily: "inherit" }}
-              />
+      {tab === "menunggu" && (
+        orders.length === 0 ? (
+          <EmptyState text="Tidak ada pesanan yang perlu direview saat ini." />
+        ) : (
+          orders.map((o) => {
+            const itemsKurang = (o.order_items || []).filter((it) => it.stock_kurang_dikonfirmasi);
+            return (
+              <Card key={o.id} style={{ marginBottom: 16, maxWidth: 560 }}>
+                <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{o.no_nota}</p>
+                <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 4px" }}>{o.clients?.nama} ({o.clients?.kode}) - {o.clients?.telp}</p>
+                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 14px" }}>{new Date(o.created_at).toLocaleString("id-ID")}</p>
 
-              <div style={{ display: "flex", gap: 8 }}>
-                <button
-                  onClick={() => setujui(o)}
-                  disabled={processingId === o.id}
-                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
-                >
-                  {processingId === o.id ? "Memproses..." : "Setujui"}
-                </button>
-                <button
-                  onClick={() => tolak(o)}
-                  disabled={processingId === o.id}
-                  style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#C0392B", fontWeight: 700, fontSize: 13.5 }}
-                >
-                  Tolak (Batalkan & Refund Penuh)
-                </button>
-              </div>
-            </Card>
-          );
-        })
+                <div style={{ background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+                  {itemsKurang.map((it) => (
+                    <p key={it.id} style={{ fontSize: 12.5, color: "#C0392B", margin: "0 0 4px", fontWeight: 600 }}>
+                      {it.products?.kode} - {it.products?.nama}: pesan {it.qty}, ready {it.qty_diajukan_staff} {it.products?.satuan} (kurang {it.qty - it.qty_diajukan_staff})
+                    </p>
+                  ))}
+                </div>
+
+                <label style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" }}>
+                  Catatan (wajib - misal hasil konfirmasi ke toko)
+                </label>
+                <textarea
+                  value={catatanForm[o.id] || ""}
+                  onChange={(e) => setCatatanForm((prev) => ({ ...prev, [o.id]: e.target.value }))}
+                  placeholder='Misal: "Toko setuju dikirim barang ready, sisa direfund" (kalau Setujui) atau "Toko tidak setuju, minta dibatalkan semua" (kalau Tolak)'
+                  rows={2}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, marginBottom: 14, resize: "vertical", fontFamily: "inherit" }}
+                />
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    onClick={() => setujui(o)}
+                    disabled={processingId === o.id}
+                    style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
+                  >
+                    {processingId === o.id ? "Memproses..." : "Setujui"}
+                  </button>
+                  <button
+                    onClick={() => tolak(o)}
+                    disabled={processingId === o.id}
+                    style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#C0392B", fontWeight: 700, fontSize: 13.5 }}
+                  >
+                    Tolak (Batalkan & Refund Penuh)
+                  </button>
+                </div>
+              </Card>
+            );
+          })
+        )
+      )}
+
+      {tab === "riwayat" && (
+        loadingRiwayat ? <LoadingState /> : riwayat.length === 0 ? (
+          <EmptyState text="Belum ada riwayat keputusan." />
+        ) : (
+          riwayat.map((o) => {
+            const itemsKurang = (o.order_items || []).filter((it) => it.stock_kurang_dikonfirmasi);
+            const disetujui = !!o.stok_kurang_disetujui_admin_at;
+            return (
+              <Card key={o.id} style={{ marginBottom: 16, maxWidth: 560 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                  <p className="disp" style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: 0 }}>{o.no_nota}</p>
+                  <span style={{ padding: "4px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700, background: disetujui ? "#D8E9E6" : "#FBEAEA", color: disetujui ? "#28685D" : "#C0392B" }}>
+                    {disetujui ? "Disetujui" : "Ditolak - Dibatalkan Penuh"}
+                  </span>
+                </div>
+                <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 4px" }}>{o.clients?.nama} ({o.clients?.kode})</p>
+                <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 14px" }}>
+                  Diproses oleh {o.profiles?.nama || "-"} pada {new Date(o.stok_kurang_disetujui_admin_at || o.stok_kurang_ditolak_admin_at).toLocaleString("id-ID")}
+                </p>
+
+                {itemsKurang.length > 0 && (
+                  <div style={{ background: "#F7F5F1", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+                    {itemsKurang.map((it) => (
+                      <p key={it.id} style={{ fontSize: 12, color: "#6B6F75", margin: "0 0 4px" }}>
+                        {it.products?.kode} - {it.products?.nama}: pesan {it.qty_pesanan_asli ?? it.qty}, {disetujui ? `dikirim ${it.qty}` : `diajukan ${it.qty_diajukan_staff}`} {it.products?.satuan}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {o.stok_kurang_catatan_admin && (
+                  <div style={{ background: disetujui ? "#D8E9E6" : "#FBEAEA", borderRadius: 10, padding: 12 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Catatan Admin</p>
+                    <p style={{ fontSize: 12.5, color: "#24272B", margin: 0, fontStyle: "italic" }}>"{o.stok_kurang_catatan_admin}"</p>
+                  </div>
+                )}
+              </Card>
+            );
+          })
+        )
       )}
     </div>
   );
