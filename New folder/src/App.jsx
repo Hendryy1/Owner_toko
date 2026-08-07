@@ -14463,7 +14463,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           </div>
           <p className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "0 0 6px" }}>Laporan Berhasil Dibuat</p>
           <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 24px" }}>
-            {scannedList.length} koli tercatat untuk {jenisKurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"} - {namaKurir}
+            {scannedList.reduce((sum, s) => sum + (s.jumlah_box || 1), 0)} koli tercatat untuk {jenisKurir === "baraka" ? "Kurir Baraka" : "Kurir Toko"} - {namaKurir}
           </p>
           <button onClick={mulaiLagi} style={{ padding: "12px 28px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
             Buat Laporan Baru
@@ -14638,7 +14638,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           disabled={scannedList.length === 0}
           style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: scannedList.length === 0 ? "#E4E1DA" : "#28685D", color: scannedList.length === 0 ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 14 }}
         >
-          Lanjut Isi Form ({scannedList.length} koli)
+          Lanjut Isi Form ({scannedList.reduce((sum, s) => sum + (s.jumlah_box || 1), 0)} koli)
         </button>
 
         {showCamera && (
