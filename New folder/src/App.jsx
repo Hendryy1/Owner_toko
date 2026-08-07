@@ -2043,9 +2043,14 @@ function OrdersPage({ token }) {
               </span>
             )}
             {isRejected && (
-              <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 12px", borderRadius: 9, background: "#FBEAEA", color: "#C0392B", fontSize: 12.5, fontWeight: 700 }}>
-                <X size={14} /> Ditolak
-              </span>
+              <div style={{ textAlign: "right" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 5, padding: "8px 14px", borderRadius: 9, background: "#FBEAEA", color: "#C0392B", fontSize: 12.5, fontWeight: 700 }}>
+                  <X size={14} /> {o.alasan_dibatalkan ? "Dibatalkan Toko" : "Ditolak Admin"}
+                </span>
+                {o.alasan_dibatalkan && (
+                  <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "4px 0 0" }}>{o.alasan_dibatalkan}</p>
+                )}
+              </div>
             )}
             {isPending && (
               <>
@@ -3914,7 +3919,7 @@ function RiwayatOrderPage({ token }) {
                   <td style={{ padding: "12px 14px" }}>{o.clients?.nama} ({o.clients?.kode})</td>
                   <td style={{ padding: "12px 14px" }}>
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 4, background: st.bg, color: st.fg, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
-                      {o.alasan_dibatalkan ? <Clock size={11} /> : <Check size={11} />} {o.alasan_dibatalkan ? "Dibatalkan (Kadaluarsa)" : st.label}
+                      {o.alasan_dibatalkan ? <Clock size={11} /> : <Check size={11} />} {o.alasan_dibatalkan ? "Dibatalkan" : st.label}
                     </span>
                     {o.alasan_dibatalkan && (
                       <p style={{ fontSize: 10, color: "#9CA0A6", margin: "4px 0 0" }}>{o.alasan_dibatalkan}</p>
