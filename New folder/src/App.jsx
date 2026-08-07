@@ -953,7 +953,7 @@ export default function OwnerDashboard() {
         {page === "aktivitas_layar" && <AktivitasLayarPage token={token} />}
         {page === "calendar" && <CalendarPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
-        {page === "review_stok_kurang" && <ReviewStokKurangPage token={token} userId={userId} />}
+        {page === "review_stok_kurang" && <ReviewStokKurangPage token={token} userId={profile?.id} />}
         {page === "konfirmasi_bayar" && <KonfirmasiPembayaranPage token={token} />}
         {page === "laporan_pesanan" && <LaporanPesananPage token={token} />}
         {page === "laporan_performa" && <LaporanPerformaPage token={token} />}
