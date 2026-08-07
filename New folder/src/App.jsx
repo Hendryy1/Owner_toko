@@ -5662,7 +5662,7 @@ function SiapDikirimPage({ token, role }) {
         </div>
       )}
 
-      {activeTab === "siap_kirim" && orderTampil.length > 0 && role !== "kurir" && role !== "staff_gudang" && (
+      {(activeTab === "siap_kirim" || activeTab === "proses_pengemasan") && orderTampil.length > 0 && role !== "kurir" && role !== "staff_gudang" && (
         <Card style={{ marginBottom: 16, padding: 14 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 600, color: "#24272B", cursor: "pointer" }}>
@@ -5692,6 +5692,8 @@ function SiapDikirimPage({ token, role }) {
 
           <div style={{ maxHeight: showCetakOptions ? 400 : 0, overflow: "hidden", transition: "max-height 0.25s ease" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12, paddingTop: 12, borderTop: "1px solid #EDEAE3" }}>
+              {activeTab === "siap_kirim" && (
+                <>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button
                   onClick={() => cetakMassal("nota", false)}
@@ -5724,7 +5726,9 @@ function SiapDikirimPage({ token, role }) {
                   <RefreshCw size={14} /> Cetak Ulang Surat Jalan
                 </button>
               </div>
-              {role !== "staff_gudang" && (
+                </>
+              )}
+              {activeTab === "proses_pengemasan" && role !== "staff_gudang" && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   <button
                     onClick={() => {
@@ -5760,9 +5764,11 @@ function SiapDikirimPage({ token, role }) {
               )}
             </div>
           </div>
-          <p style={{ fontSize: 11, color: "#9CA0A6", margin: "8px 0 0" }}>
-            Surat Jalan cuma akan tercetak untuk yang tujuannya Pekanbaru (yang di luar Pekanbaru otomatis dilewati).
-          </p>
+          {activeTab === "siap_kirim" && (
+            <p style={{ fontSize: 11, color: "#9CA0A6", margin: "8px 0 0" }}>
+              Surat Jalan cuma akan tercetak untuk yang tujuannya Pekanbaru (yang di luar Pekanbaru otomatis dilewati).
+            </p>
+          )}
         </Card>
       )}
 
@@ -5780,7 +5786,7 @@ function SiapDikirimPage({ token, role }) {
               <Card key={o.id} style={{ marginBottom: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
                   <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                    {activeTab === "siap_kirim" && role !== "kurir" && role !== "staff_gudang" && (
+                    {(activeTab === "siap_kirim" || activeTab === "proses_pengemasan") && role !== "kurir" && role !== "staff_gudang" && (
                       <input
                         type="checkbox" checked={selectedIds.has(o.id)} onChange={() => toggleSelect(o.id)}
                         style={{ width: 16, height: 16, marginTop: 4 }}
