@@ -14615,7 +14615,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         <Card style={{ marginBottom: 20 }}>
           <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Jumlah Box</p>
           <p className="disp" style={{ fontSize: 32, fontWeight: 700, color: "#24272B", margin: 0 }}>
-            {scannedList.reduce((sum, s) => sum + (boxProgress[s.order_id]?.length || 1), 0)}
+            {scannedList.reduce((sum, s) => sum + (s.jumlah_box || boxProgress[s.order_id]?.length || 1), 0)}
           </p>
         </Card>
 
@@ -14777,7 +14777,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
   const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
 
-  const totalBoxKeseluruhan = scannedList.reduce((sum, s) => sum + (boxProgress[s.order_id]?.length || 1), 0);
+  const totalBoxKeseluruhan = scannedList.reduce((sum, s) => sum + (s.jumlah_box || boxProgress[s.order_id]?.length || 1), 0);
 
   return (
     <div>
