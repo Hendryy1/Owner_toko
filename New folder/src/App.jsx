@@ -11590,6 +11590,25 @@ function AkunStaffPage({ token }) {
 // ============================================================
 // Loader library html5-qrcode dari CDN - buat scan barcode pakai kamera HP
 let html5QrcodeLoadPromise = null;
+// Bunyi "beep" pendek buat feedback tiap kali scan berhasil - dipakai di
+// mana saja yang ada fitur scan barcode (bukan cuma satu tempat).
+function mainkanBeepScan() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = 1400;
+    gain.gain.setValueAtTime(0.001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.15, ctx.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.1);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.12);
+  } catch (e) { /* browser tidak izinkan audio otomatis - abaikan */ }
+}
+
 function loadHtml5Qrcode() {
   if (window.Html5Qrcode) return Promise.resolve();
   if (html5QrcodeLoadPromise) return html5QrcodeLoadPromise;
@@ -13603,6 +13622,7 @@ function ScanBoxSiapKirimModal({ order, token, onClose, onSelesai }) {
     const updated = [...boxTerscanRef.current, noBox].sort((a, b) => a - b);
     setBoxTerscan(updated);
     setPesan({ type: "ok", text: `Box ${noBox} berhasil discan (${updated.length}/${totalBox}).` });
+    mainkanBeepScan();
     setSaving(true);
     try {
       const bodyPatch = { box_terscan_siap_kirim: updated };
@@ -14069,9 +14089,9 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
       tambahPesanScan({ type: "error", text: `${o.no_nota} sudah ada di daftar.` });
       return;
     }
-    setScannedList((prev) => [...prev, { no_nota: o.no_nota, order_id: o.id }]);
+    setScannedList((prev) => [...prev, { no_nota: o.no_nota, order_id: o.id, jumlah_box: o.jumlah_box_konfirmasi || 1 }]);
     setSiapDilaporkan((prev) => prev.filter((x) => x.id !== o.id));
-    tambahPesanScan({ type: "ok", text: `${o.no_nota} ditambahkan (sudah discan lengkap dari Siap Kirim).` });
+    tambahPesanScan({ type: "ok", text: `${o.no_nota} ditambahkan (sudah discan lengkap ${o.jumlah_box_konfirmasi || 1} box dari Siap Kirim).` });
   }
 
 
@@ -14242,8 +14262,10 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         setScanDitolakMsg(null);
         setOrderSedangProses({ orderId: rows[0].id, noNota: rows[0].no_nota, totalBox });
         setConfirmingScan({ ...rows[0], noBox: noBoxScan, totalBox });
+        mainkanBeepScan();
       } else {
         setConfirmingScan(rows[0]);
+        mainkanBeepScan();
       }
     } catch (e) {
       tambahPesanScan({ type: "error", text: "Gagal cek nomor: " + e.message });
@@ -14951,9 +14973,11 @@ function BuatReturPage({ token, role, userId, namaAkun, onGantiMode }) {
         setScanMsg(null);
         setOrderSedangProses({ orderId: rows[0].id, noNota: rows[0].no_nota, totalBox });
         setConfirmingScan({ ...rows[0], noBox: noBoxScan, totalBox });
+        mainkanBeepScan();
       } else {
         setScanMsg(null);
         setConfirmingScan(rows[0]);
+        mainkanBeepScan();
       }
     } catch (e) {
       setScanMsg({ type: "error", text: "Gagal cek nomor: " + e.message });
