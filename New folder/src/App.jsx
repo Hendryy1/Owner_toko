@@ -9051,6 +9051,7 @@ function ProfilSalesPage({ token, profile }) {
             </div>
           </div>
         )}
+      </Card>
 
       {/* VERIFIKASI DOKUMEN */}
       <Card style={{ maxWidth: 480 }}>
