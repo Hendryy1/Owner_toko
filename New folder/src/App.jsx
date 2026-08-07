@@ -15201,7 +15201,11 @@ function PickingListPage({ token, role, userId }) {
   const [uploadingBukti, setUploadingBukti] = useState(false);
   const [ordersTertunda, setOrdersTertunda] = useState([]); // sudah picking+box, TAPI belum upload bukti - buat lanjut kalau sempat putus
   const [scanTerakhir, setScanTerakhir] = useState(null); // null | "barcode" | "produk" - tipe scan yang lagi menunggu pasangannya
+  const scanTerakhirRef = useRef(null); // kamera sekarang tetap terbuka terus (tidak didaftar ulang tiap scan), jadi WAJIB baca dari ref ini di dalam callback, bukan langsung dari state (stale closure)
+  useEffect(() => { scanTerakhirRef.current = scanTerakhir; }, [scanTerakhir]);
   const [pasanganSelesai, setPasanganSelesai] = useState(0); // jumlah box yang sudah diverifikasi lengkap (barcode+produk cocok)
+  const pasanganSelesaiRef = useRef(0); // sama kayak scanTerakhirRef - wajib dipakai di dalam callback kamera supaya tidak stale
+  useEffect(() => { pasanganSelesaiRef.current = pasanganSelesai; }, [pasanganSelesai]);
   const [checkerInput, setCheckerInput] = useState(""); // input manual/scanner fisik
   const [checkerPesan, setCheckerPesan] = useState(null);
   const [showCameraChecker, setShowCameraChecker] = useState(false);
@@ -15352,6 +15356,7 @@ function PickingListPage({ token, role, userId }) {
       });
       setPackingSelesaiOrder({ ...confirmingBoxOrder, jumlah_box_konfirmasi: jumlahBox });
       setScanTerakhir(null); setPasanganSelesai(0);
+      scanTerakhirRef.current = null; pasanganSelesaiRef.current = 0;
       setCheckerPesan(null);
       setConfirmingBoxOrder(null);
       setJumlahBoxInput("");
@@ -15415,31 +15420,35 @@ function PickingListPage({ token, role, userId }) {
       return;
     }
 
-    if (scanTerakhir === null) {
+    if (scanTerakhirRef.current === null) {
       // Scan PERTAMA dari satu pasangan (box) baru - simpan dulu, tunggu
       // pasangannya buat dicocokkan
+      scanTerakhirRef.current = hasil;
       setScanTerakhir(hasil);
       setCheckerPesan({ type: "ok", text: `${hasil.tipe === "barcode" ? "Barcode" : "Kode produk"} terbaca. Sekarang scan ${hasil.tipe === "barcode" ? "kode produk" : "barcode"} di kemasan yang sama.` });
       return;
     }
 
-    if (scanTerakhir.tipe === hasil.tipe) {
+    if (scanTerakhirRef.current.tipe === hasil.tipe) {
       // Scan tipe yang SAMA lagi berturut-turut - ditolak
       setCheckerPesan({ type: "error", text: `Harus scan ${hasil.tipe === "barcode" ? "kode produk" : "barcode"} dulu, jangan ${hasil.tipe === "barcode" ? "barcode" : "kode produk"} lagi.` });
       return;
     }
 
     // Tipe BEDA dari scan sebelumnya - sekarang COCOKKAN nomor produknya
-    if (scanTerakhir.nomorProduk !== hasil.nomorProduk) {
-      const kodeBarcode = scanTerakhir.tipe === "barcode" ? scanTerakhir.nomorProduk : hasil.nomorProduk;
-      const kodeFisik = scanTerakhir.tipe === "produk" ? scanTerakhir.nomorProduk : hasil.nomorProduk;
+    if (scanTerakhirRef.current.nomorProduk !== hasil.nomorProduk) {
+      const kodeBarcode = scanTerakhirRef.current.tipe === "barcode" ? scanTerakhirRef.current.nomorProduk : hasil.nomorProduk;
+      const kodeFisik = scanTerakhirRef.current.tipe === "produk" ? scanTerakhirRef.current.nomorProduk : hasil.nomorProduk;
       setCheckerPesan({ type: "error", text: `Salah produk! Barcode ini untuk kode "${kodeBarcode}", tapi kode di kemasan fisik "${kodeFisik}" - cek lagi barangnya.` });
+      scanTerakhirRef.current = null;
       setScanTerakhir(null);
       return;
     }
 
     // Cocok! 1 pasangan (1 box) lengkap dan BENAR produknya
-    const pasanganBaru = pasanganSelesai + 1;
+    scanTerakhirRef.current = null;
+    const pasanganBaru = pasanganSelesaiRef.current + 1;
+    pasanganSelesaiRef.current = pasanganBaru;
     setPasanganSelesai(pasanganBaru);
     setScanTerakhir(null);
     setCheckerPesan({ type: "ok", text: `Box ${pasanganBaru}/${packingSelesaiOrder.jumlah_box_konfirmasi} terverifikasi cocok!` });
@@ -15812,7 +15821,7 @@ function PickingListPage({ token, role, userId }) {
                   <p style={{ fontSize: 11.5, color: "#C0392B", margin: "4px 0 0", fontWeight: 600 }}>Picking sudah selesai - {o.jumlah_box_konfirmasi} box, tinggal upload foto</p>
                 </div>
                 <button
-                  onClick={() => { setPackingSelesaiOrder(o); setScanTerakhir(null); setPasanganSelesai(0); setCheckerPesan(null); }}
+                  onClick={() => { setPackingSelesaiOrder(o); setScanTerakhir(null); setPasanganSelesai(0); scanTerakhirRef.current = null; pasanganSelesaiRef.current = 0; setCheckerPesan(null); }}
                   style={{ padding: "11px 20px", borderRadius: 10, border: "none", background: "#C0392B", color: "#fff", fontWeight: 700, fontSize: 13.5 }}
                 >
                   Lanjutkan
