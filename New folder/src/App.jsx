@@ -609,7 +609,91 @@ function clearDashboardSession() {
   try { localStorage.removeItem(DASHBOARD_SESSION_KEY); } catch (e) {}
 }
 
-export default function OwnerDashboard() {
+// Catat error ke database (tabel error_logs) - dipakai baik oleh Error
+// Boundary (React crash, penyebab "blank putih") maupun window.onerror/
+// unhandledrejection (error JS umum, termasuk Promise gagal yang tidak
+// ditangani). Best-effort - kalau gagal kirim log-nya sendiri, diamkan
+// saja (jangan sampai proses catat error malah bikin error baru).
+async function catatErrorKeServer(pesanError, detailStack) {
+  try {
+    const session = loadDashboardSession();
+    if (!session?.token) return; // belum login - tidak ada token buat kirim log
+    let namaUser = null, roleUser = null;
+    try {
+      const raw = localStorage.getItem("dashboard_last_profile");
+      if (raw) { const p = JSON.parse(raw); namaUser = p.nama; roleUser = p.role; }
+    } catch (e) {}
+    await fetch(`${SUPABASE_URL}/rest/v1/error_logs`, {
+      method: "POST",
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${session.token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sumber: "dashboard",
+        pesan_error: String(pesanError).slice(0, 2000),
+        detail_stack: String(detailStack || "").slice(0, 4000),
+        halaman: window.location.href,
+        user_id: session.userId || null,
+        nama_user: namaUser,
+        role_user: roleUser,
+        user_agent: navigator.userAgent,
+      }),
+    });
+  } catch (e) { /* gagal catat error - diamkan, jangan sampai bikin error baru */ }
+}
+
+// Tangkap error JS umum yang tidak ketangkep Error Boundary (Error
+// Boundary CUMA nangkep error saat proses render React - bukan error di
+// dalam event handler biasa, setTimeout, atau Promise yang gagal).
+if (typeof window !== "undefined" && !window.__errorLoggerTerpasang) {
+  window.__errorLoggerTerpasang = true;
+  window.addEventListener("error", (e) => {
+    catatErrorKeServer(e.message, e.error?.stack || `${e.filename}:${e.lineno}:${e.colno}`);
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    catatErrorKeServer("Promise gagal (unhandled): " + (e.reason?.message || e.reason), e.reason?.stack || "");
+  });
+}
+
+// Error Boundary - React CUMA punya cara ini (class component) untuk
+// nangkep error yang terjadi SAAT PROSES RENDER komponen (penyebab utama
+// "blank putih" - error di render bikin React berhenti total tanpa
+// fallback). Begitu ketangkep, tampilkan halaman fallback yang ramah
+// (bukan blank putih), DAN catat errornya ke server otomatis.
+class DashboardErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    catatErrorKeServer(error?.message || String(error), error?.stack || info?.componentStack || "");
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: 24, background: "#F7F5F1" }}>
+          <div style={{ background: "#fff", borderRadius: 16, padding: 28, maxWidth: 440, textAlign: "center" }}>
+            <p style={{ fontSize: 40, margin: "0 0 12px" }}>⚠️</p>
+            <p style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 8px" }}>Ada Masalah Teknis</p>
+            <p style={{ fontSize: 13, color: "#6B6F75", margin: "0 0 20px", lineHeight: 1.5 }}>
+              Halaman ini mengalami error dan sudah otomatis dilaporkan ke tim. Coba refresh halaman.
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              style={{ padding: "11px 24px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}
+            >
+              Refresh Halaman
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function OwnerDashboardInner() {
   const [token, setToken] = useState(null);
   const [profile, setProfile] = useState(null);
   const [salesTerverifikasi, setSalesTerverifikasi] = useState(true); // default true supaya role lain tidak kena batasan
@@ -660,6 +744,7 @@ export default function OwnerDashboard() {
     }
     setToken(accessToken);
     setProfile(profRows[0]);
+    try { localStorage.setItem("dashboard_last_profile", JSON.stringify({ nama: profRows[0].nama, role: profRows[0].role })); } catch (e) {}
     saveDashboardSession({ userId, token: accessToken, refreshToken });
 
     // Catat log aktivitas login - CUMA kalau ini benar-benar login manual
@@ -951,6 +1036,7 @@ export default function OwnerDashboard() {
         {page === "request_area" && <RequestAreaOwnerPage token={token} />}
         {page === "rekap_absen" && <RekapAbsenPage token={token} setPage={setPage} />}
         {page === "aktivitas_layar" && <AktivitasLayarPage token={token} />}
+        {page === "log_error" && <LogErrorSistemPage token={token} />}
         {page === "calendar" && <CalendarPage token={token} />}
         {page === "orders" && <OrdersPage token={token} />}
         {page === "review_stok_kurang" && <ReviewStokKurangPage token={token} userId={profile?.id} />}
@@ -1003,6 +1089,17 @@ export default function OwnerDashboard() {
         )}
       </div>
     </div>
+  );
+}
+
+// Bungkus dengan Error Boundary - kalau ada error saat render (penyebab
+// utama "blank putih"), otomatis tampilkan halaman fallback yang ramah
+// dan catat errornya ke server, bukan crash total tanpa penjelasan.
+export default function OwnerDashboard() {
+  return (
+    <DashboardErrorBoundary>
+      <OwnerDashboardInner />
+    </DashboardErrorBoundary>
   );
 }
 
@@ -1072,6 +1169,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "request_area", label: "Request Area Sales", icon: MapPin, roles: ["owner"] },
     { key: "rekap_absen", label: "Rekap Absen Sales", icon: Clock, roles: ["owner"] },
     { key: "aktivitas_layar", label: "Aktivitas Layar Staff", icon: Eye, roles: ["owner"] },
+    { key: "log_error", label: "Log Error Sistem", icon: AlertCircle, roles: ["owner"] },
     { key: "calendar", label: "Calendar", icon: CalendarDays, roles: ["owner"] },
     { key: "orders", label: "Approve Pesanan", icon: ClipboardCheck, roles: ["owner", "admin_transaksi"] },
     { key: "review_stok_kurang", label: "Review Stock Kurang", icon: AlertCircle, roles: ["owner", "admin_transaksi"] },
@@ -12296,6 +12394,94 @@ function AbsenSalesPage({ token, profile }) {
 // AKTIVITAS LAYAR STAFF - Owner lihat gambaran durasi Dashboard "aktif
 // di layar depan" per staff per hari (murni pemantauan, bukan penguncian).
 // ============================================================
+// ============================================================
+// LOG ERROR SISTEM - Owner lihat semua error JavaScript yang tertangkap
+// otomatis (Dashboard maupun Web App), tanpa perlu user screenshot
+// Console manual tiap kali ada bug.
+// ============================================================
+function LogErrorSistemPage({ token }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [logs, setLogs] = useState([]);
+  const [filterSumber, setFilterSumber] = useState("semua"); // "semua" | "dashboard" | "webapp"
+  const [expandedId, setExpandedId] = useState(null);
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    try {
+      const rows = await supabaseFetch(token, "error_logs?select=*&order=created_at.desc&limit=200");
+      setLogs(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  const filtered = filterSumber === "semua" ? logs : logs.filter((l) => l.sumber === filterSumber);
+
+  return (
+    <div>
+      <PageHeader title="Log Error Sistem" subtitle={`${filtered.length} error tercatat (200 terbaru)`} onRefresh={load} refreshing={loading} />
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {["semua", "dashboard", "webapp"].map((s) => (
+          <button
+            key={s}
+            onClick={() => setFilterSumber(s)}
+            style={{ padding: "9px 18px", borderRadius: 9, border: filterSumber === s ? "1.5px solid #C0392B" : "1.5px solid #E4E1DA", background: filterSumber === s ? "#FBEAEA" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700, textTransform: "capitalize" }}
+          >
+            {s === "semua" ? "Semua" : s === "dashboard" ? "Dashboard" : "Web App"}
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <EmptyState text="Belum ada error tercatat. Sistem aman!" />
+      ) : (
+        filtered.map((l) => (
+          <Card key={l.id} style={{ marginBottom: 10, padding: 14 }}>
+            <div
+              onClick={() => setExpandedId(expandedId === l.id ? null : l.id)}
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, cursor: "pointer" }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                  <span style={{ padding: "2px 9px", borderRadius: 999, fontSize: 10.5, fontWeight: 700, background: l.sumber === "dashboard" ? "#EFE1BE" : "#D8E9E6", color: l.sumber === "dashboard" ? "#8A6A1A" : "#28685D" }}>
+                    {l.sumber === "dashboard" ? "Dashboard" : "Web App"}
+                  </span>
+                  <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: 0 }}>{new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}</p>
+                </div>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "#C0392B", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: expandedId === l.id ? "normal" : "nowrap" }}>
+                  {l.pesan_error}
+                </p>
+                <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "4px 0 0" }}>
+                  {l.nama_user || "Belum login"} {l.role_user ? `(${l.role_user})` : ""}
+                </p>
+              </div>
+              <ChevronRight size={16} color="#9CA0A6" style={{ flexShrink: 0, transform: expandedId === l.id ? "rotate(90deg)" : "none", transition: "transform 0.15s" }} />
+            </div>
+            {expandedId === l.id && (
+              <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #EDEAE3" }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Halaman</p>
+                <p style={{ fontSize: 12, color: "#24272B", margin: "0 0 12px", wordBreak: "break-all" }}>{l.halaman}</p>
+                {l.detail_stack && (
+                  <>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Detail Teknis</p>
+                    <pre style={{ fontSize: 10.5, color: "#6B6F75", background: "#F7F5F1", borderRadius: 8, padding: 10, overflow: "auto", maxHeight: 200, margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{l.detail_stack}</pre>
+                  </>
+                )}
+              </div>
+            )}
+          </Card>
+        ))
+      )}
+    </div>
+  );
+}
+
 function AktivitasLayarPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
