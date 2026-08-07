@@ -1851,7 +1851,7 @@ function OrdersPage({ token }) {
       // bukan cuma yang masih di tahap ini. Nanti dipisah jadi 2 bagian:
       // "Menunggu Persetujuan" (aktif) dan "Riwayat" (sudah pernah diproses).
       const [rows, salesRows] = await Promise.all([
-        supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan))&order=created_at.desc&limit=200"),
+        supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan,nomor_produk))&order=created_at.desc&limit=200"),
         supabaseFetch(token, "sales?select=id,nama"),
       ]);
       const salesMap = {};
@@ -4612,7 +4612,7 @@ function RekapNotaPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
+        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan,nomor_produk)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -5410,7 +5410,7 @@ function SiapDikirimPage({ token, role }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,kota,jenis_pembayaran),order_items(*,products(kode,nama,satuan))&status=in.(menunggu_pembayaran,menunggu_pengiriman,siap_dikirim,proses_dikirim,diretur,selesai)&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,kota,jenis_pembayaran),order_items(*,products(kode,nama,satuan,nomor_produk))&status=in.(menunggu_pembayaran,menunggu_pengiriman,siap_dikirim,proses_dikirim,diretur,selesai)&order=created_at.asc");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
