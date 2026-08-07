@@ -11592,9 +11592,18 @@ function AkunStaffPage({ token }) {
 let html5QrcodeLoadPromise = null;
 // Bunyi "beep" pendek buat feedback tiap kali scan berhasil - dipakai di
 // mana saja yang ada fitur scan barcode (bukan cuma satu tempat).
+// PENTING: pakai SATU AudioContext yang dipakai ULANG terus-menerus,
+// jangan buat baru tiap panggil - browser biasanya batasi jumlah
+// AudioContext yang bisa dibuat berturut-turut, jadi kalau selalu bikin
+// baru, cuma yang pertama kali yang benar-benar bunyi.
+let audioCtxBeepScan = null;
 function mainkanBeepScan() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtxBeepScan) {
+      audioCtxBeepScan = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    const ctx = audioCtxBeepScan;
+    if (ctx.state === "suspended") ctx.resume();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     osc.type = "square";
