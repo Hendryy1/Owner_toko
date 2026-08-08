@@ -308,23 +308,25 @@ function bukaTabPreviewBarcode(orders, ukuranLabel) {
         <td style="padding:4px;color:#24272B;font-weight:700;text-align:right">${it.qty}</td>
       </tr>`).join("");
     const infoAtas = entry.jenis === "kemasan"
-      ? `<p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 10px">Penerima: ${namaPenerima}</p>`
+      ? `<p style="font-size:17px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">Penerima: ${namaPenerima}</p>
+        <p style="font-size:14px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">No HP: ${teleponPenerima || "-"}</p>
+        <p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 10px;text-align:left;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>`
       : `
-        ${o.is_dropship ? `<p style="font-size:12.5px;color:#8A6A1A;margin:0 0 4px;font-weight:700">Pengirim: ${o.nama_pengirim_dropship || o.clients?.nama}</p>` : ""}
-        <p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 2px">Penerima: ${namaPenerima}</p>
-        <p style="font-size:12.5px;font-weight:700;color:#24272B;margin:0 0 2px">No HP: ${teleponPenerima || "-"}</p>
-        <p style="font-size:13.5px;font-weight:700;color:#24272B;margin:0 0 10px;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>
-        <p style="font-size:12.5px;font-weight:700;color:#24272B;margin:0 0 16px">${jumlahBarang} barang dipesan</p>`;
+        <p style="font-size:13.5px;color:#8A6A1A;margin:0 0 4px;font-weight:700;text-align:left;padding:0 10px">Pengirim: PT INDO GARUDA ABADI</p>
+        ${o.is_dropship ? `<p style="font-size:13.5px;color:#8A6A1A;margin:0 0 4px;font-weight:700;text-align:left;padding:0 10px">Pengirim Barang: ${o.nama_pengirim_dropship || o.clients?.nama}</p>` : ""}
+        <p style="font-size:17px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">Penerima: ${namaPenerima}</p>
+        <p style="font-size:14px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">No HP: ${teleponPenerima || "-"}</p>
+        <p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 10px;text-align:left;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>`;
     const infoBox = entry.noBox
       ? `<p style="font-size:16px;font-weight:700;color:#24272B;margin:0 0 10px;padding:4px 14px;background:#FBF0D9;display:inline-block;border-radius:6px">${entry.item?.products?.kode || ""} - No. Box: ${entry.noBox} / ${entry.totalBox}</p>`
-      : "";
+      : `<p style="font-size:16px;font-weight:700;color:#24272B;margin:0 0 10px;padding:4px 14px;background:#FBF0D9;display:inline-block;border-radius:6px">Total Box: ${jumlahBarang}</p>`;
     return `
       <div class="barcode-item" style="text-align:center;padding:10px 0;${i < entries.length - 1 ? "page-break-after:always;" : ""}">
         ${infoAtas}
         ${infoBox}
         <div style="display:flex;justify-content:center;align-items:flex-end;gap:20px;margin-bottom:16px">
           ${entry.jenis === "kemasan"
-            ? `<div style="display:flex;flex-direction:column;align-items:center"><div id="qr-${i}"></div><p style="font-size:12px;font-weight:700;color:#24272B;margin-top:6px;font-family:monospace">${o.no_nota}</p></div>`
+            ? `<div style="display:flex;flex-direction:column;align-items:center"><div id="qr-${i}"></div></div>`
             : `<svg id="barcode-${i}"></svg><div style="display:flex;flex-direction:column;align-items:center"><div id="qr-kecil-${i}"></div></div>`}
         </div>
         <table style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:left">
@@ -376,10 +378,10 @@ function bukaTabPreviewBarcode(orders, ukuranLabel) {
             data.forEach(function (d) {
               if (d.jenis === "kemasan") {
                 var kodeUnik = d.noNota + "-" + String(d.noBox).padStart(2, "0") + (d.nomorProduk ? ("-" + d.nomorProduk) : "");
-                new QRCode(document.getElementById("qr-" + d.idx), { text: kodeUnik, width: 160, height: 160 });
+                new QRCode(document.getElementById("qr-" + d.idx), { text: kodeUnik, width: 120, height: 120 });
               } else {
-                JsBarcode("#barcode-" + d.idx, d.noNota, { format: "CODE128", width: 3, height: 80, displayValue: true, fontSize: 14, margin: 6 });
-                new QRCode(document.getElementById("qr-kecil-" + d.idx), { text: d.noNota, width: 80, height: 80 });
+                JsBarcode("#barcode-" + d.idx, d.noNota, { format: "CODE128", width: 3, height: 60, displayValue: true, fontSize: 14, margin: 6 });
+                new QRCode(document.getElementById("qr-kecil-" + d.idx), { text: d.noNota, width: 65, height: 65 });
               }
             });
           };
@@ -1797,7 +1799,6 @@ function QRCodeLabel({ value, size = 160 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
       <div ref={containerRef} />
-      <p style={{ fontSize: 12, fontWeight: 700, color: "#24272B", marginTop: 6, fontFamily: "monospace" }}>{value}</p>
     </div>
   );
 }
@@ -1814,13 +1815,15 @@ function BarcodeLabelContent({ order: o, noBox, totalBox, item }) {
   const namaPenerima = o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama;
   return (
     <div className="barcode-label-content" style={{ textAlign: "center", padding: "10px 0" }}>
+      {!noBox && (
+        <p style={{ fontSize: 13.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700, textAlign: "left", padding: "0 10px" }}>Pengirim: PT INDO GARUDA ABADI</p>
+      )}
       {o.is_dropship && (
-        <p style={{ fontSize: 13.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700, textAlign: "left", padding: "0 10px" }}>Pengirim: {o.nama_pengirim_dropship || o.clients?.nama}</p>
+        <p style={{ fontSize: 13.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700, textAlign: "left", padding: "0 10px" }}>{noBox ? "Pengirim" : "Pengirim Barang"}: {o.nama_pengirim_dropship || o.clients?.nama}</p>
       )}
       <p style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 3px", textAlign: "left", padding: "0 10px" }}>Penerima: {namaPenerima}</p>
       <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 3px", textAlign: "left", padding: "0 10px" }}>No HP: {teleponPenerima || "-"}</p>
       <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 10px", textAlign: "left", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
-      <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 16px", textAlign: "left", padding: "0 10px" }}>{jumlahBarang} barang dipesan</p>
       {noBox && totalBox ? (
         <p style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "4px 14px", background: "#FBF0D9", display: "inline-block", borderRadius: 6 }}>
           {item?.products?.kode ? `${item.products.kode} - ` : ""}No. Box: {noBox} / {totalBox}
