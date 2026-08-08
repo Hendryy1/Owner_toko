@@ -1163,6 +1163,33 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
   const [namaKategoriBaru, setNamaKategoriBaru] = useState(""); // input inline, ganti prompt() yang kadang tidak jalan di HP/browser tertentu
   const [grupTerbuka, setGrupTerbuka] = useState({}); // { "Admin Transaksi": true, ... }
 
+  // Dipakai bareng tombol toggle "Selesai Atur Grup" (di atas) dan bisa
+  // juga dipanggil dari dalam UI pengaturan itu sendiri.
+  async function simpanGrup(draftUntukDisimpan) {
+    const bersih = draftUntukDisimpan.filter((g) => g.items.length > 0); // buang kategori kosong
+    try {
+      await supabaseFetch(token, "pengaturan_urutan_menu?id=eq.1", {
+        method: "PATCH",
+        body: JSON.stringify({ grup_owner: bersih, updated_at: new Date().toISOString() }),
+      });
+      setGrupOwner(bersih);
+      setGrupSementara(null);
+      setModeAturGrup(false);
+    } catch (e) {
+      alert("Gagal simpan ke server: " + e.message + "\n\nPengaturan BELUM tersimpan - coba lagi.");
+    }
+  }
+
+  function geserGrup(draft, index, arah) {
+    const tujuan = index + arah;
+    if (tujuan < 0 || tujuan >= draft.length) return draft;
+    const draftBaru = [...draft];
+    [draftBaru[index], draftBaru[tujuan]] = [draftBaru[tujuan], draftBaru[index]];
+    setGrupSementara(draftBaru);
+    return draftBaru;
+  }
+
+
   // ============================================================
   // GRUP MENU KHUSUS TAMPILAN OWNER (slide down per kategori) -
   // EDIT BEBAS di sini: pindahkan/tambah/kurangi "key" menu di tiap
@@ -1377,7 +1404,15 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
       )}
       {profile?.role === "owner" && !modeAturUrutan && (
         <button
-          onClick={() => setModeAturGrup((prev) => !prev)}
+          onClick={() => {
+            if (modeAturGrup) {
+              // Lagi di mode edit, sekarang klik "Selesai" - simpan dulu.
+              const draft = grupSementara || GRUP_MENU_OWNER.map((g) => ({ ...g, items: [...g.items] }));
+              simpanGrup(draft);
+            } else {
+              setModeAturGrup(true);
+            }
+          }}
           style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid #3A3E44", background: modeAturGrup ? "#E8A426" : "none", color: modeAturGrup ? "#24272B" : "#9CA0A6", fontSize: 11.5, fontWeight: 700, marginBottom: 12 }}
         >
           {modeAturGrup ? <Check size={13} /> : <ChevronRight size={13} />} {modeAturGrup ? "Selesai Atur Grup" : "Atur Grup Menu"}
@@ -1470,26 +1505,23 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
               setGrupSementara([...draft, { label: nama, items: [] }]);
               setNamaKategoriBaru("");
             }
-            async function simpanGrup() {
-              const bersih = draft.filter((g) => g.items.length > 0); // buang kategori kosong
-              try {
-                await supabaseFetch(token, "pengaturan_urutan_menu?id=eq.1", {
-                  method: "PATCH",
-                  body: JSON.stringify({ grup_owner: bersih, updated_at: new Date().toISOString() }),
-                });
-                setGrupOwner(bersih);
-                setGrupSementara(null);
-                setModeAturGrup(false);
-              } catch (e) {
-                alert("Gagal simpan ke server: " + e.message + "\n\nPengaturan BELUM tersimpan - coba lagi.");
-              }
-            }
             return (
               <>
-                <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 10px", lineHeight: 1.5 }}>
-                  Pilih kategori untuk tiap menu. Menu yang belum dipilih kategorinya akan tampil flat di atas (tidak hilang).
-                </p>
-                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                {draft.length > 0 && (
+                  <>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, color: "#5A5E64", textTransform: "uppercase", margin: "0 0 8px" }}>Urutan Kategori</p>
+                    {draft.map((g, i) => (
+                      <div key={g.label} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 9px", borderRadius: 8, background: "#24272B", marginBottom: 6 }}>
+                        <span style={{ flex: 1, color: "#fff", fontSize: 12, fontWeight: 600 }}>{g.label}</span>
+                        <button onClick={() => geserGrup(draft, i, -1)} disabled={i === 0} style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#33373C", color: i === 0 ? "#5A5E64" : "#C7C4BC", display: "flex", alignItems: "center", justifyContent: "center" }}>▲</button>
+                        <button onClick={() => geserGrup(draft, i, 1)} disabled={i === draft.length - 1} style={{ width: 24, height: 24, borderRadius: 6, border: "none", background: "#33373C", color: i === draft.length - 1 ? "#5A5E64" : "#C7C4BC", display: "flex", alignItems: "center", justifyContent: "center" }}>▼</button>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                <p style={{ fontSize: 10.5, fontWeight: 700, color: "#5A5E64", textTransform: "uppercase", margin: "14px 0 8px" }}>Tambah Kategori</p>
+                <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
                   <input
                     type="text"
                     value={namaKategoriBaru}
@@ -1506,6 +1538,8 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
                     + Tambah
                   </button>
                 </div>
+
+                <p style={{ fontSize: 10.5, fontWeight: 700, color: "#5A5E64", textTransform: "uppercase", margin: "0 0 8px" }}>Pilih Kategori Tiap Menu</p>
                 {semuaKeyOwner.map((key) => {
                   const it = allItems.find((x) => x.key === key);
                   if (!it) return null;
@@ -1525,12 +1559,9 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
                     </div>
                   );
                 })}
-                <button
-                  onClick={simpanGrup}
-                  style={{ width: "100%", padding: 10, borderRadius: 8, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 12.5, marginTop: 8 }}
-                >
-                  Simpan Pengaturan Grup
-                </button>
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: "14px 0 0", lineHeight: 1.5, textAlign: "center" }}>
+                  Klik "Selesai Atur Grup" di atas untuk menyimpan.
+                </p>
               </>
             );
           })()}
