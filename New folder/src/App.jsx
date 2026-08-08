@@ -309,17 +309,29 @@ function bukaTabPreviewBarcode(orders, ukuranLabel) {
       </tr>`).join("");
     const infoAtas = entry.jenis === "kemasan"
       ? `<p style="font-size:17px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">Penerima: ${namaPenerima}</p>
-        <p style="font-size:14px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">No HP: ${teleponPenerima || "-"}</p>
+        <p style="font-size:14px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">No.Telp: ${teleponPenerima || "-"}</p>
         <p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 10px;text-align:left;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>`
       : `
         <p style="font-size:13.5px;color:#8A6A1A;margin:0 0 4px;font-weight:700;text-align:left;padding:0 10px">Pengirim: PT INDO GARUDA ABADI</p>
         ${o.is_dropship ? `<p style="font-size:13.5px;color:#8A6A1A;margin:0 0 4px;font-weight:700;text-align:left;padding:0 10px">Pengirim Barang: ${o.nama_pengirim_dropship || o.clients?.nama}</p>` : ""}
         <p style="font-size:17px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">Penerima: ${namaPenerima}</p>
-        <p style="font-size:14px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">No HP: ${teleponPenerima || "-"}</p>
+        <p style="font-size:14px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">No.Telp: ${teleponPenerima || "-"}</p>
         <p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 10px;text-align:left;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>`;
     const infoBox = entry.noBox
       ? `<p style="font-size:16px;font-weight:700;color:#24272B;margin:0 0 10px;padding:4px 14px;background:#FBF0D9;display:inline-block;border-radius:6px">${entry.item?.products?.kode || ""} - No. Box: ${entry.noBox} / ${entry.totalBox}</p>`
       : `<p style="font-size:16px;font-weight:700;color:#24272B;margin:0 0 10px;padding:4px 14px;background:#FBF0D9;display:inline-block;border-radius:6px">Total Box: ${jumlahBarang}</p>`;
+    const infoBawah = entry.noBox
+      ? `<p style="font-size:15px;font-weight:700;color:#24272B;margin:0;text-align:left;padding:0 10px">No. Pesanan: ${o.no_nota}</p>`
+      : `<table style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:left">
+          <thead>
+            <tr style="border-bottom:1.5px solid #24272B">
+              <th style="padding:4px;font-weight:700">Kode</th>
+              <th style="padding:4px;font-weight:700">Nama Barang</th>
+              <th style="padding:4px;font-weight:700;text-align:right">Pcs</th>
+            </tr>
+          </thead>
+          <tbody>${baris}</tbody>
+        </table>`;
     return `
       <div class="barcode-item" style="text-align:center;padding:10px 0;${i < entries.length - 1 ? "page-break-after:always;" : ""}">
         ${infoAtas}
@@ -329,16 +341,7 @@ function bukaTabPreviewBarcode(orders, ukuranLabel) {
             ? `<div style="display:flex;flex-direction:column;align-items:center"><div id="qr-${i}"></div></div>`
             : `<svg id="barcode-${i}"></svg><div style="display:flex;flex-direction:column;align-items:center"><div id="qr-kecil-${i}"></div></div>`}
         </div>
-        <table style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:left">
-          <thead>
-            <tr style="border-bottom:1.5px solid #24272B">
-              <th style="padding:4px;font-weight:700">Kode</th>
-              <th style="padding:4px;font-weight:700">Nama Barang</th>
-              <th style="padding:4px;font-weight:700;text-align:right">Pcs</th>
-            </tr>
-          </thead>
-          <tbody>${baris}</tbody>
-        </table>
+        ${infoBawah}
       </div>`;
   }).join("");
 
@@ -1822,7 +1825,7 @@ function BarcodeLabelContent({ order: o, noBox, totalBox, item }) {
         <p style={{ fontSize: 13.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700, textAlign: "left", padding: "0 10px" }}>{noBox ? "Pengirim" : "Pengirim Barang"}: {o.nama_pengirim_dropship || o.clients?.nama}</p>
       )}
       <p style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 3px", textAlign: "left", padding: "0 10px" }}>Penerima: {namaPenerima}</p>
-      <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 3px", textAlign: "left", padding: "0 10px" }}>No HP: {teleponPenerima || "-"}</p>
+      <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 3px", textAlign: "left", padding: "0 10px" }}>No.Telp: {teleponPenerima || "-"}</p>
       <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 10px", textAlign: "left", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
       {noBox && totalBox ? (
         <p style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "4px 14px", background: "#FBF0D9", display: "inline-block", borderRadius: 6 }}>
@@ -1855,24 +1858,28 @@ function BarcodeLabelContent({ order: o, noBox, totalBox, item }) {
         )}
       </div>
 
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, textAlign: "left" }}>
-        <thead>
-          <tr style={{ borderBottom: "1.5px solid #24272B" }}>
-            <th style={{ padding: "4px 4px", fontWeight: 700 }}>Kode</th>
-            <th style={{ padding: "4px 4px", fontWeight: 700 }}>Nama Barang</th>
-            <th style={{ padding: "4px 4px", fontWeight: 700, textAlign: "right" }}>Pcs</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(o.order_items || []).map((it, i) => (
-            <tr key={i} style={{ borderBottom: "1px solid #EDEAE3" }}>
-              <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700 }}>{it.products?.kode || "-"}</td>
-              <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700 }}>{it.products?.nama || "-"}</td>
-              <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700, textAlign: "right" }}>{it.qty}</td>
+      {noBox ? (
+        <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0, textAlign: "left", padding: "0 10px" }}>No. Pesanan: {o.no_nota}</p>
+      ) : (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5, textAlign: "left" }}>
+          <thead>
+            <tr style={{ borderBottom: "1.5px solid #24272B" }}>
+              <th style={{ padding: "4px 4px", fontWeight: 700 }}>Kode</th>
+              <th style={{ padding: "4px 4px", fontWeight: 700 }}>Nama Barang</th>
+              <th style={{ padding: "4px 4px", fontWeight: 700, textAlign: "right" }}>Pcs</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {(o.order_items || []).map((it, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid #EDEAE3" }}>
+                <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700 }}>{it.products?.kode || "-"}</td>
+                <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700 }}>{it.products?.nama || "-"}</td>
+                <td style={{ padding: "4px 4px", color: "#24272B", fontWeight: 700, textAlign: "right" }}>{it.qty}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
