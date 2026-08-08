@@ -254,7 +254,9 @@ function bukaTabPreviewCetak(jsxContent, judulTab, ukuranKertas) {
 // statis" biasa. Di sini kita tulis placeholder kosong + script untuk
 // menggambar ulang barcode/QR-nya LANGSUNG DI DALAM tab baru itu.
 // ============================================================
-function bukaTabPreviewBarcode(orders) {
+function bukaTabPreviewBarcode(orders, ukuranLabel) {
+  const lebarMm = ukuranLabel?.lebar || 100;
+  const tinggiMm = ukuranLabel?.tinggi || 150;
   const win = window.open("", "_blank");
   if (!win) {
     alert("Gagal buka tab baru - pastikan pop-up tidak diblokir browser.");
@@ -348,7 +350,7 @@ function bukaTabPreviewBarcode(orders) {
         <title>${entries.length > 1 ? "Barcode Massal" : "Barcode"}</title>
         <meta charset="utf-8" />
         <style>
-          @page { size: 100mm 150mm; margin: 5mm; }
+          @page { size: ${lebarMm}mm ${tinggiMm}mm; margin: 5mm; }
           body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #F7F5F1; }
           .tombol-cetak-bar { position: sticky; top: 0; display: flex; justify-content: center; gap: 10px; padding: 14px; background: #24272B; margin: -20px -20px 20px; z-index: 10; }
           .tombol-cetak-bar button { padding: 11px 24px; border-radius: 10px; border: none; font-weight: 700; font-size: 13.5px; cursor: pointer; }
@@ -1879,12 +1881,14 @@ function BarcodeLabelContent({ order: o, noBox, totalBox, item }) {
 // ============================================================
 // MODAL CETAK BARCODE MASSAL - beberapa label sekaligus, halaman terpisah
 // ============================================================
-function BulkBarcodeModal({ orders, onClose, onSelesaiCetak, mencetak, error }) {
+function BulkBarcodeModal({ orders, onClose, onSelesaiCetak, mencetak, error, ukuranLabel }) {
+  const lebarMm = ukuranLabel?.lebar || 100;
+  const tinggiMm = ukuranLabel?.tinggi || 150;
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
       <style>{`
         @media print {
-          @page { size: 100mm 150mm; margin: 5mm; }
+          @page { size: ${lebarMm}mm ${tinggiMm}mm; margin: 5mm; }
           body * { visibility: hidden; }
           .barcode-label-content, .barcode-label-content * { visibility: visible; }
           .barcode-label-content { position: static !important; top: auto !important; left: auto !important; right: auto !important; }
@@ -1913,7 +1917,7 @@ function BulkBarcodeModal({ orders, onClose, onSelesaiCetak, mencetak, error }) 
             Tutup
           </button>
           <button
-            onClick={() => bukaTabPreviewBarcode(orders)}
+            onClick={() => bukaTabPreviewBarcode(orders, ukuranLabel)}
             style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontWeight: 600, fontSize: 12 }}
           >
             Cetak Manual
@@ -6453,7 +6457,7 @@ function SiapDikirimPage({ token, role }) {
 
       {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} settings={notaSettings} onClose={() => setPrintingOrder(null)} />}
       {bulkPrint && <BulkPrintModal orders={bulkPrint.orders} type={bulkPrint.type} settings={notaSettings} onClose={() => setBulkPrint(null)} />}
-      {bulkBarcode && <BulkBarcodeModal orders={bulkBarcode} onClose={() => setBulkBarcode(null)} onSelesaiCetak={handleCetakMassalBarcode} mencetak={mencetakBarcode} error={errorCetakBarcode} />}
+      {bulkBarcode && <BulkBarcodeModal orders={bulkBarcode} onClose={() => setBulkBarcode(null)} onSelesaiCetak={handleCetakMassalBarcode} mencetak={mencetakBarcode} error={errorCetakBarcode} ukuranLabel={ukuranLabelBarcode} />}
 
       {/* MODAL LIHAT DETAIL - untuk tab siap_kirim/proses_kirim/retur/selesai */}
       {detailOrder && (
@@ -6525,7 +6529,7 @@ function SiapDikirimPage({ token, role }) {
 
               <style>{`
                 @media print {
-                  @page { size: 100mm 150mm; margin: 5mm; }
+                  @page { size: ${ukuranLabelBarcode.lebar}mm ${ukuranLabelBarcode.tinggi}mm; margin: 5mm; }
                   body * { visibility: hidden; }
                   .barcode-label-content, .barcode-label-content * { visibility: visible; }
                   .barcode-label-content { position: fixed; top: 30px; left: 0; right: 0; }
@@ -6542,7 +6546,7 @@ function SiapDikirimPage({ token, role }) {
                   Tutup
                 </button>
                 <button
-                  onClick={() => bukaTabPreviewBarcode([o])}
+                  onClick={() => bukaTabPreviewBarcode([o], ukuranLabelBarcode)}
                   style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontWeight: 600, fontSize: 12 }}
                 >
                   Cetak Manual
