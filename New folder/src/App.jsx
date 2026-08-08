@@ -1814,21 +1814,13 @@ function BarcodeLabelContent({ order: o, noBox, totalBox, item }) {
   const namaPenerima = o.is_dropship ? (o.tujuan_nama || o.clients?.nama) : o.clients?.nama;
   return (
     <div className="barcode-label-content" style={{ textAlign: "center", padding: "10px 0" }}>
-      {isPekanbaru ? (
-        // Khusus Pekanbaru (Kurir Toko) - info pembeli disederhanakan cuma
-        // nama penerima saja, tidak perlu HP/alamat/jumlah barang di label
-        <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 10px" }}>Penerima: {namaPenerima}</p>
-      ) : (
-        <>
-          {o.is_dropship && (
-            <p style={{ fontSize: 12.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700 }}>Pengirim: {o.nama_pengirim_dropship || o.clients?.nama}</p>
-          )}
-          <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Penerima: {namaPenerima}</p>
-          <p style={{ fontSize: 12.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>No HP: {teleponPenerima || "-"}</p>
-          <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
-          <p style={{ fontSize: 12.5, fontWeight: 700, color: "#24272B", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
-        </>
+      {o.is_dropship && (
+        <p style={{ fontSize: 13.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700 }}>Pengirim: {o.nama_pengirim_dropship || o.clients?.nama}</p>
       )}
+      <p style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 3px" }}>Penerima: {namaPenerima}</p>
+      <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 3px" }}>No HP: {teleponPenerima || "-"}</p>
+      <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
+      <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
       {noBox && totalBox ? (
         <p style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "4px 14px", background: "#FBF0D9", display: "inline-block", borderRadius: 6 }}>
           {item?.products?.kode ? `${item.products.kode} - ` : ""}No. Box: {noBox} / {totalBox}
@@ -1845,13 +1837,17 @@ function BarcodeLabelContent({ order: o, noBox, totalBox, item }) {
         {noBox ? (
           // Label KEMASAN (per box) - QR saja, sertakan nomor produk di
           // belakangnya (kalau ada) supaya "Checker Produk" bisa mengenali
-          // kode ini sebagai barcode-nya-sendiri (format 3 bagian).
-          <QRCodeLabel value={item?.products?.nomor_produk ? `${o.no_nota}-${String(noBox).padStart(2, "0")}-${item.products.nomor_produk}` : `${o.no_nota}-${String(noBox).padStart(2, "0")}`} />
+          // kode ini sebagai barcode-nya-sendiri (format 3 bagian). Ukuran
+          // diperkecil (dari 160 -> 120) supaya muat dengan info penerima
+          // lengkap di atasnya (nama/HP/alamat/jumlah barang).
+          <QRCodeLabel value={item?.products?.nomor_produk ? `${o.no_nota}-${String(noBox).padStart(2, "0")}-${item.products.nomor_produk}` : `${o.no_nota}-${String(noBox).padStart(2, "0")}`} size={120} />
         ) : (
-          // Label INTI (cuma muncul untuk luar kota) - Barcode128 + QR bersamaan
+          // Label INTI (cuma muncul untuk luar kota) - Barcode128 + QR
+          // bersamaan, ukuran diperkecil supaya seimbang dengan teks yang
+          // sekarang lebih besar.
           <>
-            <BarcodeLabel value={o.no_nota} />
-            <QRCodeLabel value={o.no_nota} size={80} />
+            <BarcodeLabel value={o.no_nota} height={60} />
+            <QRCodeLabel value={o.no_nota} size={65} />
           </>
         )}
       </div>
