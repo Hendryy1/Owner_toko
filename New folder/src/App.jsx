@@ -1157,6 +1157,51 @@ function LoginScreen({ form, setForm, onLogin, error, loading }) {
 // ============================================================
 function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, isMobile, salesTerverifikasi, urutanMenu, setUrutanMenu, token, notifCounts }) {
   const [modeAturUrutan, setModeAturUrutan] = useState(false);
+  const [grupTerbuka, setGrupTerbuka] = useState({}); // { "Admin Transaksi": true, ... }
+
+  // ============================================================
+  // GRUP MENU KHUSUS TAMPILAN OWNER (slide down per kategori) -
+  // EDIT BEBAS di sini: pindahkan/tambah/kurangi "key" menu di tiap
+  // grup sesuai kebutuhan Anda. "key" yang dipakai harus sama persis
+  // dengan "key" yang ada di daftar allItems di bawah (lihat kolom
+  // "key:" masing-masing menu).
+  //
+  // Menu yang key-nya TIDAK dimasukkan ke grup manapun di bawah ini
+  // akan otomatis tetap tampil di ATAS (di luar grup, flat seperti
+  // biasa) - jadi aman, tidak ada menu yang "hilang" walau belum
+  // sempat dikelompokkan.
+  // ============================================================
+  const GRUP_MENU_OWNER = [
+    {
+      label: "Admin Transaksi",
+      items: ["orders", "review_stok_kurang", "picking_list", "siap_dikirim_baru", "proses_kirim", "outbound", "rekap_nota"],
+    },
+    {
+      label: "Admin Keuangan",
+      items: ["konfirmasi_bayar", "keuangan", "biaya_operasional", "pajak", "bunga_investor", "piutang", "saldo_va", "cashback"],
+    },
+    {
+      label: "Sales",
+      items: ["laporan_kunjungan_owner", "rekap_absen", "laporan_periodik_sales", "area_sales", "request_area"],
+    },
+    {
+      label: "Kurir",
+      items: ["laporan_kurir", "buat_laporan_kurir"],
+    },
+    {
+      label: "Staff Gudang",
+      items: ["kelola_gudang", "stock", "inbound", "penyesuaian_stok"],
+    },
+    {
+      label: "Produk & Katalog",
+      items: ["produk", "barang", "ongkir", "format_nota", "banner_promo"],
+    },
+    {
+      label: "Pengaturan & Lainnya",
+      items: ["clients", "verifikasi_toko", "akun_staff", "verifikasi_sales", "rekening_bank", "pin_atasan", "maintenance", "permintaan_hapus_akun", "program_loyalitas", "rating_komplain", "backup_data", "log_aktivitas", "log_error", "aktivitas_layar"],
+    },
+  ];
+
   const allItems = [
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_keuangan"] },
     { key: "chat_sales", label: "Chat Toko", icon: MessageCircle, roles: ["owner", "sales", "admin_transaksi"] },
@@ -1386,24 +1431,71 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
           })()}
         </div>
       ) : (
-        itemsUrut.map((it) => {
-          const Icon = it.icon;
-          const active = page === it.key;
-          const jumlahNotif = notifCounts?.[it.key] || 0;
+        (() => {
+          // Fungsi render 1 tombol menu - dipakai ulang baik untuk menu
+          // "flat" (di luar grup) maupun menu di dalam grup yang di-slide-down.
+          function renderTombolMenu(it) {
+            const Icon = it.icon;
+            const active = page === it.key;
+            const jumlahNotif = notifCounts?.[it.key] || 0;
+            return (
+              <button
+                key={it.key} onClick={() => { setPage(it.key); if (isMobile) setCollapsed(true); }}
+                style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 10, border: "none", background: active ? "#E8A426" : "none", color: active ? "#24272B" : "#9CA0A6", fontSize: 13.5, fontWeight: 600, marginBottom: 4, textAlign: "left", position: "relative", width: "100%" }}
+              >
+                <Icon size={17} /> {it.label}
+                {jumlahNotif > 0 && (
+                  <span style={{ marginLeft: "auto", background: "#C0392B", color: "#fff", fontSize: 10.5, fontWeight: 700, borderRadius: 999, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", flexShrink: 0 }}>
+                    {jumlahNotif > 99 ? "99+" : jumlahNotif}
+                  </span>
+                )}
+              </button>
+            );
+          }
+
+          // Cuma Owner yang lihat tampilan berkelompok (slide down) - role
+          // lain tetap lihat menu flat seperti biasa (menu mereka memang
+          // sudah sedikit, tidak perlu dikelompokkan).
+          if (profile?.role !== "owner") {
+            return itemsUrut.map((it) => renderTombolMenu(it));
+          }
+
+          const keyDalamGrup = new Set(GRUP_MENU_OWNER.flatMap((g) => g.items));
+          const menuFlat = itemsUrut.filter((it) => !keyDalamGrup.has(it.key));
+          const menuPerGrup = GRUP_MENU_OWNER.map((g) => ({
+            ...g,
+            itemsAda: itemsUrut.filter((it) => g.items.includes(it.key)),
+          })).filter((g) => g.itemsAda.length > 0);
+
           return (
-            <button
-              key={it.key} onClick={() => { setPage(it.key); if (isMobile) setCollapsed(true); }}
-              style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 12px", borderRadius: 10, border: "none", background: active ? "#E8A426" : "none", color: active ? "#24272B" : "#9CA0A6", fontSize: 13.5, fontWeight: 600, marginBottom: 4, textAlign: "left", position: "relative" }}
-            >
-              <Icon size={17} /> {it.label}
-              {jumlahNotif > 0 && (
-                <span style={{ marginLeft: "auto", background: "#C0392B", color: "#fff", fontSize: 10.5, fontWeight: 700, borderRadius: 999, minWidth: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 5px", flexShrink: 0 }}>
-                  {jumlahNotif > 99 ? "99+" : jumlahNotif}
-                </span>
-              )}
-            </button>
+            <>
+              {menuFlat.map((it) => renderTombolMenu(it))}
+              {menuPerGrup.map((g) => {
+                const terbuka = !!grupTerbuka[g.label];
+                const notifDalamGrup = g.itemsAda.reduce((sum, it) => sum + (notifCounts?.[it.key] || 0), 0);
+                return (
+                  <div key={g.label} style={{ marginBottom: 4 }}>
+                    <button
+                      onClick={() => setGrupTerbuka((prev) => ({ ...prev, [g.label]: !prev[g.label] }))}
+                      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "11px 12px", borderRadius: 10, border: "none", background: "none", color: "#C7C4BC", fontSize: 12.5, fontWeight: 700, textAlign: "left", textTransform: "uppercase", letterSpacing: "0.03em" }}
+                    >
+                      <ChevronRight size={14} style={{ transform: terbuka ? "rotate(90deg)" : "none", transition: "transform 0.2s", flexShrink: 0 }} />
+                      <span style={{ flex: 1 }}>{g.label}</span>
+                      {notifDalamGrup > 0 && (
+                        <span style={{ background: "#C0392B", color: "#fff", fontSize: 10, fontWeight: 700, borderRadius: 999, minWidth: 16, height: 16, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 4px", flexShrink: 0 }}>
+                          {notifDalamGrup > 99 ? "99+" : notifDalamGrup}
+                        </span>
+                      )}
+                    </button>
+                    <div style={{ maxHeight: terbuka ? 1000 : 0, overflow: "hidden", transition: "max-height 0.25s ease", paddingLeft: 8 }}>
+                      {g.itemsAda.map((it) => renderTombolMenu(it))}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
           );
-        })
+        })()
       )}
 
       <div style={{ flex: 1 }} />
