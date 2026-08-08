@@ -312,7 +312,7 @@ function bukaTabPreviewBarcode(orders, ukuranLabel) {
         <p style="font-size:14px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">No.Telp: ${teleponPenerima || "-"}</p>
         <p style="font-size:15px;font-weight:700;color:#24272B;margin:0 0 10px;text-align:left;padding:0 10px">Alamat: ${alamatPenerima || "-"}</p>`
       : `
-        <p style="font-size:13.5px;color:#8A6A1A;margin:0 0 4px;font-weight:700;text-align:left;padding:0 10px">Pengirim: PT INDO GARUDA ABADI</p>
+        <p style="font-size:16px;color:#24272B;margin:0 0 4px;font-weight:700;text-align:left;padding:0 10px">Pengirim: PT INDO GARUDA ABADI</p>
         ${o.is_dropship ? `<p style="font-size:13.5px;color:#8A6A1A;margin:0 0 4px;font-weight:700;text-align:left;padding:0 10px">Pengirim Barang: ${o.nama_pengirim_dropship || o.clients?.nama}</p>` : ""}
         <p style="font-size:17px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">Penerima: ${namaPenerima}</p>
         <p style="font-size:14px;font-weight:700;color:#24272B;margin:0 0 3px;text-align:left;padding:0 10px">No.Telp: ${teleponPenerima || "-"}</p>
@@ -1819,7 +1819,7 @@ function BarcodeLabelContent({ order: o, noBox, totalBox, item }) {
   return (
     <div className="barcode-label-content" style={{ textAlign: "center", padding: "10px 0" }}>
       {!noBox && (
-        <p style={{ fontSize: 13.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700, textAlign: "left", padding: "0 10px" }}>Pengirim: PT INDO GARUDA ABADI</p>
+        <p style={{ fontSize: 16, color: "#24272B", margin: "0 0 4px", fontWeight: 700, textAlign: "left", padding: "0 10px" }}>Pengirim: PT INDO GARUDA ABADI</p>
       )}
       {o.is_dropship && (
         <p style={{ fontSize: 13.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700, textAlign: "left", padding: "0 10px" }}>{noBox ? "Pengirim" : "Pengirim Barang"}: {o.nama_pengirim_dropship || o.clients?.nama}</p>
