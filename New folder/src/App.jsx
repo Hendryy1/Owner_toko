@@ -6100,7 +6100,7 @@ function SiapDikirimPage({ token, role }) {
       const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
       const entries = hitungEntriesLabelBarcode([order]);
       for (const entry of entries) {
-        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} item={entry.item} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} item={entry.item} />, `${lebarIn}in ${tinggiIn}in`, "bawah", true); // selalu pakai Mode Fit - cegah konten meluber ke label fisik berikutnya
       }
       await tandaiSudahDicetak(order.id);
     } catch (e) {
@@ -6117,7 +6117,7 @@ function SiapDikirimPage({ token, role }) {
       const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
       const entries = hitungEntriesLabelBarcode(bulkBarcode);
       for (const entry of entries) {
-        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} item={entry.item} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} item={entry.item} />, `${lebarIn}in ${tinggiIn}in`, "bawah", true); // selalu pakai Mode Fit - cegah konten meluber ke label fisik berikutnya
       }
 
       setMarkingPrinted(true);
@@ -16050,7 +16050,7 @@ function PickingListPage({ token, role, userId }) {
       const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
       const entries = hitungEntriesLabelBarcode([packingSelesaiOrder]);
       for (const entry of entries) {
-        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} item={entry.item} />, `${lebarIn}in ${tinggiIn}in`, "bawah", ukuranLabelBarcode.modeFit);
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} item={entry.item} />, `${lebarIn}in ${tinggiIn}in`, "bawah", true); // selalu pakai Mode Fit - cegah konten meluber ke label fisik berikutnya
       }
     } catch (e) {
       setErrorCetakBarcode("Gagal cetak otomatis: " + e.message + " - pastikan print server jalan. Coba tombol cetak manual sebagai cadangan, atau ulangi.");
