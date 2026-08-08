@@ -1815,12 +1815,12 @@ function BarcodeLabelContent({ order: o, noBox, totalBox, item }) {
   return (
     <div className="barcode-label-content" style={{ textAlign: "center", padding: "10px 0" }}>
       {o.is_dropship && (
-        <p style={{ fontSize: 13.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700 }}>Pengirim: {o.nama_pengirim_dropship || o.clients?.nama}</p>
+        <p style={{ fontSize: 13.5, color: "#8A6A1A", margin: "0 0 4px", fontWeight: 700, textAlign: "left", padding: "0 10px" }}>Pengirim: {o.nama_pengirim_dropship || o.clients?.nama}</p>
       )}
-      <p style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 3px" }}>Penerima: {namaPenerima}</p>
-      <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 3px" }}>No HP: {teleponPenerima || "-"}</p>
-      <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
-      <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 16px" }}>{jumlahBarang} barang dipesan</p>
+      <p style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 3px", textAlign: "left", padding: "0 10px" }}>Penerima: {namaPenerima}</p>
+      <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 3px", textAlign: "left", padding: "0 10px" }}>No HP: {teleponPenerima || "-"}</p>
+      <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 10px", textAlign: "left", padding: "0 10px" }}>Alamat: {alamatPenerima || "-"}</p>
+      <p style={{ fontSize: 14, fontWeight: 700, color: "#24272B", margin: "0 0 16px", textAlign: "left", padding: "0 10px" }}>{jumlahBarang} barang dipesan</p>
       {noBox && totalBox ? (
         <p style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "4px 14px", background: "#FBF0D9", display: "inline-block", borderRadius: 6 }}>
           {item?.products?.kode ? `${item.products.kode} - ` : ""}No. Box: {noBox} / {totalBox}
