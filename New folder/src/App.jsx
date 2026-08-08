@@ -1485,7 +1485,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
         <div style={{ overflowY: "auto" }}>
           {(() => {
             const draft = grupSementara || GRUP_MENU_OWNER.map((g) => ({ ...g, items: [...g.items] }));
-            const semuaKeyOwner = allItems.filter((it) => it.roles.includes("owner")).map((it) => it.key);
+            const semuaKeyOwner = allItems.filter((it) => it.roles.includes("owner")).sort((a, b) => a.label.localeCompare(b.label)).map((it) => it.key);
             function grupDariKey(key) {
               const g = draft.find((g) => g.items.includes(key));
               return g ? g.label : "";
