@@ -130,6 +130,21 @@ async function cetakNotaTeksOtomatis({ order, type, settings, printer = "atas" }
   return true;
 }
 
+// Cetak BANYAK nota sekaligus sebagai 1 job print - supaya di kertas
+// continuous form, nota-nota langsung tersambung berurutan tanpa ada
+// halaman baru/kertas kosong terbuang di antaranya (beda dari cetak
+// satu-satu yang bikin printer anggap tiap nota dokumen terpisah).
+async function cetakNotaMassalTeksOtomatis({ orders, settings, printer = "atas" }) {
+  const res = await fetch(`${PRINT_SERVER_URL}/print-nota-massal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orders, settings, printer }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || "Gagal cetak.");
+  return data.totalDicetak;
+}
+
 function parseUkuranKertas(ukuranKertas) {
   // Contoh input: "9.5in 11in" atau "8.5in 11in" - ubah jadi [lebar, tinggi] dalam inch buat jsPDF
   const bagian = String(ukuranKertas).split(" ").map((s) => parseFloat(s));
@@ -3153,21 +3168,19 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
     setMencetak(true);
     setErrorCetak("");
     setProgresCetak(0);
-    const gagal = [];
-    for (let i = 0; i < orders.length; i++) {
-      try {
-        await cetakNotaTeksOtomatis({ order: orders[i], type, settings });
-      } catch (e) {
-        gagal.push(orders[i].no_nota);
-      }
-      setProgresCetak(i + 1);
+    try {
+      const totalDicetak = await cetakNotaMassalTeksOtomatis({
+        orders: orders.map((o) => ({ order: o, type })),
+        settings,
+      });
+      setProgresCetak(totalDicetak);
+    } catch (e) {
+      setMencetak(false);
+      setErrorCetak(`Gagal cetak massal: ${e.message} - pastikan print server jalan.`);
+      return;
     }
     setMencetak(false);
-    if (gagal.length > 0) {
-      setErrorCetak(`Gagal cetak ${gagal.length} dari ${orders.length} dokumen (${gagal.join(", ")}) - pastikan print server jalan. Sisanya sudah berhasil tercetak.`);
-    } else {
-      onClose();
-    }
+    onClose();
   }
 
   return (
