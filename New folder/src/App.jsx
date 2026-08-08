@@ -712,8 +712,8 @@ function OwnerDashboardInner() {
 
   useEffect(() => {
     if (!token) return;
-    supabaseFetch(token, "pengaturan_urutan_menu?select=urutan&id=eq.1")
-      .then((rows) => setUrutanMenu(rows?.[0]?.urutan || []))
+    supabaseFetch(token, "pengaturan_urutan_menu?select=urutan,grup_owner&id=eq.1")
+      .then((rows) => { setUrutanMenu(rows?.[0]?.urutan || []); setGrupOwner(rows?.[0]?.grup_owner || null); })
       .catch(() => {});
   }, [token]);
   const [page, setPage] = useState(() => {
@@ -732,6 +732,7 @@ function OwnerDashboardInner() {
     } catch (e) { /* diamkan kalau localStorage tidak tersedia */ }
   }, [page]);
   const [urutanMenu, setUrutanMenu] = useState([]);
+  const [grupOwner, setGrupOwner] = useState(null); // null = pakai default bawaan kode
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
   const [loginError, setLoginError] = useState("");
   const [loggingIn, setLoggingIn] = useState(false);
@@ -1011,7 +1012,7 @@ function OwnerDashboardInner() {
         .disp { font-family: 'Barlow Condensed', sans-serif; }
         button { font-family: inherit; cursor: pointer; }
       `}</style>
-      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} isMobile={isMobile} salesTerverifikasi={salesTerverifikasi} urutanMenu={urutanMenu} setUrutanMenu={setUrutanMenu} token={token} notifCounts={notifCounts} />
+      <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} isMobile={isMobile} salesTerverifikasi={salesTerverifikasi} urutanMenu={urutanMenu} setUrutanMenu={setUrutanMenu} token={token} notifCounts={notifCounts} grupOwner={grupOwner} setGrupOwner={setGrupOwner} />
       <div style={{ flex: 1, padding: isMobile ? "16px 16px 28px" : "28px 36px", overflowY: "auto", overflowX: "hidden", minWidth: 0 }}>
         {isMobile && (
           <button
@@ -1155,8 +1156,10 @@ function LoginScreen({ form, setForm, onLogin, error, loading }) {
 // ============================================================
 // SIDEBAR
 // ============================================================
-function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, isMobile, salesTerverifikasi, urutanMenu, setUrutanMenu, token, notifCounts }) {
+function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, isMobile, salesTerverifikasi, urutanMenu, setUrutanMenu, token, notifCounts, grupOwner, setGrupOwner }) {
   const [modeAturUrutan, setModeAturUrutan] = useState(false);
+  const [modeAturGrup, setModeAturGrup] = useState(false);
+  const [grupSementara, setGrupSementara] = useState(null); // draft yang lagi diedit, null = belum mulai edit
   const [grupTerbuka, setGrupTerbuka] = useState({}); // { "Admin Transaksi": true, ... }
 
   // ============================================================
@@ -1171,7 +1174,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
   // biasa) - jadi aman, tidak ada menu yang "hilang" walau belum
   // sempat dikelompokkan.
   // ============================================================
-  const GRUP_MENU_OWNER = [
+  const GRUP_MENU_OWNER_DEFAULT = [
     {
       label: "Admin Transaksi",
       items: ["orders", "review_stok_kurang", "picking_list", "siap_dikirim_baru", "proses_kirim", "outbound", "rekap_nota"],
@@ -1201,6 +1204,10 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
       items: ["clients", "verifikasi_toko", "akun_staff", "verifikasi_sales", "rekening_bank", "pin_atasan", "maintenance", "permintaan_hapus_akun", "program_loyalitas", "rating_komplain", "backup_data", "log_aktivitas", "log_error", "aktivitas_layar"],
     },
   ];
+  // Pakai pengaturan tersimpan dari database kalau Owner sudah pernah atur
+  // sendiri lewat tombol "Atur Grup Menu" - kalau belum pernah, pakai
+  // default bawaan kode di atas.
+  const GRUP_MENU_OWNER = grupOwner && grupOwner.length > 0 ? grupOwner : GRUP_MENU_OWNER_DEFAULT;
 
   const allItems = [
     { key: "overview", label: "Ringkasan", icon: LayoutDashboard, roles: ["owner", "admin_keuangan"] },
@@ -1362,9 +1369,17 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
       {profile?.role === "owner" && (
         <button
           onClick={() => setModeAturUrutan((prev) => !prev)}
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid #3A3E44", background: modeAturUrutan ? "#E8A426" : "none", color: modeAturUrutan ? "#24272B" : "#9CA0A6", fontSize: 11.5, fontWeight: 700, marginBottom: 12 }}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid #3A3E44", background: modeAturUrutan ? "#E8A426" : "none", color: modeAturUrutan ? "#24272B" : "#9CA0A6", fontSize: 11.5, fontWeight: 700, marginBottom: 8 }}
         >
           {modeAturUrutan ? <Check size={13} /> : <FileEdit size={13} />} {modeAturUrutan ? "Selesai Atur Urutan" : "Atur Urutan Menu"}
+        </button>
+      )}
+      {profile?.role === "owner" && !modeAturUrutan && (
+        <button
+          onClick={() => setModeAturGrup((prev) => !prev)}
+          style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 10px", borderRadius: 8, border: "1px solid #3A3E44", background: modeAturGrup ? "#E8A426" : "none", color: modeAturGrup ? "#24272B" : "#9CA0A6", fontSize: 11.5, fontWeight: 700, marginBottom: 12 }}
+        >
+          {modeAturGrup ? <Check size={13} /> : <ChevronRight size={13} />} {modeAturGrup ? "Selesai Atur Grup" : "Atur Grup Menu"}
         </button>
       )}
 
@@ -1426,6 +1441,81 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
                     })}
                   </>
                 )}
+              </>
+            );
+          })()}
+        </div>
+      ) : modeAturGrup ? (
+        <div style={{ overflowY: "auto" }}>
+          {(() => {
+            const draft = grupSementara || GRUP_MENU_OWNER.map((g) => ({ ...g, items: [...g.items] }));
+            const semuaKeyOwner = allItems.filter((it) => it.roles.includes("owner")).map((it) => it.key);
+            function grupDariKey(key) {
+              const g = draft.find((g) => g.items.includes(key));
+              return g ? g.label : "";
+            }
+            function pindahKeGrup(key, labelGrupBaru) {
+              const draftBaru = draft.map((g) => ({ ...g, items: g.items.filter((k) => k !== key) }));
+              if (labelGrupBaru) {
+                const target = draftBaru.find((g) => g.label === labelGrupBaru);
+                if (target) target.items.push(key);
+              }
+              setGrupSementara(draftBaru);
+            }
+            function tambahGrupBaru() {
+              const nama = prompt("Nama kategori baru:");
+              if (!nama || !nama.trim()) return;
+              if (draft.some((g) => g.label === nama.trim())) { alert("Nama kategori ini sudah ada."); return; }
+              setGrupSementara([...draft, { label: nama.trim(), items: [] }]);
+            }
+            async function simpanGrup() {
+              const bersih = draft.filter((g) => g.items.length > 0); // buang kategori kosong
+              setGrupOwner(bersih);
+              try {
+                await supabaseFetch(token, "pengaturan_urutan_menu?id=eq.1", {
+                  method: "PATCH",
+                  body: JSON.stringify({ grup_owner: bersih, updated_at: new Date().toISOString() }),
+                });
+              } catch (e) { /* diamkan - tampilan lokal tetap berubah */ }
+              setGrupSementara(null);
+              setModeAturGrup(false);
+            }
+            return (
+              <>
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 10px", lineHeight: 1.5 }}>
+                  Pilih kategori untuk tiap menu. Menu yang belum dipilih kategorinya akan tampil flat di atas (tidak hilang).
+                </p>
+                <button
+                  onClick={tambahGrupBaru}
+                  style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px dashed #E8A426", background: "none", color: "#E8A426", fontSize: 11.5, fontWeight: 700, marginBottom: 12 }}
+                >
+                  + Tambah Kategori Baru
+                </button>
+                {semuaKeyOwner.map((key) => {
+                  const it = allItems.find((x) => x.key === key);
+                  if (!it) return null;
+                  return (
+                    <div key={key} style={{ marginBottom: 8 }}>
+                      <p style={{ fontSize: 11.5, color: "#C7C4BC", margin: "0 0 3px", fontWeight: 600 }}>{it.label}</p>
+                      <select
+                        value={grupDariKey(key)}
+                        onChange={(e) => pindahKeGrup(key, e.target.value)}
+                        style={{ width: "100%", padding: "7px 8px", borderRadius: 7, border: "1px solid #3A3E44", background: "#24272B", color: "#fff", fontSize: 12 }}
+                      >
+                        <option value="">Tidak dikelompokkan (tampil flat)</option>
+                        {draft.map((g) => (
+                          <option key={g.label} value={g.label}>{g.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
+                <button
+                  onClick={simpanGrup}
+                  style={{ width: "100%", padding: 10, borderRadius: 8, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 12.5, marginTop: 8 }}
+                >
+                  Simpan Pengaturan Grup
+                </button>
               </>
             );
           })()}
