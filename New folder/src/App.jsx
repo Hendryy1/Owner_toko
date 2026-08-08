@@ -1472,15 +1472,17 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
             }
             async function simpanGrup() {
               const bersih = draft.filter((g) => g.items.length > 0); // buang kategori kosong
-              setGrupOwner(bersih);
               try {
                 await supabaseFetch(token, "pengaturan_urutan_menu?id=eq.1", {
                   method: "PATCH",
                   body: JSON.stringify({ grup_owner: bersih, updated_at: new Date().toISOString() }),
                 });
-              } catch (e) { /* diamkan - tampilan lokal tetap berubah */ }
-              setGrupSementara(null);
-              setModeAturGrup(false);
+                setGrupOwner(bersih);
+                setGrupSementara(null);
+                setModeAturGrup(false);
+              } catch (e) {
+                alert("Gagal simpan ke server: " + e.message + "\n\nPengaturan BELUM tersimpan - coba lagi.");
+              }
             }
             return (
               <>
