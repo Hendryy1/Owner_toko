@@ -1160,6 +1160,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
   const [modeAturUrutan, setModeAturUrutan] = useState(false);
   const [modeAturGrup, setModeAturGrup] = useState(false);
   const [grupSementara, setGrupSementara] = useState(null); // draft yang lagi diedit, null = belum mulai edit
+  const [namaKategoriBaru, setNamaKategoriBaru] = useState(""); // input inline, ganti prompt() yang kadang tidak jalan di HP/browser tertentu
   const [grupTerbuka, setGrupTerbuka] = useState({}); // { "Admin Transaksi": true, ... }
 
   // ============================================================
@@ -1463,10 +1464,11 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
               setGrupSementara(draftBaru);
             }
             function tambahGrupBaru() {
-              const nama = prompt("Nama kategori baru:");
-              if (!nama || !nama.trim()) return;
-              if (draft.some((g) => g.label === nama.trim())) { alert("Nama kategori ini sudah ada."); return; }
-              setGrupSementara([...draft, { label: nama.trim(), items: [] }]);
+              const nama = namaKategoriBaru.trim();
+              if (!nama) return;
+              if (draft.some((g) => g.label === nama)) { alert("Nama kategori ini sudah ada."); return; }
+              setGrupSementara([...draft, { label: nama, items: [] }]);
+              setNamaKategoriBaru("");
             }
             async function simpanGrup() {
               const bersih = draft.filter((g) => g.items.length > 0); // buang kategori kosong
@@ -1485,12 +1487,23 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
                 <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 10px", lineHeight: 1.5 }}>
                   Pilih kategori untuk tiap menu. Menu yang belum dipilih kategorinya akan tampil flat di atas (tidak hilang).
                 </p>
-                <button
-                  onClick={tambahGrupBaru}
-                  style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px dashed #E8A426", background: "none", color: "#E8A426", fontSize: 11.5, fontWeight: 700, marginBottom: 12 }}
-                >
-                  + Tambah Kategori Baru
-                </button>
+                <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+                  <input
+                    type="text"
+                    value={namaKategoriBaru}
+                    onChange={(e) => setNamaKategoriBaru(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") tambahGrupBaru(); }}
+                    placeholder="Nama kategori baru..."
+                    style={{ flex: 1, padding: "8px 10px", borderRadius: 8, border: "1px solid #3A3E44", background: "#24272B", color: "#fff", fontSize: 12 }}
+                  />
+                  <button
+                    onClick={tambahGrupBaru}
+                    disabled={!namaKategoriBaru.trim()}
+                    style={{ padding: "8px 14px", borderRadius: 8, border: "1px dashed #E8A426", background: "none", color: namaKategoriBaru.trim() ? "#E8A426" : "#5A5E64", fontSize: 11.5, fontWeight: 700, flexShrink: 0 }}
+                  >
+                    + Tambah
+                  </button>
+                </div>
                 {semuaKeyOwner.map((key) => {
                   const it = allItems.find((x) => x.key === key);
                   if (!it) return null;
