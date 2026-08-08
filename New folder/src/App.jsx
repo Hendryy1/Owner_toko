@@ -15732,6 +15732,15 @@ function PickingListPage({ token, role, userId }) {
   const [mencetakBarcode, setMencetakBarcode] = useState(false);
   const [errorCetakBarcode, setErrorCetakBarcode] = useState("");
   const [ukuranLabelBarcode, setUkuranLabelBarcode] = useState({ lebar: 100, tinggi: 150, modeFit: false });
+
+  useEffect(() => {
+    supabaseFetch(token, "nota_settings?select=lebar_label_barcode_mm,tinggi_label_barcode_mm,mode_fit_barcode&limit=1")
+      .then((rows) => {
+        if (rows[0]) setUkuranLabelBarcode({ lebar: rows[0].lebar_label_barcode_mm ?? 100, tinggi: rows[0].tinggi_label_barcode_mm ?? 150, modeFit: !!rows[0].mode_fit_barcode });
+      })
+      .catch(() => {}); // biarkan pakai default kalau gagal muat
+  }, []);
+
   const [confirmingBoxOrder, setConfirmingBoxOrder] = useState(null); // order yang picking-nya baru selesai, nunggu konfirmasi jumlah box
   const [jumlahBoxInput, setJumlahBoxInput] = useState("");
   const [savingBox, setSavingBox] = useState(false);
