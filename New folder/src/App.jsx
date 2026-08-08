@@ -1189,6 +1189,20 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     return draftBaru;
   }
 
+  // Geser urutan MENU di DALAM satu kategori tertentu (bukan geser urutan
+  // kategorinya sendiri - itu fungsi geserGrup di atas).
+  function geserItemDalamGrup(draft, labelGrup, indexItem, arah) {
+    const draftBaru = draft.map((g) => {
+      if (g.label !== labelGrup) return g;
+      const tujuan = indexItem + arah;
+      if (tujuan < 0 || tujuan >= g.items.length) return g;
+      const itemsBaru = [...g.items];
+      [itemsBaru[indexItem], itemsBaru[tujuan]] = [itemsBaru[tujuan], itemsBaru[indexItem]];
+      return { ...g, items: itemsBaru };
+    });
+    setGrupSementara(draftBaru);
+  }
+
 
   // ============================================================
   // GRUP MENU KHUSUS TAMPILAN OWNER (slide down per kategori) -
@@ -1520,6 +1534,28 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
                   </>
                 )}
 
+                {draft.filter((g) => g.items.length > 0).length > 0 && (
+                  <>
+                    <p style={{ fontSize: 10.5, fontWeight: 700, color: "#5A5E64", textTransform: "uppercase", margin: "14px 0 8px" }}>Urutan Menu dalam Kategori</p>
+                    {draft.filter((g) => g.items.length > 0).map((g) => (
+                      <div key={g.label} style={{ marginBottom: 14 }}>
+                        <p style={{ fontSize: 11, color: "#8A8E94", margin: "0 0 6px", fontWeight: 700 }}>{g.label}</p>
+                        {g.items.map((key, i) => {
+                          const it = allItems.find((x) => x.key === key);
+                          if (!it) return null;
+                          return (
+                            <div key={key} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 9px", borderRadius: 8, background: "#24272B", marginBottom: 5 }}>
+                              <span style={{ flex: 1, color: "#fff", fontSize: 12, fontWeight: 600 }}>{it.label}</span>
+                              <button onClick={() => geserItemDalamGrup(draft, g.label, i, -1)} disabled={i === 0} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "#33373C", color: i === 0 ? "#5A5E64" : "#C7C4BC", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>▲</button>
+                              <button onClick={() => geserItemDalamGrup(draft, g.label, i, 1)} disabled={i === g.items.length - 1} style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "#33373C", color: i === g.items.length - 1 ? "#5A5E64" : "#C7C4BC", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11 }}>▼</button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </>
+                )}
+
                 <p style={{ fontSize: 10.5, fontWeight: 700, color: "#5A5E64", textTransform: "uppercase", margin: "14px 0 8px" }}>Tambah Kategori</p>
                 <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
                   <input
@@ -1600,7 +1636,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
           const menuFlat = itemsUrut.filter((it) => !keyDalamGrup.has(it.key));
           const menuPerGrup = GRUP_MENU_OWNER.map((g) => ({
             ...g,
-            itemsAda: itemsUrut.filter((it) => g.items.includes(it.key)),
+            itemsAda: g.items.map((key) => itemsUrut.find((it) => it.key === key)).filter(Boolean),
           })).filter((g) => g.itemsAda.length > 0);
 
           return (
