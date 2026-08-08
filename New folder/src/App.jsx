@@ -114,6 +114,22 @@ async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas", 
   }
 }
 
+// Cetak Nota/Surat Jalan sebagai TEKS POLOS (bukan render gambar/PDF) -
+// khusus buat printer dot matrix (misal Epson LX-310) yang hasilnya jauh
+// lebih tajam & cepat kalau dikirimi teks asli, bukan bitmap gambar hasil
+// screenshot tampilan (yang jadi buram/pecah di resolusi dot matrix
+// rendah).
+async function cetakNotaTeksOtomatis({ order, type, settings, printer = "atas" }) {
+  const res = await fetch(`${PRINT_SERVER_URL}/print-nota`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ order, type, settings, printer }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.error || "Gagal cetak.");
+  return true;
+}
+
 function parseUkuranKertas(ukuranKertas) {
   // Contoh input: "9.5in 11in" atau "8.5in 11in" - ubah jadi [lebar, tinggi] dalam inch buat jsPDF
   const bagian = String(ukuranKertas).split(" ").map((s) => parseFloat(s));
@@ -3074,7 +3090,7 @@ function NotaPrintModal({ order, type, settings, onClose }) {
     setMencetak(true);
     setErrorCetak("");
     try {
-      await cetakPdfOtomatis(<NotaPrintContent order={order} type={type} settings={settings} />, `${settings?.lebar_kertas_nota ?? 9.5}in ${settings?.tinggi_kertas_nota ?? 11}in`, "atas");
+      await cetakNotaTeksOtomatis({ order, type, settings });
       onClose();
     } catch (e) {
       setErrorCetak("Gagal cetak otomatis: " + e.message + " - pastikan print server (di komputer ini) sedang jalan. Anda tetap bisa pakai tombol \"Cetak Manual\" di bawah sebagai cadangan.");
@@ -3140,7 +3156,7 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
     const gagal = [];
     for (let i = 0; i < orders.length; i++) {
       try {
-        await cetakPdfOtomatis(<NotaPrintContent order={orders[i]} type={type} settings={settings} />, `${settings?.lebar_kertas_nota ?? 9.5}in ${settings?.tinggi_kertas_nota ?? 11}in`, "atas");
+        await cetakNotaTeksOtomatis({ order: orders[i], type, settings });
       } catch (e) {
         gagal.push(orders[i].no_nota);
       }
