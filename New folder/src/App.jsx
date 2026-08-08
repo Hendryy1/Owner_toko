@@ -1831,7 +1831,7 @@ function BarcodeLabelContent({ order: o, noBox, totalBox, item }) {
       )}
       {noBox && totalBox ? (
         <p style={{ fontSize: 16, fontWeight: 700, color: "#24272B", margin: "0 0 10px", padding: "4px 14px", background: "#FBF0D9", display: "inline-block", borderRadius: 6 }}>
-          No. Box: {noBox} / {totalBox}
+          {item?.products?.kode ? `${item.products.kode} - ` : ""}No. Box: {noBox} / {totalBox}
         </p>
       ) : !isPekanbaru ? (
         // Label INTI (luar kota) - tidak ada nomor box spesifik, tampilkan
