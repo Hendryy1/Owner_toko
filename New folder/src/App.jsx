@@ -8866,6 +8866,13 @@ function ProfilSalesPage({ token, profile }) {
       });
       if (!res.ok) throw new Error(await res.text());
       const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+      // Simpan LANGSUNG ke database - sebelumnya cuma update tampilan
+      // sementara (state React), jadi foto hilang lagi setelah refresh
+      // karena tidak pernah benar-benar tersimpan.
+      await supabaseFetch(token, `sales?id=eq.${profile.sales_id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ foto_url: url }),
+      });
       setForm((prev) => ({ ...prev, fotoUrl: url }));
     } catch (e) {
       alert("Gagal upload foto: " + e.message);
