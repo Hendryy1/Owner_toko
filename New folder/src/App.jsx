@@ -11041,8 +11041,10 @@ function BannerPromoPage({ token }) {
   const [saved, setSaved] = useState(false);
   const [bannerId, setBannerId] = useState(null);
   const [form, setForm] = useState({ gambarUrl: "", judul: "", deskripsi: "", aktif: false });
-  const [galeri, setGaleri] = useState([]);
+  const [galeri, setGaleri] = useState([]); // popup - dipakai widget mengambang
+  const [galeriBeranda, setGaleriBeranda] = useState([]); // beranda - tab tersendiri di Web App
   const [uploadingGaleri, setUploadingGaleri] = useState(false);
+  const [uploadingGaleriBeranda, setUploadingGaleriBeranda] = useState(false);
 
   useEffect(() => { load(); }, []);
 
@@ -11050,9 +11052,10 @@ function BannerPromoPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const [rows, galeriRows] = await Promise.all([
+      const [rows, galeriRows, galeriBerandaRows] = await Promise.all([
         supabaseFetch(token, "campaign_banner?select=*&limit=1"),
-        supabaseFetch(token, "campaign_banner_images?select=*&order=urutan.asc"),
+        supabaseFetch(token, "campaign_banner_images?select=*&tipe=eq.popup&order=urutan.asc"),
+        supabaseFetch(token, "campaign_banner_images?select=*&tipe=eq.beranda&order=urutan.asc"),
       ]);
       const b = rows[0];
       if (b) {
@@ -11060,16 +11063,20 @@ function BannerPromoPage({ token }) {
         setForm({ gambarUrl: b.gambar_url || "", judul: b.judul || "", deskripsi: b.deskripsi || "", aktif: b.aktif });
       }
       setGaleri(galeriRows);
+      setGaleriBeranda(galeriBerandaRows);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
 
-  async function uploadFotoGaleri(file) {
-    setUploadingGaleri(true);
+  async function uploadFotoGaleri(file, tipe) {
+    const setterUploading = tipe === "beranda" ? setUploadingGaleriBeranda : setUploadingGaleri;
+    const setterGaleri = tipe === "beranda" ? setGaleriBeranda : setGaleri;
+    const jumlahSaatIni = tipe === "beranda" ? galeriBeranda.length : galeri.length;
+    setterUploading(true);
     try {
       const compressed = await compressImage(file);
       const { ext, contentType } = infoFileTerkompresi(compressed, file);
-      const filePath = `banner-galeri-${Date.now()}.${ext}`;
+      const filePath = `banner-galeri-${tipe}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
         headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
@@ -11079,19 +11086,20 @@ function BannerPromoPage({ token }) {
       const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
       const [inserted] = await supabaseFetch(token, "campaign_banner_images", {
         method: "POST",
-        body: JSON.stringify({ url, urutan: galeri.length }),
+        body: JSON.stringify({ url, urutan: jumlahSaatIni, tipe }),
       });
-      setGaleri((prev) => [...prev, inserted]);
+      setterGaleri((prev) => [...prev, inserted]);
     } catch (e) {
       alert("Gagal upload foto: " + e.message);
     }
-    setUploadingGaleri(false);
+    setterUploading(false);
   }
 
-  async function hapusFotoGaleri(id) {
+  async function hapusFotoGaleri(id, tipe) {
+    const setterGaleri = tipe === "beranda" ? setGaleriBeranda : setGaleri;
     try {
       await supabaseFetch(token, `campaign_banner_images?id=eq.${id}`, { method: "DELETE" });
-      setGaleri((prev) => prev.filter((g) => g.id !== id));
+      setterGaleri((prev) => prev.filter((g) => g.id !== id));
     } catch (e) {
       alert("Gagal hapus foto: " + e.message);
     }
@@ -11175,13 +11183,13 @@ function BannerPromoPage({ token }) {
         </div>
 
         <div style={{ marginBottom: 20 }}>
-          <label style={labelStyle}>Galeri Foto Deskripsi (tampil full-width, tanpa jarak antar foto)</label>
+          <label style={labelStyle}>Galeri Foto Popup (tampil di widget mengambang, full-width tanpa jarak antar foto)</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {galeri.map((img) => (
               <div key={img.id} style={{ position: "relative", width: 60, height: 60 }}>
                 <div style={{ width: 60, height: 60, borderRadius: 8, background: `url(${img.url}) center/cover` }} />
                 <button
-                  onClick={() => hapusFotoGaleri(img.id)}
+                  onClick={() => hapusFotoGaleri(img.id, "popup")}
                   style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C0392B", border: "2px solid #fff", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
                 >
                   <X size={11} />
@@ -11190,7 +11198,28 @@ function BannerPromoPage({ token }) {
             ))}
             <label style={{ width: 60, height: 60, borderRadius: 8, border: "1.5px dashed #E8A426", background: "#FFFBF0", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
               {uploadingGaleri ? <Loader2 size={16} color="#8A6A1A" /> : <PackagePlus size={18} color="#8A6A1A" />}
-              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingGaleri} onChange={(e) => { if (e.target.files[0]) uploadFotoGaleri(e.target.files[0]); }} />
+              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingGaleri} onChange={(e) => { if (e.target.files[0]) uploadFotoGaleri(e.target.files[0], "popup"); }} />
+            </label>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Galeri Foto Beranda (tampil di tab "Beranda" Web App - terpisah dari popup di atas)</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {galeriBeranda.map((img) => (
+              <div key={img.id} style={{ position: "relative", width: 60, height: 60 }}>
+                <div style={{ width: 60, height: 60, borderRadius: 8, background: `url(${img.url}) center/cover` }} />
+                <button
+                  onClick={() => hapusFotoGaleri(img.id, "beranda")}
+                  style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C0392B", border: "2px solid #fff", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+            ))}
+            <label style={{ width: 60, height: 60, borderRadius: 8, border: "1.5px dashed #28685D", background: "#F0F8F6", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              {uploadingGaleriBeranda ? <Loader2 size={16} color="#28685D" /> : <PackagePlus size={18} color="#28685D" />}
+              <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingGaleriBeranda} onChange={(e) => { if (e.target.files[0]) uploadFotoGaleri(e.target.files[0], "beranda"); }} />
             </label>
           </div>
         </div>
