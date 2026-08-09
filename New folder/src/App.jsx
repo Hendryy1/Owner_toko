@@ -3163,38 +3163,45 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
   const [mencetak, setMencetak] = useState(false);
   const [progresCetak, setProgresCetak] = useState(0);
   const [errorCetak, setErrorCetak] = useState("");
+  const [indexBerhenti, setIndexBerhenti] = useState(0); // dari item ke berapa mulai/lanjut cetak
 
-  async function cetakOtomatisSemua() {
+  // Kalau lagi cetak massal NOTA, otomatis sisipkan Surat Jalan tepat
+  // setelah Nota-nya untuk pesanan tujuan Pekanbaru saja (luar kota
+  // tidak perlu Surat Jalan) - supaya urutannya langsung jadi: Nota A,
+  // Surat Jalan A (kalau Pekanbaru), Nota B, Nota C, Surat Jalan C
+  // (kalau Pekanbaru), dst - bukan dipisah per jenis.
+  const daftarCetak = useMemo(() => {
+    if (type !== "nota") return orders.map((o) => ({ order: o, type }));
+    const hasil = [];
+    orders.forEach((o) => {
+      hasil.push({ order: o, type: "nota" });
+      const kotaTujuan = o.tujuan_kota || o.clients?.kota;
+      const isPekanbaru = !!(kotaTujuan && kotaTujuan.trim().toLowerCase().includes("pekanbaru"));
+      if (isPekanbaru) hasil.push({ order: o, type: "surat_jalan" });
+    });
+    return hasil;
+  }, [orders, type]);
+
+  // Cetak SATU PER SATU (bukan 1 kumpulan besar) - supaya kalau macet di
+  // tengah (kertas habis, error printer, dll), kita TAHU PERSIS sampai
+  // mana yang berhasil, dan bisa lanjut dari situ - tidak perlu ulang
+  // dari awal. Kertas tetap tidak boros karena mekanisme "1 halaman =
+  // 14cm" + Form Feed di setiap panggilan sudah otomatis menjaga posisi
+  // kertas tetap rapi walau dipanggil terpisah-pisah begini.
+  async function cetakOtomatisSemua(mulaiDari = 0) {
     setMencetak(true);
     setErrorCetak("");
-    setProgresCetak(0);
-    try {
-      // Kalau lagi cetak massal NOTA, otomatis sisipkan Surat Jalan tepat
-      // setelah Nota-nya untuk pesanan tujuan Pekanbaru saja (luar kota
-      // tidak perlu Surat Jalan) - supaya 1 kali cetak massal langsung
-      // jadi: Nota A, Surat Jalan A (kalau Pekanbaru), Nota B, Nota C,
-      // Surat Jalan C (kalau Pekanbaru), dst - bukan dipisah per jenis.
-      let daftarCetak;
-      if (type === "nota") {
-        daftarCetak = [];
-        orders.forEach((o) => {
-          daftarCetak.push({ order: o, type: "nota" });
-          const kotaTujuan = o.tujuan_kota || o.clients?.kota;
-          const isPekanbaru = !!(kotaTujuan && kotaTujuan.trim().toLowerCase().includes("pekanbaru"));
-          if (isPekanbaru) daftarCetak.push({ order: o, type: "surat_jalan" });
-        });
-      } else {
-        daftarCetak = orders.map((o) => ({ order: o, type }));
+    for (let i = mulaiDari; i < daftarCetak.length; i++) {
+      try {
+        await cetakNotaTeksOtomatis({ order: daftarCetak[i].order, type: daftarCetak[i].type, settings });
+        setProgresCetak(i + 1);
+      } catch (e) {
+        setMencetak(false);
+        setIndexBerhenti(i); // simpan posisi yang gagal, buat tombol "Lanjutkan"
+        const namaDokumen = daftarCetak[i].type === "nota" ? "Nota" : "Surat Jalan";
+        setErrorCetak(`Gagal cetak ${namaDokumen} ${daftarCetak[i].order.no_nota} (item ke-${i + 1} dari ${daftarCetak.length}): ${e.message}. Sudah berhasil ${i} dari ${daftarCetak.length} - klik "Lanjutkan" untuk cetak sisanya, TIDAK perlu ulang dari awal.`);
+        return;
       }
-      const totalDicetak = await cetakNotaMassalTeksOtomatis({
-        orders: daftarCetak,
-        settings,
-      });
-      setProgresCetak(totalDicetak);
-    } catch (e) {
-      setMencetak(false);
-      setErrorCetak(`Gagal cetak massal: ${e.message} - pastikan print server jalan.`);
-      return;
     }
     setMencetak(false);
     onClose();
@@ -3218,7 +3225,7 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
       <div className="bulk-print-container" style={{ background: "#fff", borderRadius: 14, width: 620, maxHeight: "90vh", overflowY: "auto", padding: 0 }}>
         <div className="no-print" style={{ padding: "20px 36px 0" }}>
           <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>
-            {mencetak ? `Mencetak ${progresCetak}/${orders.length}...` : `${orders.length} dokumen siap dicetak.`}
+            {mencetak ? `Mencetak ${progresCetak}/${daftarCetak.length}...` : `${daftarCetak.length} dokumen siap dicetak.`}
           </p>
           {errorCetak && (
             <div style={{ marginTop: 10, padding: 12, borderRadius: 9, background: "#FBEAEA", color: "#C0392B", fontSize: 12, lineHeight: 1.5 }}>
@@ -3252,11 +3259,11 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
             Cetak Manual
           </button>
           <button
-            onClick={cetakOtomatisSemua}
+            onClick={() => cetakOtomatisSemua(errorCetak ? indexBerhenti : 0)}
             disabled={mencetak}
             style={{ flex: 1, padding: 12, borderRadius: 10, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
           >
-            <Printer size={15} /> {mencetak ? `Mencetak ${progresCetak}/${orders.length}...` : `Cetak Otomatis (${orders.length})`}
+            <Printer size={15} /> {mencetak ? `Mencetak ${progresCetak}/${daftarCetak.length}...` : errorCetak ? `Lanjutkan Cetak (sisa ${daftarCetak.length - indexBerhenti})` : `Cetak Otomatis (${daftarCetak.length})`}
           </button>
         </div>
       </div>
