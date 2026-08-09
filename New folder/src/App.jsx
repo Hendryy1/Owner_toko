@@ -3169,8 +3169,25 @@ function BulkPrintModal({ orders, type, settings, onClose }) {
     setErrorCetak("");
     setProgresCetak(0);
     try {
+      // Kalau lagi cetak massal NOTA, otomatis sisipkan Surat Jalan tepat
+      // setelah Nota-nya untuk pesanan tujuan Pekanbaru saja (luar kota
+      // tidak perlu Surat Jalan) - supaya 1 kali cetak massal langsung
+      // jadi: Nota A, Surat Jalan A (kalau Pekanbaru), Nota B, Nota C,
+      // Surat Jalan C (kalau Pekanbaru), dst - bukan dipisah per jenis.
+      let daftarCetak;
+      if (type === "nota") {
+        daftarCetak = [];
+        orders.forEach((o) => {
+          daftarCetak.push({ order: o, type: "nota" });
+          const kotaTujuan = o.tujuan_kota || o.clients?.kota;
+          const isPekanbaru = !!(kotaTujuan && kotaTujuan.trim().toLowerCase().includes("pekanbaru"));
+          if (isPekanbaru) daftarCetak.push({ order: o, type: "surat_jalan" });
+        });
+      } else {
+        daftarCetak = orders.map((o) => ({ order: o, type }));
+      }
       const totalDicetak = await cetakNotaMassalTeksOtomatis({
-        orders: orders.map((o) => ({ order: o, type })),
+        orders: daftarCetak,
         settings,
       });
       setProgresCetak(totalDicetak);
