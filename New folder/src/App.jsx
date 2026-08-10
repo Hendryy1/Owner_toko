@@ -4217,6 +4217,7 @@ function FormatNotaPage({ token }) {
           nama_perusahaan: form.nama_perusahaan,
           alamat_perusahaan: form.alamat_perusahaan,
           telp_perusahaan: form.telp_perusahaan,
+          whatsapp_cs: form.whatsapp_cs,
           teks_subjudul_nota: form.teks_subjudul_nota,
           teks_subjudul_surat_jalan: form.teks_subjudul_surat_jalan,
           teks_footer_nota: form.teks_footer_nota,
@@ -4301,6 +4302,11 @@ function FormatNotaPage({ token }) {
         <div style={{ marginBottom: 16 }}>
           <label style={labelStyle}>Telepon Perusahaan (opsional)</label>
           <input value={form.telp_perusahaan || ""} onChange={set("telp_perusahaan")} placeholder="0761-xxxxxx" style={fieldStyle} />
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={labelStyle}>No. WhatsApp Customer Service</label>
+          <input value={form.whatsapp_cs || ""} onChange={set("whatsapp_cs")} placeholder="6281234567890 (pakai kode negara 62, tanpa spasi/tanda hubung)" style={fieldStyle} />
+          <p style={{ fontSize: 11, color: "#9CA0A6", margin: "6px 0 0" }}>Ini nomor yang dipakai tombol WhatsApp CS di Service Center Web App.</p>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
           <div>
