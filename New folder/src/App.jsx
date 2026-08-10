@@ -2694,7 +2694,7 @@ function OrdersPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Approve Pesanan" subtitle={`${pending.length} menunggu persetujuan`} onRefresh={load} refreshing={loading} showPingPrinter />
+      <PageHeader title="Approve Pesanan" subtitle={`${pending.length} menunggu persetujuan`} onRefresh={load} refreshing={loading} />
       {pending.length === 0 ? (
         <EmptyState text="Tidak ada pesanan yang menunggu persetujuan saat ini." />
       ) : (
@@ -6238,7 +6238,7 @@ function SiapDikirimPage({ token, role }) {
 
   return (
     <div>
-      <PageHeader title="Pesanan" subtitle={`${orders.length} pesanan siap diproses - cetak barcode untuk masing-masing`} />
+      <PageHeader title="Pesanan" subtitle={`${orders.length} pesanan siap diproses - cetak barcode untuk masing-masing`} showPingPrinter />
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <button
@@ -16279,7 +16279,7 @@ function PickingListPage({ token, role, userId }) {
         <button onClick={() => { setSelectedOrder(null); setInputJumlah({}); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
           <ChevronLeft size={16} /> Kembali
         </button>
-        <PageHeader title="Picking List" subtitle="Isi jumlah aktual sesuai barang yang benar-benar diambil" showPingPrinter />
+        <PageHeader title="Picking List" subtitle="Isi jumlah aktual sesuai barang yang benar-benar diambil" />
 
         <Card style={{ maxWidth: 520, marginBottom: 16 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
@@ -16536,7 +16536,7 @@ function PickingListPage({ token, role, userId }) {
   // ---------- TAMPILAN DAFTAR ORDER ----------
   return (
     <div>
-      <PageHeader title="Picking List" subtitle={`${orders.length} pesanan menunggu diambil barangnya`} onRefresh={load} refreshing={loading} />
+      <PageHeader title="Picking List" subtitle={`${orders.length} pesanan menunggu diambil barangnya`} onRefresh={load} refreshing={loading} showPingPrinter />
 
       {ordersTertunda.length > 0 && (
         <>
