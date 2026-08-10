@@ -14665,7 +14665,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
   async function loadSiapDilaporkan() {
     setLoadingSiapDilaporkan(true);
     try {
-      const rows = await supabaseFetch(token, "orders?select=id,no_nota,jumlah_box_konfirmasi,clients(nama,kode)&status=eq.siap_dikirim&siap_lapor_kurir_at=not.is.null&order=siap_lapor_kurir_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=id,no_nota,jumlah_box_konfirmasi,bukti_serah_terima_kurir_url,clients(nama,kode)&status=eq.siap_dikirim&siap_lapor_kurir_at=not.is.null&order=siap_lapor_kurir_at.asc");
       setSiapDilaporkan(rows);
     } catch (e) { console.log("Gagal load siap dilaporkan:", e.message); }
     setLoadingSiapDilaporkan(false);
@@ -14679,7 +14679,7 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
       tambahPesanScan({ type: "error", text: `${o.no_nota} sudah ada di daftar.` });
       return;
     }
-    setScannedList((prev) => [...prev, { no_nota: o.no_nota, order_id: o.id, jumlah_box: o.jumlah_box_konfirmasi || 1 }]);
+    setScannedList((prev) => [...prev, { no_nota: o.no_nota, order_id: o.id, jumlah_box: o.jumlah_box_konfirmasi || 1, bukti_serah_terima_kurir_url: o.bukti_serah_terima_kurir_url || null }]);
     setSiapDilaporkan((prev) => prev.filter((x) => x.id !== o.id));
     tambahPesanScan({ type: "ok", text: `${o.no_nota} ditambahkan (sudah discan lengkap ${o.jumlah_box_konfirmasi || 1} box dari Siap Kirim).` });
   }
@@ -14889,6 +14889,33 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     setUploadingFotoScan(false);
   }
 
+  // Sama seperti uploadFotoBuktiScan, tapi bisa dipakai buat paket
+  // MANAPUN di scannedList (bukan cuma confirmingScan) - dipakai di step
+  // terakhir untuk paket yang "terlewat" foto-nya (misal dari jalur Siap
+  // Kirim yang tidak pernah lewat validasi wajib foto).
+  const [uploadingFotoPaket, setUploadingFotoPaket] = useState(null); // order_id yang lagi diupload
+  async function uploadFotoUntukPaket(orderId, file) {
+    if (!file) return;
+    setUploadingFotoPaket(orderId);
+    try {
+      const compressed = await compressImage(file);
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
+      const filePath = `bukti_serah_terima_kurir_url-${orderId}-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
+        body: compressed,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bukti-pengiriman/${filePath}`;
+      await supabaseFetch(token, `orders?id=eq.${orderId}`, { method: "PATCH", body: JSON.stringify({ bukti_serah_terima_kurir_url: publicUrl }) });
+      setScannedList((prev) => prev.map((s) => (s.order_id === orderId ? { ...s, bukti_serah_terima_kurir_url: publicUrl } : s)));
+    } catch (e) {
+      alert("Gagal upload foto: " + e.message);
+    }
+    setUploadingFotoPaket(null);
+  }
+
   function konfirmasiTambahScan() {
     if (!confirmingScan) return;
     if (confirmingScan.totalBox) {
@@ -14900,14 +14927,14 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
         // Semua box sudah dikonfirmasi - baru order-nya benar-benar
         // ditambahkan ke daftar serah terima, dan buka lagi kesempatan
         // scan order LAIN (tidak terkunci ke order ini lagi)
-        setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, jumlah_box: confirmingScan.totalBox }]);
+        setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, jumlah_box: confirmingScan.totalBox, bukti_serah_terima_kurir_url: confirmingScan.bukti_serah_terima_kurir_url }]);
         tambahPesanScan({ type: "ok", text: `${confirmingScan.no_nota} lengkap (${confirmingScan.totalBox} box) - ditambahkan ke daftar.` });
         setOrderSedangProses(null);
       } else {
         tambahPesanScan({ type: "ok", text: `${confirmingScan.no_nota} - box ${confirmingScan.noBox}/${confirmingScan.totalBox} tercatat (${daftarBoxBaru.length}/${confirmingScan.totalBox} total). Scan box lain.`, orderId: confirmingScan.id, noNota: confirmingScan.no_nota, totalBox: confirmingScan.totalBox });
       }
     } else {
-      setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id }]);
+      setScannedList((prev) => [...prev, { no_nota: confirmingScan.no_nota, order_id: confirmingScan.id, bukti_serah_terima_kurir_url: confirmingScan.bukti_serah_terima_kurir_url }]);
       tambahPesanScan({ type: "ok", text: `${confirmingScan.no_nota} berhasil ditambahkan.` });
     }
     setConfirmingScan(null);
@@ -14973,6 +15000,15 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
     }
     if (scannedList.length === 0) {
       alert("Belum ada paket yang discan.");
+      return;
+    }
+    // Lapisan pengaman terakhir - pastikan SEMUA paket di daftar sudah
+    // punya foto bukti serah terima, termasuk yang ditambahkan lewat
+    // jalur "Sudah Discan Lengkap di Siap Kirim" (yang tidak pernah
+    // lewat validasi wajib foto sebelumnya).
+    const belumAdaFoto = scannedList.filter((s) => !s.bukti_serah_terima_kurir_url);
+    if (belumAdaFoto.length > 0) {
+      alert(`Belum bisa kirim laporan - ${belumAdaFoto.length} paket belum ada foto bukti serah terima: ${belumAdaFoto.map((s) => s.no_nota).join(", ")}. Upload dulu foto untuk paket-paket ini di bawah.`);
       return;
     }
     setSaving(true);
@@ -15391,10 +15427,28 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 20px", textAlign: "center" }}>
             Atas nama: <strong>{namaAkun || "Kurir Toko"}</strong>
           </p>
+
+          {scannedList.some((s) => !s.bukti_serah_terima_kurir_url) && (
+            <div style={{ background: "#FBEAEA", borderRadius: 10, padding: 14, marginBottom: 16 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "#C0392B", margin: "0 0 10px" }}>
+                Wajib upload foto bukti serah terima untuk paket berikut sebelum bisa kirim laporan:
+              </p>
+              {scannedList.filter((s) => !s.bukti_serah_terima_kurir_url).map((s) => (
+                <div key={s.order_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: "#24272B" }}>{s.no_nota}</span>
+                  <label style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px dashed #C0392B", background: "#fff", color: "#C0392B", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>
+                    <UploadCloud size={13} /> {uploadingFotoPaket === s.order_id ? "Mengupload..." : "Upload Foto"}
+                    <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploadingFotoPaket === s.order_id} onChange={(e) => { if (e.target.files[0]) uploadFotoUntukPaket(s.order_id, e.target.files[0]); }} />
+                  </label>
+                </div>
+              ))}
+            </div>
+          )}
+
           <button
             onClick={submitLaporan}
-            disabled={saving}
-            style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: saving ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14 }}
+            disabled={saving || scannedList.some((s) => !s.bukti_serah_terima_kurir_url)}
+            style={{ width: "100%", padding: 13, borderRadius: 10, border: "none", background: saving || scannedList.some((s) => !s.bukti_serah_terima_kurir_url) ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14 }}
           >
             {saving ? "Menyimpan..." : "Konfirmasi Laporan"}
           </button>
@@ -15423,10 +15477,27 @@ function BuatLaporanKurirPage({ token, role, userId, namaAkun }) {
           Hapus Tanda Tangan
         </button>
 
+        {scannedList.some((s) => !s.bukti_serah_terima_kurir_url) && (
+          <div style={{ background: "#FBEAEA", borderRadius: 10, padding: 14, marginTop: 20 }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: "#C0392B", margin: "0 0 10px" }}>
+              Wajib upload foto bukti serah terima untuk paket berikut sebelum bisa kirim laporan:
+            </p>
+            {scannedList.filter((s) => !s.bukti_serah_terima_kurir_url).map((s) => (
+              <div key={s.order_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: "#24272B" }}>{s.no_nota}</span>
+                <label style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px dashed #C0392B", background: "#fff", color: "#C0392B", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>
+                  <UploadCloud size={13} /> {uploadingFotoPaket === s.order_id ? "Mengupload..." : "Upload Foto"}
+                  <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploadingFotoPaket === s.order_id} onChange={(e) => { if (e.target.files[0]) uploadFotoUntukPaket(s.order_id, e.target.files[0]); }} />
+                </label>
+              </div>
+            ))}
+          </div>
+        )}
+
         <button
           onClick={submitLaporan}
-          disabled={saving}
-          style={{ width: "100%", marginTop: 20, padding: 13, borderRadius: 10, border: "none", background: saving ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14 }}
+          disabled={saving || scannedList.some((s) => !s.bukti_serah_terima_kurir_url)}
+          style={{ width: "100%", marginTop: 20, padding: 13, borderRadius: 10, border: "none", background: saving || scannedList.some((s) => !s.bukti_serah_terima_kurir_url) ? "#E4E1DA" : "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 14 }}
         >
           {saving ? "Menyimpan..." : "Konfirmasi Laporan"}
         </button>
