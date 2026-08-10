@@ -14163,6 +14163,8 @@ function ScanBoxSiapKirimModal({ order, token, onClose, onSelesai }) {
   const [pesan, setPesan] = useState(null); // { type: "ok"|"error", text }
   const [inputManual, setInputManual] = useState("");
   const [saving, setSaving] = useState(false);
+  const [semuaBoxSelesai, setSemuaBoxSelesai] = useState(!!order.siap_lapor_kurir_at || (order.box_terscan_siap_kirim || []).length >= totalBox);
+  const [uploadingFotoSerahTerima, setUploadingFotoSerahTerima] = useState(false);
   const html5QrRef = useRef(null);
   const boxTerscanRef = useRef(boxTerscan);
   useEffect(() => { boxTerscanRef.current = boxTerscan; }, [boxTerscan]);
@@ -14184,6 +14186,36 @@ function ScanBoxSiapKirimModal({ order, token, onClose, onSelesai }) {
     } else {
       callback();
     }
+  }
+
+  // Setelah SEMUA box discan, WAJIB upload foto bukti serah terima dulu
+  // di sini juga - baru order benar-benar ditandai "siap dilaporkan"
+  // (siap_lapor_kurir_at diisi BARENGAN dengan foto, bukan terpisah) -
+  // supaya order yang muncul di "Sudah Discan Lengkap" di Laporan Kurir
+  // sudah PASTI ada foto-nya, tidak ada celah lagi.
+  async function uploadFotoSerahTerimaDanSelesai(file) {
+    if (!file) return;
+    setUploadingFotoSerahTerima(true);
+    try {
+      const compressed = await compressImage(file);
+      const { ext, contentType } = infoFileTerkompresi(compressed, file);
+      const filePath = `bukti_serah_terima_kurir_url-${order.id}-${Date.now()}.${ext}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/bukti-pengiriman/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": contentType },
+        body: compressed,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const publicUrl = `${SUPABASE_URL}/storage/v1/object/public/bukti-pengiriman/${filePath}`;
+      await supabaseFetch(token, `orders?id=eq.${order.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ bukti_serah_terima_kurir_url: publicUrl, siap_lapor_kurir_at: new Date().toISOString() }),
+      });
+      hentikanKameraLaluLanjut(() => onSelesai());
+    } catch (e) {
+      alert("Gagal upload foto: " + e.message);
+    }
+    setUploadingFotoSerahTerima(false);
   }
 
   async function prosesScan(kodeMentah) {
@@ -14215,16 +14247,16 @@ function ScanBoxSiapKirimModal({ order, token, onClose, onSelesai }) {
     mainkanBeepScan();
     setSaving(true);
     try {
-      const bodyPatch = { box_terscan_siap_kirim: updated };
-      if (updated.length >= totalBox) {
-        bodyPatch.siap_lapor_kurir_at = new Date().toISOString();
-      }
-      await supabaseFetch(token, `orders?id=eq.${order.id}`, { method: "PATCH", body: JSON.stringify(bodyPatch) });
+      // PENTING: siap_lapor_kurir_at SENGAJA belum diisi di sini walau box
+      // sudah lengkap semua - itu baru diisi BARENGAN foto bukti serah
+      // terima (lihat uploadFotoSerahTerimaDanSelesai) supaya order tidak
+      // pernah muncul "siap dilaporkan" tanpa foto.
+      await supabaseFetch(token, `orders?id=eq.${order.id}`, { method: "PATCH", body: JSON.stringify({ box_terscan_siap_kirim: updated }) });
       if (updated.length >= totalBox) {
         // JANGAN stop() langsung di sini - masih di dalam callback decode
         // milik scanner itu sendiri, hentikan di luar tick ini (setTimeout 0)
         // supaya tidak bentrok dengan proses internal library kamera.
-        setTimeout(() => { hentikanKameraLaluLanjut(() => onSelesai()); }, 500);
+        setTimeout(() => { hentikanKameraLaluLanjut(() => setSemuaBoxSelesai(true)); }, 500);
       }
     } catch (e) {
       setPesan({ type: "error", text: "Gagal simpan: " + e.message });
@@ -14280,31 +14312,47 @@ function ScanBoxSiapKirimModal({ order, token, onClose, onSelesai }) {
           <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>{boxTerscan.length} / {totalBox} box discan</p>
         </div>
 
-        {!showCamera ? (
-          <button onClick={mulaiScanKamera} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 10 }}>
-            <Camera size={16} /> Buka Kamera Scan
-          </button>
+        {semuaBoxSelesai ? (
+          <>
+            <div style={{ background: "#D8E9E6", borderRadius: 10, padding: 12, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+              <Check size={16} color="#28685D" />
+              <p style={{ fontSize: 12.5, color: "#28685D", margin: 0, fontWeight: 600 }}>Semua box sudah discan. Terakhir, upload foto bukti serah terima ke kurir.</p>
+            </div>
+            <label style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: 24, borderRadius: 12, border: "2px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>
+              <UploadCloud size={28} />
+              {uploadingFotoSerahTerima ? "Mengupload..." : "Ambil/Upload Foto Bukti Serah Terima (Wajib)"}
+              <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={uploadingFotoSerahTerima} onChange={(e) => { if (e.target.files[0]) uploadFotoSerahTerimaDanSelesai(e.target.files[0]); }} />
+            </label>
+          </>
         ) : (
-          <div style={{ marginBottom: 10 }}>
-            <div id="reader-scan-siap-kirim" style={{ borderRadius: 10, overflow: "hidden", marginBottom: 8 }} />
-            <button onClick={tutupKamera} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 700, fontSize: 13 }}>Tutup Kamera</button>
-          </div>
-        )}
-        {cameraError && <p style={{ fontSize: 11.5, color: "#C0392B", margin: "0 0 10px" }}>{cameraError}</p>}
+          <>
+            {!showCamera ? (
+              <button onClick={mulaiScanKamera} style={{ width: "100%", padding: 12, borderRadius: 10, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 13.5, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, marginBottom: 10 }}>
+                <Camera size={16} /> Buka Kamera Scan
+              </button>
+            ) : (
+              <div style={{ marginBottom: 10 }}>
+                <div id="reader-scan-siap-kirim" style={{ borderRadius: 10, overflow: "hidden", marginBottom: 8 }} />
+                <button onClick={tutupKamera} style={{ width: "100%", padding: 10, borderRadius: 10, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 700, fontSize: 13 }}>Tutup Kamera</button>
+              </div>
+            )}
+            {cameraError && <p style={{ fontSize: 11.5, color: "#C0392B", margin: "0 0 10px" }}>{cameraError}</p>}
 
-        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
-          <input
-            type="text" value={inputManual} onChange={(e) => setInputManual(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && inputManual.trim()) { prosesScan(inputManual.trim()); setInputManual(""); } }}
-            placeholder="Atau ketik manual kode box..."
-            style={{ flex: 1, padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }}
-          />
-        </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+              <input
+                type="text" value={inputManual} onChange={(e) => setInputManual(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter" && inputManual.trim()) { prosesScan(inputManual.trim()); setInputManual(""); } }}
+                placeholder="Atau ketik manual kode box..."
+                style={{ flex: 1, padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }}
+              />
+            </div>
 
-        {pesan && (
-          <div style={{ background: pesan.type === "ok" ? "#D8E9E6" : "#FBEAEA", borderRadius: 10, padding: 10 }}>
-            <p style={{ fontSize: 12.5, color: pesan.type === "ok" ? "#28685D" : "#C0392B", margin: 0, fontWeight: 600 }}>{pesan.text}</p>
-          </div>
+            {pesan && (
+              <div style={{ background: pesan.type === "ok" ? "#D8E9E6" : "#FBEAEA", borderRadius: 10, padding: 10 }}>
+                <p style={{ fontSize: 12.5, color: pesan.type === "ok" ? "#28685D" : "#C0392B", margin: 0, fontWeight: 600 }}>{pesan.text}</p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -14422,12 +14470,12 @@ function SiapDikirimBaruPage({ token, role }) {
                 onClick={() => setScanningOrder(o)}
                 style={{
                   display: "flex", alignItems: "center", gap: 6, padding: "11px 20px", borderRadius: 10, border: "none", fontWeight: 700, fontSize: 13.5,
-                  background: o.siap_lapor_kurir_at ? "#D8E9E6" : "#FBF0D9",
-                  color: o.siap_lapor_kurir_at ? "#28685D" : "#8A6A1A",
+                  background: o.siap_lapor_kurir_at ? "#D8E9E6" : (o.box_terscan_siap_kirim || []).length >= (o.jumlah_box_konfirmasi || 1) ? "#FBEAEA" : "#FBF0D9",
+                  color: o.siap_lapor_kurir_at ? "#28685D" : (o.box_terscan_siap_kirim || []).length >= (o.jumlah_box_konfirmasi || 1) ? "#C0392B" : "#8A6A1A",
                 }}
               >
-                {o.siap_lapor_kurir_at ? <Check size={16} /> : <ScanLine size={16} />}
-                {o.siap_lapor_kurir_at ? "Siap Dilaporkan" : `Scan Kurir (${(o.box_terscan_siap_kirim || []).length}/${o.jumlah_box_konfirmasi || 1})`}
+                {o.siap_lapor_kurir_at ? <Check size={16} /> : (o.box_terscan_siap_kirim || []).length >= (o.jumlah_box_konfirmasi || 1) ? <UploadCloud size={16} /> : <ScanLine size={16} />}
+                {o.siap_lapor_kurir_at ? "Siap Dilaporkan" : (o.box_terscan_siap_kirim || []).length >= (o.jumlah_box_konfirmasi || 1) ? "Upload Foto (Wajib)" : `Scan Kurir (${(o.box_terscan_siap_kirim || []).length}/${o.jumlah_box_konfirmasi || 1})`}
               </button>
             </div>
           </Card>
