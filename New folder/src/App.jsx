@@ -1724,23 +1724,34 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
 // ============================================================
 // HELPER UI KECIL
 // ============================================================
-function PageHeader({ title, subtitle, onRefresh, refreshing }) {
+function PageHeader({ title, subtitle, onRefresh, refreshing, showPingPrinter }) {
   return (
     <div style={{ marginBottom: 22, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
       <div>
         <h1 className="disp" style={{ fontSize: 28, fontWeight: 700, color: "#24272B", margin: 0 }}>{title}</h1>
         {subtitle && <p style={{ color: "#9CA0A6", fontSize: 13, margin: "4px 0 0" }}>{subtitle}</p>}
       </div>
-      {onRefresh && (
-        <button
-          onClick={onRefresh}
-          disabled={refreshing}
-          title="Refresh halaman ini"
-          style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", flexShrink: 0, marginTop: 2 }}
-        >
-          <RefreshCw size={16} className={refreshing ? "spin" : ""} />
-        </button>
-      )}
+      <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+        {showPingPrinter && (
+          <button
+            onClick={() => window.open(`${PRINT_SERVER_URL}/ping`, "_blank")}
+            title="Buka halaman ping print server - klik ini kalau print tiba-tiba tidak jalan (browser minta konfirmasi keamanan lagi)"
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "0 12px", height: 36, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12, fontWeight: 700, marginTop: 2 }}
+          >
+            <Printer size={15} /> Ping
+          </button>
+        )}
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            disabled={refreshing}
+            title="Refresh halaman ini"
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", flexShrink: 0, marginTop: 2 }}
+          >
+            <RefreshCw size={16} className={refreshing ? "spin" : ""} />
+          </button>
+        )}
+      </div>
     </div>
   );
 }
@@ -2683,7 +2694,7 @@ function OrdersPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Approve Pesanan" subtitle={`${pending.length} menunggu persetujuan`} onRefresh={load} refreshing={loading} />
+      <PageHeader title="Approve Pesanan" subtitle={`${pending.length} menunggu persetujuan`} onRefresh={load} refreshing={loading} showPingPrinter />
       {pending.length === 0 ? (
         <EmptyState text="Tidak ada pesanan yang menunggu persetujuan saat ini." />
       ) : (
@@ -16268,7 +16279,7 @@ function PickingListPage({ token, role, userId }) {
         <button onClick={() => { setSelectedOrder(null); setInputJumlah({}); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
           <ChevronLeft size={16} /> Kembali
         </button>
-        <PageHeader title="Picking List" subtitle="Isi jumlah aktual sesuai barang yang benar-benar diambil" />
+        <PageHeader title="Picking List" subtitle="Isi jumlah aktual sesuai barang yang benar-benar diambil" showPingPrinter />
 
         <Card style={{ maxWidth: 520, marginBottom: 16 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
