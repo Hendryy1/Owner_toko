@@ -11982,7 +11982,7 @@ function AkunStaffPage({ token }) {
   const [staffList, setStaffList] = useState([]);
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ nama: "", email: "", password: "", role: "sales", kodeSales: "" });
+  const [form, setForm] = useState({ nama: "", email: "", password: "", role: "sales", kodeSales: "", alamat: "" });
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
   const [resetTargetId, setResetTargetId] = useState(null);
@@ -12040,14 +12040,19 @@ function AkunStaffPage({ token }) {
       setFormError("Password minimal 6 karakter.");
       return;
     }
+    if (form.role !== "sales" && !form.alamat.trim()) {
+      setFormError("Alamat wajib diisi untuk role ini.");
+      return;
+    }
     setSaving(true);
     try {
       await panggilFungsi({
         action: "create", email: form.email.trim(), password: form.password,
         nama: form.nama.trim(), role: form.role, kodeSales: form.kodeSales.trim() || null,
+        alamat: form.role !== "sales" ? form.alamat.trim() : null,
       });
       setShowForm(false);
-      setForm({ nama: "", email: "", password: "", role: "sales", kodeSales: "" });
+      setForm({ nama: "", email: "", password: "", role: "sales", kodeSales: "", alamat: "" });
       load();
     } catch (e) {
       setFormError(e.message);
@@ -12183,10 +12188,16 @@ function AkunStaffPage({ token }) {
                 <option value="staff_gudang">Staff Gudang</option>
               </select>
             </div>
-            {form.role === "sales" && (
+            {form.role === "sales" ? (
               <div style={{ marginBottom: 14 }}>
                 <label style={labelStyle}>Kode Sales (opsional, misal S004)</label>
                 <input value={form.kodeSales} onChange={(e) => setForm({ ...form, kodeSales: e.target.value })} style={fieldStyle} />
+                <p style={{ fontSize: 11.5, color: "#9CA0A6", marginTop: 6 }}>Alamat tidak perlu diisi di sini - sales akan mengisi sendiri lewat "Profil Saya" setelah login pertama kali.</p>
+              </div>
+            ) : (
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Alamat</label>
+                <textarea value={form.alamat} onChange={(e) => setForm({ ...form, alamat: e.target.value })} rows={3} style={{ ...fieldStyle, resize: "vertical" }} />
               </div>
             )}
 
