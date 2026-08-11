@@ -1065,7 +1065,7 @@ function OwnerDashboardInner() {
         ) : (
           <>
         {page === "overview" && <OverviewPage token={token} setPage={setPage} />}
-        {page === "chat_sales" && <ChatSalesPage token={token} profile={profile} />}
+        {page === "chat_sales" && <ChatSalesPage token={token} profile={profile} isMobile={isMobile} />}
         {page === "profil_sales" && <ProfilSalesPage token={token} profile={profile} />}
         {page === "omzet_sales" && <OmzetSalesPage token={token} profile={profile} />}
         {page === "kunjungan_sales" && <KunjunganSalesPage token={token} profile={profile} />}
@@ -9064,7 +9064,7 @@ function ImportCSVModal({ token, onClose, onSelesai }) {
 // ============================================================
 // CHAT TOKO (Sales, Owner, Admin Transaksi balas chat dari toko)
 // ============================================================
-function ChatSalesPage({ token, profile }) {
+function ChatSalesPage({ token, profile, isMobile }) {
   const [cases, setCases] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -9244,42 +9244,65 @@ function ChatSalesPage({ token, profile }) {
           </button>
         </div>
       )}
-      <Card style={{ padding: 0, overflow: "hidden" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-          <thead>
-            <tr style={{ background: "#F7F5F1" }}>
-              {["No Case", "Toko", "Kategori", "Terakhir Update", "Status", ""].map((h) => (
-                <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {cases.map((c) => (
-              <tr key={c.id} style={{ borderTop: "1px solid #EDEAE3" }}>
-                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{c.no_case}</td>
-                <td style={{ padding: "12px 14px" }}>{c.clients?.nama} ({c.clients?.kode})</td>
-                <td style={{ padding: "12px 14px" }}>
-                  <span style={{ background: c.kategori === "clara" ? "#FBF0D9" : "#D8E9E6", color: c.kategori === "clara" ? "#8A6A1A" : "#28685D", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
-                    {c.kategori === "clara" ? "Clara (CS)" : "Sales"}
-                  </span>
-                </td>
-                <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{new Date(c.updated_at).toLocaleString("id-ID")}</td>
-                <td style={{ padding: "12px 14px" }}>
-                  <span style={{ background: c.status === "open" ? "#D8E9E6" : "#F7F5F1", color: c.status === "open" ? "#28685D" : "#9CA0A6", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
-                    {c.status === "open" ? "Terbuka" : "Ditutup"}
-                  </span>
-                </td>
-                <td style={{ padding: "12px 14px" }}>
-                  <button onClick={() => openCase(c)} style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11.5, fontWeight: 600 }}>
-                    Buka
-                  </button>
-                </td>
+      {isMobile ? (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          {cases.map((c, i) => (
+            <div key={c.id} onClick={() => openCase(c)} style={{ padding: 14, borderTop: i === 0 ? "none" : "1px solid #EDEAE3", cursor: "pointer" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.no_case}</p>
+                <span style={{ background: c.status === "open" ? "#D8E9E6" : "#F7F5F1", color: c.status === "open" ? "#28685D" : "#9CA0A6", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                  {c.status === "open" ? "Terbuka" : "Ditutup"}
+                </span>
+              </div>
+              <p style={{ fontSize: 12.5, color: "#24272B", margin: "0 0 4px" }}>{c.clients?.nama} ({c.clients?.kode})</p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ background: c.kategori === "clara" ? "#FBF0D9" : "#D8E9E6", color: c.kategori === "clara" ? "#8A6A1A" : "#28685D", padding: "3px 10px", borderRadius: 999, fontSize: 10.5, fontWeight: 700 }}>
+                  {c.kategori === "clara" ? "Clara (CS)" : "Sales"}
+                </span>
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>{new Date(c.updated_at).toLocaleString("id-ID")}</p>
+              </div>
+            </div>
+          ))}
+          {cases.length === 0 && <EmptyState text="Belum ada chat dari toko." />}
+        </Card>
+      ) : (
+        <Card style={{ padding: 0, overflow: "hidden" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ background: "#F7F5F1" }}>
+                {["No Case", "Toko", "Kategori", "Terakhir Update", "Status", ""].map((h) => (
+                  <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
+                ))}
               </tr>
-            ))}
-          </tbody>
-        </table>
-        {cases.length === 0 && <EmptyState text="Belum ada chat dari toko." />}
-      </Card>
+            </thead>
+            <tbody>
+              {cases.map((c) => (
+                <tr key={c.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px", fontWeight: 700 }}>{c.no_case}</td>
+                  <td style={{ padding: "12px 14px" }}>{c.clients?.nama} ({c.clients?.kode})</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <span style={{ background: c.kategori === "clara" ? "#FBF0D9" : "#D8E9E6", color: c.kategori === "clara" ? "#8A6A1A" : "#28685D", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                      {c.kategori === "clara" ? "Clara (CS)" : "Sales"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 14px", color: "#6B6F75" }}>{new Date(c.updated_at).toLocaleString("id-ID")}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <span style={{ background: c.status === "open" ? "#D8E9E6" : "#F7F5F1", color: c.status === "open" ? "#28685D" : "#9CA0A6", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                      {c.status === "open" ? "Terbuka" : "Ditutup"}
+                    </span>
+                  </td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <button onClick={() => openCase(c)} style={{ padding: "6px 12px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11.5, fontWeight: 600 }}>
+                      Buka
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {cases.length === 0 && <EmptyState text="Belum ada chat dari toko." />}
+        </Card>
+      )}
     </div>
   );
 }
