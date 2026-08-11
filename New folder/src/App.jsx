@@ -8268,6 +8268,136 @@ function HargaProvinsiModal({ token, product, onClose }) {
   );
 }
 
+// ============================================================
+// MODAL HARGA PER KOTA - Owner atur harga khusus 1 produk buat
+// tiap kota (lebih spesifik dari provinsi). Prioritas saat checkout:
+// Harga Kota > Harga Provinsi > Harga Default produk. Kota yang belum
+// diatur di sini otomatis fallback ke harga provinsi/default.
+// ============================================================
+function HargaKotaModal({ token, product, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [daftarHarga, setDaftarHarga] = useState([]); // [{id, kota, harga}]
+  const [kotaBaru, setKotaBaru] = useState("");
+  const [hargaBaru, setHargaBaru] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setLoading(true);
+    try {
+      const rows = await supabaseFetch(token, `harga_produk_kota?select=id,kota,harga&product_id=eq.${product.id}&order=kota.asc`);
+      setDaftarHarga(rows);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  async function tambahHarga() {
+    if (!kotaBaru.trim() || !hargaBaru) {
+      setError("Isi dulu nama kota dan harganya.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await supabaseFetch(token, `harga_produk_kota?on_conflict=product_id,kota`, {
+        method: "POST",
+        headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+        body: JSON.stringify({ product_id: product.id, kota: kotaBaru.trim(), harga: Number(hargaBaru) }),
+      });
+      setKotaBaru("");
+      setHargaBaru("");
+      await load();
+    } catch (e) {
+      setError("Gagal simpan: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function updateHarga(id, hargaBaruNilai) {
+    try {
+      await supabaseFetch(token, `harga_produk_kota?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ harga: Number(hargaBaruNilai), updated_at: new Date().toISOString() }) });
+      setDaftarHarga((prev) => prev.map((h) => (h.id === id ? { ...h, harga: Number(hargaBaruNilai) } : h)));
+    } catch (e) {
+      alert("Gagal update harga: " + e.message);
+    }
+  }
+
+  async function hapusHarga(id) {
+    if (!confirm("Hapus harga khusus kota ini? Kota ini akan kembali pakai harga provinsi/default produk.")) return;
+    try {
+      await supabaseFetch(token, `harga_produk_kota?id=eq.${id}`, { method: "DELETE" });
+      setDaftarHarga((prev) => prev.filter((h) => h.id !== id));
+    } catch (e) {
+      alert("Gagal hapus: " + e.message);
+    }
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 20 }}>
+      <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 480, maxHeight: "85vh", overflowY: "auto", padding: 26 }}>
+        <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>Harga per Kota</p>
+        <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 4px" }}>{product.nama}</p>
+        <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 18px" }}>
+          Harga default (dasar): <strong>{rupiah(product.harga_jual)}</strong> - kota yang diatur di sini PALING DIUTAMAKAN, mengalahkan harga per provinsi kalau ada keduanya.
+        </p>
+
+        {error && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#FBEAEA", color: "#C0392B", padding: 10, borderRadius: 9, fontSize: 12.5, marginBottom: 14 }}>
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <p style={{ textAlign: "center", color: "#9CA0A6", fontSize: 13, padding: "20px 0" }}>Memuat...</p>
+        ) : daftarHarga.length === 0 ? (
+          <p style={{ textAlign: "center", color: "#9CA0A6", fontSize: 12.5, padding: "16px 0" }}>Belum ada harga khusus kota - semua pakai harga provinsi/default.</p>
+        ) : (
+          daftarHarga.map((h) => (
+            <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, padding: "8px 10px", background: "#F7F5F1", borderRadius: 9 }}>
+              <p style={{ flex: 1, fontSize: 13, fontWeight: 600, color: "#24272B", margin: 0 }}>{h.kota}</p>
+              <input
+                type="number" defaultValue={h.harga}
+                onBlur={(e) => { if (Number(e.target.value) !== h.harga) updateHarga(h.id, e.target.value); }}
+                style={{ width: 120, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }}
+              />
+              <button onClick={() => hapusHarga(h.id)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #F0CFC7", background: "#fff", color: "#C0392B", fontSize: 11.5, fontWeight: 600 }}>
+                Hapus
+              </button>
+            </div>
+          ))
+        )}
+
+        <div style={{ borderTop: "1px solid #EDEAE3", marginTop: 14, paddingTop: 14 }}>
+          <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Tambah Harga Kota Baru</p>
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={kotaBaru} onChange={(e) => setKotaBaru(e.target.value)}
+              placeholder="Nama kota (misal: Pekanbaru)"
+              style={{ flex: 1, padding: "9px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5 }}
+            />
+            <input
+              type="number" value={hargaBaru} onChange={(e) => setHargaBaru(e.target.value)}
+              placeholder="Harga"
+              style={{ width: 120, padding: "9px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5 }}
+            />
+          </div>
+          <button
+            onClick={tambahHarga} disabled={saving}
+            style={{ width: "100%", marginTop: 10, padding: 11, borderRadius: 9, border: "none", background: "#24272B", color: "#fff", fontWeight: 700, fontSize: 13 }}
+          >
+            {saving ? "Menyimpan..." : "+ Tambah"}
+          </button>
+        </div>
+
+        <button onClick={onClose} style={{ width: "100%", marginTop: 16, padding: 11, borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13 }}>
+          Tutup
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ProductPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [products, setProducts] = useState([]);
@@ -8276,6 +8406,7 @@ function ProductPage({ token }) {
   const [deletingId, setDeletingId] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [editingHargaProvinsi, setEditingHargaProvinsi] = useState(null); // null = tutup, {...product} = buka modal
+  const [editingHargaKota, setEditingHargaKota] = useState(null); // null = tutup, {...product} = buka modal
 
   async function load() {
     setLoading(true);
@@ -8352,8 +8483,11 @@ function ProductPage({ token }) {
                 Hapus
               </button>
             </div>
-            <button onClick={() => setEditingHargaProvinsi(p)} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#F7F5F1", color: "#24272B", fontSize: 11.5, fontWeight: 600 }}>
+            <button onClick={() => setEditingHargaProvinsi(p)} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#F7F5F1", color: "#24272B", fontSize: 11.5, fontWeight: 600, marginBottom: 6 }}>
               Harga per Provinsi
+            </button>
+            <button onClick={() => setEditingHargaKota(p)} style={{ width: "100%", padding: "7px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#F7F5F1", color: "#24272B", fontSize: 11.5, fontWeight: 600 }}>
+              Harga per Kota
             </button>
           </Card>
         ))}
@@ -8370,6 +8504,9 @@ function ProductPage({ token }) {
 
       {editingHargaProvinsi && (
         <HargaProvinsiModal token={token} product={editingHargaProvinsi} onClose={() => setEditingHargaProvinsi(null)} />
+      )}
+      {editingHargaKota && (
+        <HargaKotaModal token={token} product={editingHargaKota} onClose={() => setEditingHargaKota(null)} />
       )}
     </div>
   );
