@@ -11307,7 +11307,11 @@ function BannerPromoPage({ token }) {
     const jumlahSaatIni = tipe === "beranda" ? galeriBeranda.length : galeri.length;
     setterUploading(true);
     try {
-      const compressed = await compressImage(file);
+      // Galeri Beranda dikecilkan lebih agresif dari biasanya (900px,
+      // kualitas 65%) - foto ini ditampilkan berurutan/scroll di halaman
+      // pertama yang dibuka toko, jadi ukuran file kecil = lebih cepat
+      // tampil. Galeri Popup tetap pakai kualitas default seperti biasa.
+      const compressed = tipe === "beranda" ? await compressImage(file, 900, 0.65) : await compressImage(file);
       const { ext, contentType } = infoFileTerkompresi(compressed, file);
       const filePath = `banner-galeri-${tipe}-${Date.now()}.${ext}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
