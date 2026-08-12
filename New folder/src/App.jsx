@@ -11273,7 +11273,7 @@ function BannerPromoPage({ token }) {
   const [uploading, setUploading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [bannerId, setBannerId] = useState(null);
-  const [form, setForm] = useState({ gambarUrl: "", judul: "", deskripsi: "", aktif: false });
+  const [form, setForm] = useState({ gambarUrl: "", judul: "", deskripsi: "", aktif: false, judulBeranda: "", subjudulBeranda: "" });
   const [galeri, setGaleri] = useState([]); // popup - dipakai widget mengambang
   const [galeriBeranda, setGaleriBeranda] = useState([]); // beranda - tab tersendiri di Web App
   const [uploadingGaleri, setUploadingGaleri] = useState(false);
@@ -11293,7 +11293,7 @@ function BannerPromoPage({ token }) {
       const b = rows[0];
       if (b) {
         setBannerId(b.id);
-        setForm({ gambarUrl: b.gambar_url || "", judul: b.judul || "", deskripsi: b.deskripsi || "", aktif: b.aktif });
+        setForm({ gambarUrl: b.gambar_url || "", judul: b.judul || "", deskripsi: b.deskripsi || "", aktif: b.aktif, judulBeranda: b.teks_judul_beranda || "", subjudulBeranda: b.teks_subjudul_beranda || "" });
       }
       setGaleri(galeriRows);
       setGaleriBeranda(galeriBerandaRows);
@@ -11370,6 +11370,7 @@ function BannerPromoPage({ token }) {
       const body = {
         gambar_url: form.gambarUrl || null, judul: form.judul || null,
         deskripsi: form.deskripsi || null, aktif: form.aktif, updated_at: new Date().toISOString(),
+        teks_judul_beranda: form.judulBeranda || null, teks_subjudul_beranda: form.subjudulBeranda || null,
       };
       if (bannerId) {
         await supabaseFetch(token, `campaign_banner?id=eq.${bannerId}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -11438,6 +11439,15 @@ function BannerPromoPage({ token }) {
               <input type="file" accept="image/*" style={{ display: "none" }} disabled={uploadingGaleri} onChange={(e) => { if (e.target.files[0]) uploadFotoGaleri(e.target.files[0], "popup"); }} />
             </label>
           </div>
+        </div>
+
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Judul Halaman Beranda</label>
+          <input value={form.judulBeranda} onChange={(e) => setForm({ ...form, judulBeranda: e.target.value })} placeholder="Promo & Program" style={fieldStyle} />
+        </div>
+        <div style={{ marginBottom: 20 }}>
+          <label style={labelStyle}>Subjudul Halaman Beranda</label>
+          <input value={form.subjudulBeranda} onChange={(e) => setForm({ ...form, subjudulBeranda: e.target.value })} placeholder="Info promo terbaru dari kami" style={fieldStyle} />
         </div>
 
         <div style={{ marginBottom: 20 }}>
