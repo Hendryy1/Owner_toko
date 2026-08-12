@@ -6059,7 +6059,7 @@ function SiapDikirimPage({ token, role }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,kota,jenis_pembayaran),order_items(*,products(kode,nama,satuan,nomor_produk))&status=in.(menunggu_pembayaran,menunggu_pengiriman,siap_dikirim,proses_dikirim,diretur,selesai)&order=created_at.asc");
+      const rows = await supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,kota,jenis_pembayaran),order_items(*,products(kode,nama,satuan,nomor_produk,harga_jual))&status=in.(menunggu_pembayaran,menunggu_pengiriman,siap_dikirim,proses_dikirim,diretur,selesai)&order=created_at.asc");
       setOrders(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
