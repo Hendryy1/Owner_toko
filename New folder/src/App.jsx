@@ -17,11 +17,28 @@ const COMPANY_NAME = "PT INDO GARUDA ABADI";
 // Pakai HTTPS + alamat IP jaringan (bukan localhost) supaya bisa diakses
 // dari HP/perangkat lain juga, tidak cuma dari komputer print server itu
 // sendiri. Sebelum ini bisa dipakai, tiap perangkat (termasuk HP) WAJIB
-// buka dulu https://192.168.1.11:9100/ping langsung di browser-nya,
+// buka dulu https://[ip-print-server]:9100/ping langsung di browser-nya,
 // klik "Advanced" -> "Proceed" untuk terima sertifikatnya (sekali saja).
 // CATATAN: alamat IP ini BISA BERUBAH kalau komputer pindah/reconnect
 // WiFi - cek ulang dengan "ipconfig" di CMD kalau print berhenti jalan.
-const PRINT_SERVER_URL = "https://192.168.1.11:9100";
+//
+// Ada LEBIH DARI SATU komputer print server (misal kantor pusat & cabang) -
+// staff pilih sendiri mau cetak ke yang mana lewat dropdown di Dashboard
+// (tombol "Ping"). Pilihan disimpan di localStorage, jadi tidak perlu
+// pilih ulang tiap buka Dashboard - cuma perlu ganti kalau memang mau
+// pindah ke print server lain.
+const DAFTAR_PRINT_SERVER = [
+  { nama: "Laptop Lenovo", url: "https://192.168.1.11:9100" },
+  { nama: "PC Asus", url: "https://192.168.1.33:9100" },
+];
+function getPrintServerUrl() {
+  const tersimpan = localStorage.getItem("printServerUrl");
+  if (tersimpan && DAFTAR_PRINT_SERVER.some((s) => s.url === tersimpan)) return tersimpan;
+  return DAFTAR_PRINT_SERVER[0].url;
+}
+function setPrintServerUrl(url) {
+  localStorage.setItem("printServerUrl", url);
+}
 
 // Render JSX jadi PDF (persis tampilan aslinya - warna, tabel, font),
 // lalu kirim ke print server untuk dicetak otomatis lewat SumatraPDF,
@@ -100,7 +117,7 @@ async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas", 
     console.log("[cetakPdfOtomatis] Ukuran PDF akhir (byte):", pdfBlob.size);
     const base64Pdf = await blobKeBase64(pdfBlob);
 
-    const res = await fetch(`${PRINT_SERVER_URL}/print-pdf`, {
+    const res = await fetch(`${getPrintServerUrl()}/print-pdf`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pdfBase64: base64Pdf, printer: namaPrinter }),
@@ -120,7 +137,7 @@ async function cetakPdfOtomatis(jsxContent, ukuranKertas, namaPrinter = "atas", 
 // screenshot tampilan (yang jadi buram/pecah di resolusi dot matrix
 // rendah).
 async function cetakNotaTeksOtomatis({ order, type, settings, printer = "atas" }) {
-  const res = await fetch(`${PRINT_SERVER_URL}/print-nota`, {
+  const res = await fetch(`${getPrintServerUrl()}/print-nota`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ order, type, settings, printer }),
@@ -135,7 +152,7 @@ async function cetakNotaTeksOtomatis({ order, type, settings, printer = "atas" }
 // halaman baru/kertas kosong terbuang di antaranya (beda dari cetak
 // satu-satu yang bikin printer anggap tiap nota dokumen terpisah).
 async function cetakNotaMassalTeksOtomatis({ orders, settings, printer = "atas" }) {
-  const res = await fetch(`${PRINT_SERVER_URL}/print-nota-massal`, {
+  const res = await fetch(`${getPrintServerUrl()}/print-nota-massal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ orders, settings, printer }),
@@ -1725,6 +1742,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
 // HELPER UI KECIL
 // ============================================================
 function PageHeader({ title, subtitle, onRefresh, refreshing, showPingPrinter }) {
+  const [printServerAktif, setPrintServerAktif] = useState(getPrintServerUrl());
   return (
     <div style={{ marginBottom: 22, display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
       <div>
@@ -1733,8 +1751,20 @@ function PageHeader({ title, subtitle, onRefresh, refreshing, showPingPrinter })
       </div>
       <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
         {showPingPrinter && (
+          <select
+            value={printServerAktif}
+            onChange={(e) => { setPrintServerAktif(e.target.value); setPrintServerUrl(e.target.value); }}
+            title="Pilih print server mana yang dipakai untuk cetak"
+            style={{ height: 36, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12, fontWeight: 700, padding: "0 10px", marginTop: 2 }}
+          >
+            {DAFTAR_PRINT_SERVER.map((s) => (
+              <option key={s.url} value={s.url}>{s.nama}</option>
+            ))}
+          </select>
+        )}
+        {showPingPrinter && (
           <button
-            onClick={() => window.open(`${PRINT_SERVER_URL}/ping`, "_blank")}
+            onClick={() => window.open(`${getPrintServerUrl()}/ping`, "_blank")}
             title="Buka halaman ping print server - klik ini kalau print tiba-tiba tidak jalan (browser minta konfirmasi keamanan lagi)"
             style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "0 12px", height: 36, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12, fontWeight: 700, marginTop: 2 }}
           >
