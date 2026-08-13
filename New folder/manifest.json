@@ -1,0 +1,31 @@
+{
+  "name": "Portal I.G.A - Dashboard Staff",
+  "short_name": "Portal I.G.A",
+  "description": "Dashboard internal untuk Owner, Admin, Sales, Kurir, dan Staff Gudang PT Indo Garuda Abadi",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#24272B",
+  "theme_color": "#24272B",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
