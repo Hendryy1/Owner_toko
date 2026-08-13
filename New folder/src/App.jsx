@@ -13723,6 +13723,29 @@ function VerifikasiSalesPage({ token }) {
   const [rejectReason, setRejectReason] = useState("");
   const [filter, setFilter] = useState("menunggu_review");
   const [signedUrls, setSignedUrls] = useState({}); // { "salesId-jenis": url }
+  const [editingAlamatId, setEditingAlamatId] = useState(null);
+  const [editAlamatForm, setEditAlamatForm] = useState({ alamat: "", kota: "", provinsi: "", kodePos: "" });
+  const [savingAlamat, setSavingAlamat] = useState(false);
+
+  function mulaiEditAlamat(s) {
+    setEditingAlamatId(s.id);
+    setEditAlamatForm({ alamat: s.alamat || "", kota: s.kota || "", provinsi: s.provinsi || "", kodePos: s.kode_pos || "" });
+  }
+
+  async function simpanEditAlamat(id) {
+    setSavingAlamat(true);
+    try {
+      await supabaseFetch(token, `sales?id=eq.${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ alamat: editAlamatForm.alamat, kota: editAlamatForm.kota, provinsi: editAlamatForm.provinsi, kode_pos: editAlamatForm.kodePos }),
+      });
+      setSalesList((prev) => prev.map((s) => (s.id === id ? { ...s, alamat: editAlamatForm.alamat, kota: editAlamatForm.kota, provinsi: editAlamatForm.provinsi, kode_pos: editAlamatForm.kodePos } : s)));
+      setEditingAlamatId(null);
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSavingAlamat(false);
+  }
 
   async function load() {
     setLoading(true);
@@ -13856,10 +13879,34 @@ function VerifikasiSalesPage({ token }) {
                 </div>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
                   <span style={{ fontSize: 11, color: "#9CA0A6", flexShrink: 0 }}>Alamat</span>
-                  <span style={{ fontSize: 11.5, color: "#24272B", fontWeight: 600, textAlign: "right" }}>
-                    {[s.alamat, s.kota, s.provinsi, s.kode_pos].filter(Boolean).join(", ") || "-"}
-                  </span>
+                  {editingAlamatId !== s.id && (
+                    <span style={{ fontSize: 11.5, color: "#24272B", fontWeight: 600, textAlign: "right" }}>
+                      {[s.alamat, s.kota, s.provinsi, s.kode_pos].filter(Boolean).join(", ") || "-"}
+                    </span>
+                  )}
                 </div>
+                {editingAlamatId === s.id ? (
+                  <div style={{ marginTop: 8 }}>
+                    <input value={editAlamatForm.alamat} onChange={(e) => setEditAlamatForm({ ...editAlamatForm, alamat: e.target.value })} placeholder="Alamat jalan" style={{ width: "100%", padding: "7px 9px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12, marginBottom: 6, boxSizing: "border-box" }} />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, marginBottom: 8 }}>
+                      <input value={editAlamatForm.kota} onChange={(e) => setEditAlamatForm({ ...editAlamatForm, kota: e.target.value })} placeholder="Kota" style={{ padding: "7px 9px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12, boxSizing: "border-box" }} />
+                      <input value={editAlamatForm.provinsi} onChange={(e) => setEditAlamatForm({ ...editAlamatForm, provinsi: e.target.value })} placeholder="Provinsi" style={{ padding: "7px 9px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12, boxSizing: "border-box" }} />
+                      <input value={editAlamatForm.kodePos} onChange={(e) => setEditAlamatForm({ ...editAlamatForm, kodePos: e.target.value })} placeholder="Kode Pos" style={{ padding: "7px 9px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12, boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button onClick={() => simpanEditAlamat(s.id)} disabled={savingAlamat} style={{ flex: 1, padding: 7, borderRadius: 7, border: "none", background: "#24272B", color: "#fff", fontSize: 11.5, fontWeight: 700 }}>
+                        {savingAlamat ? "Menyimpan..." : "Simpan"}
+                      </button>
+                      <button onClick={() => setEditingAlamatId(null)} disabled={savingAlamat} style={{ flex: 1, padding: 7, borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11.5, fontWeight: 600 }}>
+                        Batal
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button onClick={() => mulaiEditAlamat(s)} style={{ marginTop: 6, padding: "5px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 11, fontWeight: 600 }}>
+                    ✏️ Edit Alamat
+                  </button>
+                )}
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
