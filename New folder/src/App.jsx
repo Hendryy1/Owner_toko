@@ -757,6 +757,36 @@ function OwnerDashboardInner() {
   const [notifCounts, setNotifCounts] = useState({});
   const prevNotifCountsRef = useRef(null);
 
+  // Banner "Install Aplikasi" - browser TIDAK mengizinkan popup install
+  // muncul otomatis tanpa ada interaksi user sama sekali (kebijakan
+  // keamanan) - tapi kita bisa tangkap event ini lalu tampilkan banner
+  // sendiri yang otomatis muncul saat Dashboard dibuka (jadi staff tidak
+  // perlu cari-cari ke menu titik tiga lagi, cukup tekan 1 tombol di
+  // banner ini untuk munculkan popup install asli dari browser).
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [installBannerDitutup, setInstallBannerDitutup] = useState(false);
+
+  useEffect(() => {
+    const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    setIsStandalone(standalone);
+    function handleBeforeInstallPrompt(e) {
+      e.preventDefault();
+      setInstallPromptEvent(e);
+    }
+    window.addEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+    return () => window.removeEventListener("beforeinstallprompt", handleBeforeInstallPrompt);
+  }, []);
+
+  async function handleInstallClick() {
+    if (installPromptEvent) {
+      installPromptEvent.prompt();
+      const { outcome } = await installPromptEvent.userChoice;
+      if (outcome === "accepted") setInstallPromptEvent(null);
+      else setInstallBannerDitutup(true);
+    }
+  }
+
   useEffect(() => {
     function handleResize() {
       setIsMobile(window.innerWidth < 768);
@@ -1071,6 +1101,25 @@ function OwnerDashboardInner() {
         .disp { font-family: 'Barlow Condensed', sans-serif; }
         button { font-family: inherit; cursor: pointer; }
       `}</style>
+      {!isStandalone && installPromptEvent && !installBannerDitutup && (
+        <div style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 999, background: "#24272B", color: "#fff", padding: "12px 16px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, boxShadow: "0 -2px 12px rgba(0,0,0,0.2)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <div style={{ width: 34, height: 34, background: "#E8A426", borderRadius: 9, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontWeight: 700, color: "#24272B", fontSize: 13 }}>IGA</div>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 13, fontWeight: 700 }}>Install Portal I.G.A</p>
+              <p style={{ margin: 0, fontSize: 11.5, color: "#9CA0A6" }}>Akses lebih cepat, seperti aplikasi biasa</p>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button onClick={() => setInstallBannerDitutup(true)} style={{ padding: "8px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.25)", background: "transparent", color: "#9CA0A6", fontSize: 12, fontWeight: 600 }}>
+              Nanti
+            </button>
+            <button onClick={handleInstallClick} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12, fontWeight: 700 }}>
+              Install
+            </button>
+          </div>
+        </div>
+      )}
       <Sidebar page={page} setPage={setPage} profile={profile} onLogout={handleLogout} collapsed={sidebarCollapsed} setCollapsed={setSidebarCollapsed} isMobile={isMobile} salesTerverifikasi={salesTerverifikasi} urutanMenu={urutanMenu} setUrutanMenu={setUrutanMenu} token={token} notifCounts={notifCounts} grupOwner={grupOwner} setGrupOwner={setGrupOwner} />
       <div style={{ flex: 1, padding: isMobile ? "16px 16px 28px" : "28px 36px", overflowY: "auto", overflowX: "hidden", minWidth: 0 }}>
         {isMobile && (
