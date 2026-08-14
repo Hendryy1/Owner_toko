@@ -2093,7 +2093,7 @@ function OverviewPage({ token, setPage }) {
         supabaseFetch(token, "clients?select=id&status=eq.pending"),
         supabaseFetch(token, "v_laporan_keuangan_bulanan?select=*&order=bulan.desc&limit=1"),
         supabaseFetch(token, "v_piutang_client?select=total_piutang,melebihi_limit"),
-        supabaseFetch(token, "sales?select=id,kode,nama&order=nama.asc"),
+        supabaseFetch(token, "sales?select=id,kode,nama&status_verifikasi=eq.terverifikasi&order=nama.asc"),
         supabaseFetch(token, "clients?select=id,sales_id,kota&sales_id=not.is.null"),
         supabaseFetch(token, `kunjungan_sales?select=id,sales_id&created_at=gte.${startBulan}&created_at=lt.${endBulan}`),
         supabaseFetch(token, `v_rekap_sales_bulanan?select=sales_id,omzet_bulan&bulan=eq.${startBulan}`),
@@ -3818,7 +3818,7 @@ function SalesPage({ token }) {
     try {
       const [rekapData, salesData] = await Promise.all([
         supabaseFetch(token, "v_rekap_sales_bulanan?select=*&order=bulan.desc&limit=300"),
-        supabaseFetch(token, "sales?select=id,kode,nama,target_omzet_bulanan&order=kode.asc"),
+        supabaseFetch(token, "sales?select=id,kode,nama,target_omzet_bulanan&status_verifikasi=eq.terverifikasi&order=kode.asc"),
       ]);
       setRows(rekapData);
       setAllSales(salesData);
@@ -13252,7 +13252,7 @@ function RekapAbsenPage({ token, setPage }) {
       // tanggal merahnya sekarang di menu Calendar terpisah, tapi rekap ini
       // masih terkoneksi/pakai data yang SAMA supaya perhitungannya akurat.
       const [sales, absen, libur] = await Promise.all([
-        supabaseFetch(token, "sales?select=id,kode,nama&order=nama.asc"),
+        supabaseFetch(token, "sales?select=id,kode,nama&status_verifikasi=eq.terverifikasi&order=nama.asc"),
         supabaseFetch(token, `absen_sales?select=sales_id,tanggal&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}`),
         supabaseFetch(token, `hari_libur?select=*&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=tanggal.asc`),
       ]);
