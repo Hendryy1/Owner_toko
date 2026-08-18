@@ -10048,10 +10048,10 @@ function RingkasanAbsenHariIni({ token, profile, handledClients }) {
   }
 
   function mulaiTambahKunjungan() {
-    if (handledClients.length === 0) {
-      alert("Belum ada toko yang ditugaskan ke Anda.");
-      return;
-    }
+    // TIDAK blokir dengan alert kalau belum ada toko terdaftar - tetap
+    // lanjut ke halaman pilihan, karena di situ selalu ada tombol "Toko
+    // Tidak Terdaftar" buat kunjungan manual (toko belum terdaftar sama
+    // sekali di sistem).
     setMode("pilih_toko_kunjungan");
   }
 
