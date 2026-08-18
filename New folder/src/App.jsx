@@ -9921,6 +9921,585 @@ function TokoSalesPage({ token, profile }) {
   );
 }
 
+// ============================================================
+// RINGKASAN ABSEN HARI INI - ditampilkan di ATAS halaman Laporan
+// Kunjungan (bukan lagi di menu Absen) begitu Sales sudah check-in hari
+// ini. Berisi: timeline aktivitas (check-in + kunjungan + catatan),
+// tombol tambah kunjungan/catatan, dan tombol Check-Out. Kalau belum
+// check-in hari ini, komponen ini tidak menampilkan apa-apa (return null)
+// - menu "Absen" tetap satu-satunya tempat buat check-in pertama kali.
+// ============================================================
+function RingkasanAbsenHariIni({ token, profile, handledClients }) {
+  const [loading, setLoading] = useState(true);
+  const [sudahAbsenHariIni, setSudahAbsenHariIni] = useState(false);
+  const [waktuCheckout, setWaktuCheckout] = useState(null);
+  const [dataCheckinHariIni, setDataCheckinHariIni] = useState(null);
+  const [detailAktivitasDipilih, setDetailAktivitasDipilih] = useState(null);
+  const [fotoKunjunganList, setFotoKunjunganList] = useState([]);
+  const [savingKunjunganFinal, setSavingKunjunganFinal] = useState(false);
+  const [kunjunganHariIniDetail, setKunjunganHariIniDetail] = useState([]);
+  const [aktivitasHariIni, setAktivitasHariIni] = useState([]);
+  const [showTambahAktivitas, setShowTambahAktivitas] = useState(false);
+  const [catatanAktivitasBaru, setCatatanAktivitasBaru] = useState("");
+  const [savingAktivitas, setSavingAktivitas] = useState(false);
+  const [savingCheckout, setSavingCheckout] = useState(false);
+  const [errorCheckout, setErrorCheckout] = useState("");
+
+  // State buat flow "Tambah Kunjungan" (pilih toko -> ambil lokasi -> foto)
+  const [mode, setMode] = useState(null); // null | "pilih_toko_kunjungan" | "tambah_kunjungan"
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [namaTokoManual, setNamaTokoManual] = useState("");
+  const [alamatTokoManual, setAlamatTokoManual] = useState("");
+  const [catatanAbsen, setCatatanAbsen] = useState("");
+  const [gettingLocation, setGettingLocation] = useState(false);
+  const [locationError, setLocationError] = useState("");
+  const [coords, setCoords] = useState(null);
+  const [uploading, setUploading] = useState(false);
+
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+  async function load() {
+    if (!profile?.sales_id) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const [absenHariIni, kunjunganHariIni, aktivitasRows] = await Promise.all([
+        supabaseFetch(token, `absen_sales?select=id,waktu_absen,waktu_checkout,foto_url,nama_toko_manual,alamat_toko_manual,catatan,clients(nama,kode)&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
+        supabaseFetch(token, `kunjungan_sales?select=client_id,created_at,foto_url,foto_urls,latitude,longitude,catatan,nama_toko_manual,alamat_toko_manual,clients(nama,kode)&sales_id=eq.${profile.sales_id}&created_at=gte.${todayStr}T00:00:00&created_at=lte.${todayStr}T23:59:59&order=created_at.asc`),
+        supabaseFetch(token, `aktivitas_harian_sales?select=id,catatan,created_at&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}&order=created_at.asc`),
+      ]);
+      setSudahAbsenHariIni(absenHariIni.length > 0);
+      setDataCheckinHariIni(absenHariIni[0] || null);
+      setWaktuCheckout(absenHariIni[0]?.waktu_checkout || null);
+      setKunjunganHariIniDetail(kunjunganHariIni);
+      setAktivitasHariIni(aktivitasRows);
+    } catch (e) {
+      // Diam-diam gagal - komponen ini pelengkap, jangan sampai bikin
+      // seluruh halaman Laporan Kunjungan ikut error kalau ini gagal.
+      console.log("Gagal muat ringkasan absen:", e.message);
+    }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, []);
+
+  const timelineHariIni = [
+    ...(dataCheckinHariIni ? [{
+      jenis: "checkin", waktu: dataCheckinHariIni.waktu_absen,
+      teks: dataCheckinHariIni.clients ? `Absen di ${dataCheckinHariIni.clients.nama}` : `Absen di ${dataCheckinHariIni.nama_toko_manual || "lokasi"}`,
+      detail: {
+        fotoUrls: dataCheckinHariIni.foto_url ? [dataCheckinHariIni.foto_url] : [],
+        catatan: dataCheckinHariIni.catatan,
+        namaToko: dataCheckinHariIni.clients?.nama || dataCheckinHariIni.nama_toko_manual,
+        alamatToko: dataCheckinHariIni.alamat_toko_manual,
+      },
+    }] : []),
+    ...kunjunganHariIniDetail.map((k) => ({
+      jenis: "kunjungan", waktu: k.created_at,
+      teks: `Kunjungan ke ${k.clients?.nama || k.nama_toko_manual || "toko"}`,
+      detail: {
+        fotoUrls: k.foto_urls && k.foto_urls.length > 0 ? k.foto_urls : (k.foto_url ? [k.foto_url] : []),
+        catatan: k.catatan, namaToko: k.clients?.nama || k.nama_toko_manual, alamatToko: k.alamat_toko_manual,
+        latitude: k.latitude, longitude: k.longitude,
+      },
+    })),
+    ...aktivitasHariIni.map((a) => ({ jenis: "catatan", waktu: a.created_at, teks: a.catatan, detail: { catatan: a.catatan } })),
+  ].sort((a, b) => new Date(a.waktu) - new Date(b.waktu));
+
+  const jamSekarang = new Date().getHours();
+  const bisaCheckout = jamSekarang >= 17;
+
+  async function simpanAktivitas() {
+    if (!catatanAktivitasBaru.trim()) return;
+    setSavingAktivitas(true);
+    try {
+      await supabaseFetch(token, "aktivitas_harian_sales", {
+        method: "POST",
+        body: JSON.stringify({ sales_id: profile.sales_id, tanggal: todayStr, catatan: catatanAktivitasBaru.trim() }),
+      });
+      setCatatanAktivitasBaru("");
+      setShowTambahAktivitas(false);
+      await load();
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSavingAktivitas(false);
+  }
+
+  async function lakukanCheckout() {
+    setErrorCheckout("");
+    if (!bisaCheckout) {
+      setErrorCheckout("Check-Out baru bisa dilakukan setelah jam 17:00 WIB.");
+      return;
+    }
+    setSavingCheckout(true);
+    try {
+      const rows = await supabaseFetch(token, `absen_sales?select=id&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`);
+      if (rows[0]) {
+        await supabaseFetch(token, `absen_sales?id=eq.${rows[0].id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ waktu_checkout: new Date().toISOString() }),
+        });
+        await load();
+      }
+    } catch (e) {
+      setErrorCheckout("Gagal check-out: " + e.message);
+    }
+    setSavingCheckout(false);
+  }
+
+  function mulaiTambahKunjungan() {
+    if (handledClients.length === 0) {
+      alert("Belum ada toko yang ditugaskan ke Anda.");
+      return;
+    }
+    setMode("pilih_toko_kunjungan");
+  }
+
+  function pilihTokoUntukKunjungan(client) {
+    setSelectedClient(client);
+    setCatatanAbsen("");
+    setNamaTokoManual("");
+    setAlamatTokoManual("");
+    setFotoKunjunganList([]);
+    setMode("tambah_kunjungan");
+    setLocationError("");
+    setCoords(null);
+    setGettingLocation(true);
+
+    if (!navigator.geolocation) {
+      setLocationError("HP/browser ini tidak mendukung deteksi lokasi.");
+      setGettingLocation(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGettingLocation(false);
+      },
+      (err) => {
+        setLocationError("Gagal ambil lokasi: " + err.message + " - pastikan izin lokasi diizinkan.");
+        setGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }
+
+  function loadImageFromFile(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+
+  async function handleFotoKunjungan(e) {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file || !coords) return;
+    if (!selectedClient && !namaTokoManual.trim()) return;
+    setUploading(true);
+    try {
+      const img = await loadImageFromFile(file);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+
+      const mapSize = Math.round(Math.min(img.width, img.height) * 0.32);
+      try {
+        const mapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${coords.lat},${coords.lng}&zoom=16&size=${mapSize}x${mapSize}&maptype=mapnik`;
+        const mapRes = await fetch(mapUrl, { mode: "cors" });
+        if (!mapRes.ok) throw new Error("gagal ambil peta");
+        const mapBlob = await mapRes.blob();
+        const mapImg = await loadImageFromFile(mapBlob);
+        const mx = img.width - mapSize - 14;
+        const my = 14;
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(mx - 4, my - 4, mapSize + 8, mapSize + 8);
+        ctx.drawImage(mapImg, mx, my, mapSize, mapSize);
+        ctx.beginPath();
+        ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
+        ctx.fillStyle = "#E4453A";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } catch (mapErr) {
+        console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
+      }
+
+      const barHeight = Math.max(90, img.height * 0.12);
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+
+      const pinSize = barHeight * 0.55;
+      const pinCenterX = 14 + pinSize / 2;
+      const pinCenterY = img.height - barHeight / 2;
+      ctx.save();
+      ctx.translate(pinCenterX, pinCenterY - pinSize * 0.15);
+      ctx.beginPath();
+      ctx.arc(0, 0, pinSize / 2, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.lineTo(0, pinSize * 0.75);
+      ctx.closePath();
+      ctx.fillStyle = "#E4453A";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, -pinSize * 0.05, pinSize * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.restore();
+
+      const textX = 14 + pinSize + 14;
+      ctx.fillStyle = "#fff";
+      const fontSize = Math.max(14, Math.round(img.width / 40));
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
+      ctx.fillText(`Kunjungan - ${selectedClient ? `${selectedClient.nama} (${selectedClient.kode})` : namaTokoManual.trim()}`, textX, img.height - barHeight + fontSize + 10);
+      ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
+      ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
+      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
+
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
+      const extBlob = blob?.type === "image/webp" ? "webp" : "png";
+      const filePath = `kunjungan-${profile.sales_id}-${Date.now()}.${extBlob}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": blob?.type || "image/png" },
+        body: blob,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+
+      setFotoKunjunganList((prev) => [...prev, url]);
+    } catch (e) {
+      alert("Gagal upload foto: " + e.message);
+    }
+    setUploading(false);
+  }
+
+  async function simpanKunjunganFinal() {
+    if (fotoKunjunganList.length === 0) return;
+    setSavingKunjunganFinal(true);
+    try {
+      await supabaseFetch(token, "kunjungan_sales", {
+        method: "POST",
+        body: JSON.stringify({
+          sales_id: profile.sales_id, client_id: selectedClient?.id || null,
+          nama_toko_manual: selectedClient ? null : namaTokoManual.trim(),
+          alamat_toko_manual: selectedClient ? null : alamatTokoManual.trim(),
+          foto_url: fotoKunjunganList[0], foto_urls: fotoKunjunganList,
+          latitude: coords.lat, longitude: coords.lng,
+          catatan: catatanAbsen.trim() || null,
+        }),
+      });
+      await load();
+      setMode(null);
+      setSelectedClient(null);
+      setNamaTokoManual("");
+      setAlamatTokoManual("");
+      setCatatanAbsen("");
+      setFotoKunjunganList([]);
+    } catch (e) {
+      alert("Gagal simpan kunjungan: " + e.message);
+    }
+    setSavingKunjunganFinal(false);
+  }
+
+  // Belum check-in hari ini (atau masih memuat) - komponen ini tidak
+  // menampilkan apa-apa, biarkan halaman Laporan Kunjungan tampil normal.
+  if (loading) return null;
+
+  if (!sudahAbsenHariIni) {
+    return (
+      <Card style={{ marginBottom: 20, textAlign: "center", padding: 24 }}>
+        <p style={{ fontSize: 14, fontWeight: 700, color: "#8A6A1A", margin: "0 0 4px" }}>⏰ Anda Belum Absen Hari Ini</p>
+        <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: 0 }}>Silakan absen dulu lewat menu "Absen" untuk mulai mencatat aktivitas hari ini.</p>
+      </Card>
+    );
+  }
+
+  // ---------- MODE PILIH TOKO (buat "Tambah Kunjungan" setelah check-in) ----------
+  if (mode === "pilih_toko_kunjungan") {
+    return (
+      <Card style={{ marginBottom: 20 }}>
+        <button onClick={() => setMode(null)} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+          <ChevronLeft size={16} /> Batal
+        </button>
+        <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Kunjungan Toko</p>
+        <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 14px" }}>Anda sedang di depan toko yang mana sekarang?</p>
+        {handledClients.length === 0 ? (
+          <EmptyState text="Belum ada toko yang ditugaskan ke Anda." />
+        ) : (
+          handledClients.map((c) => (
+            <div key={c.id} style={{ border: "1px solid #F0EDE6", borderRadius: 10, marginBottom: 10, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.nama}</p>
+                  <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{c.kode}</p>
+                </div>
+                <button
+                  onClick={() => pilihTokoUntukKunjungan(c)}
+                  style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                >
+                  Pilih
+                </button>
+              </div>
+            </div>
+          ))
+        )}
+        <button
+          onClick={() => pilihTokoUntukKunjungan(null)}
+          style={{ width: "100%", marginTop: 10, padding: "12px", borderRadius: 10, border: "1.5px dashed #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12.5, fontWeight: 700 }}
+        >
+          Toko Tidak Terdaftar
+        </button>
+      </Card>
+    );
+  }
+
+  // ---------- MODE TAMBAH KUNJUNGAN (ambil lokasi + foto, SETELAH check-in) ----------
+  if (mode === "tambah_kunjungan") {
+    return (
+      <Card style={{ marginBottom: 20 }}>
+        <button onClick={() => { setMode(null); setSelectedClient(null); setNamaTokoManual(""); setAlamatTokoManual(""); setCatatanAbsen(""); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+          <ChevronLeft size={16} /> Batal
+        </button>
+        <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 4px" }}>Kunjungan Toko</p>
+        <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 14px" }}>{selectedClient ? `Di depan ${selectedClient.nama}` : "Isi nama toko yang Anda kunjungi"}</p>
+        {!selectedClient && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Nama Toko</label>
+            <input
+              value={namaTokoManual} onChange={(e) => setNamaTokoManual(e.target.value)}
+              placeholder="Isi nama toko tempat Anda kunjungi sekarang"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, marginBottom: 12 }}
+            />
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Alamat</label>
+            <input
+              value={alamatTokoManual} onChange={(e) => setAlamatTokoManual(e.target.value)}
+              placeholder="Isi alamat toko tempat Anda kunjungi sekarang"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5 }}
+            />
+          </div>
+        )}
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Catatan</label>
+          <textarea
+            value={catatanAbsen} onChange={(e) => setCatatanAbsen(e.target.value)}
+            placeholder="Isi catatan kunjungan ini"
+            rows={3}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, resize: "vertical", fontFamily: "inherit" }}
+          />
+        </div>
+        <div style={{ textAlign: "center", padding: 20, background: "#F7F5F1", borderRadius: 12 }}>
+          {gettingLocation ? (
+            <p style={{ fontSize: 13, color: "#6B6F75" }}>Mengambil lokasi GPS Anda...</p>
+          ) : locationError ? (
+            <>
+              <AlertCircle size={30} color="#C0392B" style={{ marginBottom: 10 }} />
+              <p style={{ fontSize: 13, color: "#C0392B", marginBottom: 14 }}>{locationError}</p>
+              <button onClick={() => pilihTokoUntukKunjungan(selectedClient)} style={{ padding: "10px 20px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13 }}>
+                Coba Lagi
+              </button>
+            </>
+          ) : coords ? (
+            <>
+              <Check size={30} color="#28685D" style={{ marginBottom: 10 }} />
+              <p style={{ fontSize: 13, color: "#28685D", fontWeight: 600, marginBottom: 18 }}>Lokasi berhasil diambil.</p>
+
+              {fotoKunjunganList.length > 0 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 16 }}>
+                  {fotoKunjunganList.map((url, i) => (
+                    <div key={i} style={{ position: "relative" }}>
+                      <img src={url} alt={`Foto ${i + 1}`} style={{ width: 70, height: 70, borderRadius: 9, objectFit: "cover", display: "block" }} />
+                      <button
+                        onClick={() => setFotoKunjunganList((prev) => prev.filter((_, j) => j !== i))}
+                        style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C0392B", color: "#fff", border: "2px solid #fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(() => {
+                const disabledAmbilFoto = uploading || (!selectedClient && !namaTokoManual.trim());
+                return (
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 24px", borderRadius: 12, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontWeight: 700, fontSize: 13.5, cursor: disabledAmbilFoto ? "not-allowed" : "pointer", opacity: disabledAmbilFoto ? 0.6 : 1 }}>
+                    <Camera size={16} /> {uploading ? "Mengupload..." : fotoKunjunganList.length === 0 ? "Ambil Foto" : "Ambil Foto Lagi"}
+                    <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={disabledAmbilFoto} onChange={handleFotoKunjungan} />
+                  </label>
+                );
+              })()}
+
+              {fotoKunjunganList.length > 0 && (
+                <>
+                  {(() => {
+                    const disabledSimpan = savingKunjunganFinal || uploading || !catatanAbsen.trim() || (!selectedClient && !namaTokoManual.trim());
+                    return (
+                      <button
+                        onClick={simpanKunjunganFinal}
+                        disabled={disabledSimpan}
+                        style={{ display: "block", width: "100%", marginTop: 14, padding: "13px 28px", borderRadius: 12, border: "none", background: disabledSimpan ? "#E4E1DA" : "#24272B", color: disabledSimpan ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 14 }}
+                      >
+                        {savingKunjunganFinal ? "Menyimpan..." : `Simpan Kunjungan (${fotoKunjunganList.length} foto)`}
+                      </button>
+                    );
+                  })()}
+                  {!selectedClient && !namaTokoManual.trim() && (
+                    <p style={{ fontSize: 11.5, color: "#C0392B", margin: "10px 0 0" }}>Isi dulu nama toko di atas.</p>
+                  )}
+                  {(selectedClient || namaTokoManual.trim()) && !catatanAbsen.trim() && (
+                    <p style={{ fontSize: 11.5, color: "#C0392B", margin: "10px 0 0" }}>Isi dulu catatan di atas.</p>
+                  )}
+                </>
+              )}
+            </>
+          ) : null}
+        </div>
+      </Card>
+    );
+  }
+
+  // ---------- TAMPILAN RINGKASAN (timeline + tombol) ----------
+  return (
+    <>
+      <Card style={{ marginBottom: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+          <p style={{ fontSize: 15, fontWeight: 700, color: waktuCheckout ? "#28685D" : "#24272B", margin: 0 }}>
+            {waktuCheckout ? "✅ Sudah Check-Out" : "🟢 Sudah Check-In"}
+          </p>
+          {waktuCheckout && (
+            <span style={{ fontSize: 11.5, color: "#9CA0A6" }}>
+              {new Date(waktuCheckout).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+        </div>
+        <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 16px" }}>
+          {waktuCheckout ? "Sampai jumpa besok! Berikut riwayat aktivitas Anda hari ini." : "Jangan lupa catat aktivitas & check-out sebelum pulang."}
+        </p>
+
+        <div style={{ textAlign: "left", background: "#F7F5F1", borderRadius: 12, padding: 14, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+            <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>Aktivitas Hari Ini ({timelineHariIni.length})</p>
+            {!waktuCheckout && (
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => mulaiTambahKunjungan()} style={{ fontSize: 11.5, fontWeight: 700, color: "#28685D", background: "none", border: "none", padding: 0 }}>
+                  📍 Kunjungan Toko
+                </button>
+                <button onClick={() => setShowTambahAktivitas(true)} style={{ fontSize: 11.5, fontWeight: 700, color: "#8A6A1A", background: "none", border: "none", padding: 0 }}>
+                  📝 Catatan
+                </button>
+              </div>
+            )}
+          </div>
+          {timelineHariIni.length === 0 ? (
+            <p style={{ fontSize: 12, color: "#9CA0A6", margin: 0 }}>Belum ada aktivitas tercatat hari ini.</p>
+          ) : (
+            timelineHariIni.map((item, i) => (
+              <div key={i} onClick={() => setDetailAktivitasDipilih(item)} style={{ display: "flex", gap: 8, marginBottom: i === timelineHariIni.length - 1 ? 0 : 8, fontSize: 12, cursor: "pointer" }}>
+                <span style={{ color: "#9CA0A6", flexShrink: 0, fontWeight: 600 }}>
+                  {new Date(item.waktu).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+                <span style={{ color: "#24272B", textDecoration: "underline", textDecorationColor: "#E4E1DA", textUnderlineOffset: 3 }}>
+                  {item.jenis === "checkin" ? "✅ " : item.jenis === "kunjungan" ? "📍 " : "📝 "}{item.teks}
+                </span>
+              </div>
+            ))
+          )}
+        </div>
+
+        {showTambahAktivitas && (
+          <div style={{ textAlign: "left", background: "#fff", border: "1.5px solid #E4E1DA", borderRadius: 12, padding: 14, marginBottom: 16 }}>
+            <textarea
+              value={catatanAktivitasBaru} onChange={(e) => setCatatanAktivitasBaru(e.target.value)}
+              placeholder="Contoh: Follow up toko ABC soal pembayaran lewat telepon"
+              rows={3}
+              style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, boxSizing: "border-box", resize: "vertical", marginBottom: 10 }}
+            />
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={simpanAktivitas} disabled={savingAktivitas || !catatanAktivitasBaru.trim()} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", background: "#24272B", color: "#fff", fontSize: 12.5, fontWeight: 700 }}>
+                {savingAktivitas ? "Menyimpan..." : "Simpan Catatan"}
+              </button>
+              <button onClick={() => { setShowTambahAktivitas(false); setCatatanAktivitasBaru(""); }} disabled={savingAktivitas} style={{ padding: "10px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12.5, fontWeight: 600 }}>
+                Batal
+              </button>
+            </div>
+          </div>
+        )}
+
+        {!waktuCheckout && (
+          <>
+            <button
+              onClick={lakukanCheckout}
+              disabled={savingCheckout || !bisaCheckout}
+              style={{ width: "100%", padding: "13px 32px", borderRadius: 12, border: "none", background: bisaCheckout ? "#24272B" : "#E4E1DA", color: bisaCheckout ? "#fff" : "#9CA0A6", fontWeight: 700, fontSize: 14.5 }}
+            >
+              {savingCheckout ? "Memproses..." : bisaCheckout ? "Check-Out Sekarang" : "Check-Out (bisa mulai jam 17:00 WIB)"}
+            </button>
+            {errorCheckout && <p style={{ fontSize: 11.5, color: "#C0392B", margin: "8px 0 0" }}>{errorCheckout}</p>}
+          </>
+        )}
+      </Card>
+
+      {detailAktivitasDipilih && (
+        <div onClick={() => setDetailAktivitasDipilih(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px 16px 0 0", padding: 20, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>
+                {detailAktivitasDipilih.jenis === "checkin" ? "✅ Absen" : detailAktivitasDipilih.jenis === "kunjungan" ? "📍 Kunjungan Toko" : "📝 Catatan Aktivitas"}
+              </p>
+              <button onClick={() => setDetailAktivitasDipilih(null)} style={{ background: "none", border: "none", color: "#9CA0A6", padding: 4 }}>
+                <X size={20} />
+              </button>
+            </div>
+            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 14px" }}>
+              {new Date(detailAktivitasDipilih.waktu).toLocaleString("id-ID", { dateStyle: "full", timeStyle: "short" })}
+            </p>
+
+            {detailAktivitasDipilih.detail?.namaToko && (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{detailAktivitasDipilih.detail.namaToko}</p>
+                {detailAktivitasDipilih.detail.alamatToko && (
+                  <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{detailAktivitasDipilih.detail.alamatToko}</p>
+                )}
+              </div>
+            )}
+
+            {detailAktivitasDipilih.detail?.fotoUrls?.length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+                {detailAktivitasDipilih.detail.fotoUrls.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                    <img src={url} alt={`Foto ${i + 1}`} style={{ width: 100, height: 100, borderRadius: 10, objectFit: "cover", display: "block" }} />
+                  </a>
+                ))}
+              </div>
+            )}
+
+            {detailAktivitasDipilih.detail?.catatan && (
+              <div style={{ background: "#F7F5F1", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", margin: "0 0 4px", textTransform: "uppercase" }}>Catatan</p>
+                <p style={{ fontSize: 13, color: "#24272B", margin: 0, lineHeight: 1.5 }}>{detailAktivitasDipilih.detail.catatan}</p>
+              </div>
+            )}
+
+            {detailAktivitasDipilih.detail?.latitude && (
+              <a href={`https://www.google.com/maps?q=${detailAktivitasDipilih.detail.latitude},${detailAktivitasDipilih.detail.longitude}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#2C5985", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
+                <MapPin size={13} /> Lihat Lokasi di Maps
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function KunjunganSalesPage({ token, profile }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -10413,6 +10992,7 @@ function KunjunganSalesPage({ token, profile }) {
   return (
     <div>
       <PageHeader title="Laporan Kunjungan" subtitle={`Target: setiap toko dikunjungi ${TARGET_KUNJUNGAN_PER_BULAN}x per bulan`} />
+      <RingkasanAbsenHariIni token={token} profile={profile} handledClients={handledClients} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>
         {handledClients.map((c) => {
           const jumlah = jumlahKunjungan(c.id);
@@ -12657,7 +13237,6 @@ function AbsenSalesPage({ token, profile }) {
   const [keteranganLibur, setKeteranganLibur] = useState("");
   const [riwayat, setRiwayat] = useState([]);
   const [handledClients, setHandledClients] = useState([]);
-  const [clientIdSudahKunjunganHariIni, setClientIdSudahKunjunganHariIni] = useState([]);
 
   const [mode, setMode] = useState(null); // null | "pilih_toko" | "checkin"
   const [selectedClient, setSelectedClient] = useState(null);
@@ -12670,33 +13249,11 @@ function AbsenSalesPage({ token, profile }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
-  // Log Aktivitas Harian + Check-Out - waktuCheckout null berarti belum
-  // check-out. Timeline gabungan (kunjunganHariIni + aktivitasHariIni)
-  // ditampilkan berurutan waktu supaya Owner/Sales bisa lihat riwayat
-  // penuh hari itu dalam 1 tempat.
-  const [waktuCheckout, setWaktuCheckout] = useState(null);
-  const [dataCheckinHariIni, setDataCheckinHariIni] = useState(null);
-  const [detailAktivitasDipilih, setDetailAktivitasDipilih] = useState(null);
-  const [fotoKunjunganList, setFotoKunjunganList] = useState([]); // [{ url, previewLocal }] - bisa lebih dari 1 foto per kunjungan, diambil satu-satu
-  const [savingKunjunganFinal, setSavingKunjunganFinal] = useState(false);
-  const [kunjunganHariIniDetail, setKunjunganHariIniDetail] = useState([]);
-  const [aktivitasHariIni, setAktivitasHariIni] = useState([]);
-  const [showTambahAktivitas, setShowTambahAktivitas] = useState(false);
-  const [catatanAktivitasBaru, setCatatanAktivitasBaru] = useState("");
-  const [savingAktivitas, setSavingAktivitas] = useState(false);
-  const [savingCheckout, setSavingCheckout] = useState(false);
-  const [errorCheckout, setErrorCheckout] = useState("");
-
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const isMinggu = now.getDay() === 0;
 
   async function load() {
-    // Menu ini KHUSUS buat akun Sales (butuh profile.sales_id buat tahu
-    // toko mana yang ditangani). Kalau diakses akun lain (misal Owner yang
-    // menambahkan menu ini lewat "Atur Urutan Menu"), sales_id-nya kosong -
-    // hentikan di sini, jangan sampai query jalan dengan nilai kosong dan
-    // bikin error mentah dari database.
     if (!profile?.sales_id) {
       setLoading(false);
       return;
@@ -12704,103 +13261,29 @@ function AbsenSalesPage({ token, profile }) {
     setLoading(true);
     setError("");
     try {
-      const [absenHariIni, liburRows, riwayatRows, clients, kunjunganHariIni, aktivitasRows] = await Promise.all([
-        supabaseFetch(token, `absen_sales?select=id,waktu_absen,waktu_checkout,foto_url,nama_toko_manual,alamat_toko_manual,catatan,clients(nama,kode)&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
+      const [absenHariIni, liburRows, riwayatRows, clients] = await Promise.all([
+        supabaseFetch(token, `absen_sales?select=id&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `hari_libur?select=keterangan&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `absen_sales?select=tanggal,waktu_absen,foto_url,nama_toko_manual,clients(nama)&sales_id=eq.${profile.sales_id}&order=tanggal.desc&limit=14`),
         supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&status=eq.aktif&order=nama.asc`),
-        supabaseFetch(token, `kunjungan_sales?select=client_id,created_at,foto_url,foto_urls,latitude,longitude,catatan,nama_toko_manual,alamat_toko_manual,clients(nama,kode)&sales_id=eq.${profile.sales_id}&created_at=gte.${todayStr}T00:00:00&created_at=lte.${todayStr}T23:59:59&order=created_at.asc`),
-        supabaseFetch(token, `aktivitas_harian_sales?select=id,catatan,created_at&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}&order=created_at.asc`),
       ]);
       setSudahAbsenHariIni(absenHariIni.length > 0);
-      setDataCheckinHariIni(absenHariIni[0] || null);
-      setWaktuCheckout(absenHariIni[0]?.waktu_checkout || null);
       setIsLibur(liburRows.length > 0);
       setKeteranganLibur(liburRows[0]?.keterangan || "");
       setRiwayat(riwayatRows);
       setHandledClients(clients);
-      setClientIdSudahKunjunganHariIni(kunjunganHariIni.map((k) => k.client_id));
-      setKunjunganHariIniDetail(kunjunganHariIni);
-      setAktivitasHariIni(aktivitasRows);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
 
-  // Timeline gabungan check-in + kunjungan toko + catatan aktivitas bebas,
-  // diurutkan berdasarkan waktu - supaya Sales/Owner lihat riwayat penuh 1
-  // hari dalam urutan kronologis yang masuk akal. Check-in SENGAJA ikut
-  // dihitung sebagai aktivitas pertama (bukan "0" sebelum ada apa-apa lagi).
-  const timelineHariIni = [
-    ...(dataCheckinHariIni ? [{
-      jenis: "checkin", waktu: dataCheckinHariIni.waktu_absen,
-      teks: dataCheckinHariIni.clients ? `Absen di ${dataCheckinHariIni.clients.nama}` : `Absen di ${dataCheckinHariIni.nama_toko_manual || "lokasi"}`,
-      detail: {
-        fotoUrls: dataCheckinHariIni.foto_url ? [dataCheckinHariIni.foto_url] : [],
-        catatan: dataCheckinHariIni.catatan,
-        namaToko: dataCheckinHariIni.clients?.nama || dataCheckinHariIni.nama_toko_manual,
-        alamatToko: dataCheckinHariIni.alamat_toko_manual,
-      },
-    }] : []),
-    ...kunjunganHariIniDetail.map((k) => ({
-      jenis: "kunjungan", waktu: k.created_at,
-      teks: `Kunjungan ke ${k.clients?.nama || k.nama_toko_manual || "toko"}`,
-      detail: {
-        fotoUrls: k.foto_urls && k.foto_urls.length > 0 ? k.foto_urls : (k.foto_url ? [k.foto_url] : []),
-        catatan: k.catatan, namaToko: k.clients?.nama || k.nama_toko_manual, alamatToko: k.alamat_toko_manual,
-        latitude: k.latitude, longitude: k.longitude,
-      },
-    })),
-    ...aktivitasHariIni.map((a) => ({ jenis: "catatan", waktu: a.created_at, teks: a.catatan, detail: { catatan: a.catatan } })),
-  ].sort((a, b) => new Date(a.waktu) - new Date(b.waktu));
+  if (loading) return <LoadingState />;
+  if (error) return <ErrorBox error={error} onRetry={load} />;
 
-  // Check-out cuma boleh setelah jam 17:00 WIB - asumsi HP staff sudah
-  // pakai zona waktu WIB (bisnis ini beroperasi di Riau/Sumatra).
-  const jamSekarang = new Date().getHours();
-  const bisaCheckout = jamSekarang >= 17;
+  const liburHariIni = isMinggu || isLibur;
 
-  async function simpanAktivitas() {
-    if (!catatanAktivitasBaru.trim()) return;
-    setSavingAktivitas(true);
-    try {
-      await supabaseFetch(token, "aktivitas_harian_sales", {
-        method: "POST",
-        body: JSON.stringify({ sales_id: profile.sales_id, tanggal: todayStr, catatan: catatanAktivitasBaru.trim() }),
-      });
-      setCatatanAktivitasBaru("");
-      setShowTambahAktivitas(false);
-      await load();
-    } catch (e) {
-      alert("Gagal simpan: " + e.message);
-    }
-    setSavingAktivitas(false);
-  }
+  const namaHari = now.toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
-  async function lakukanCheckout() {
-    setErrorCheckout("");
-    if (!bisaCheckout) {
-      setErrorCheckout("Check-Out baru bisa dilakukan setelah jam 17:00 WIB.");
-      return;
-    }
-    setSavingCheckout(true);
-    try {
-      const rows = await supabaseFetch(token, `absen_sales?select=id&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`);
-      if (rows[0]) {
-        await supabaseFetch(token, `absen_sales?id=eq.${rows[0].id}`, {
-          method: "PATCH",
-          body: JSON.stringify({ waktu_checkout: new Date().toISOString() }),
-        });
-        await load();
-      }
-    } catch (e) {
-      setErrorCheckout("Gagal check-out: " + e.message);
-    }
-    setSavingCheckout(false);
-  }
-
-  // Tampilkan pesan jelas kalau akun ini bukan akun Sales (tidak punya
-  // sales_id) - taruh SETELAH semua hook dipanggil, supaya urutan hook
-  // tetap konsisten di setiap render (aturan Hooks React).
   if (!profile?.sales_id) {
     return (
       <div>
@@ -12835,46 +13318,6 @@ function AbsenSalesPage({ token, profile }) {
     );
   }
 
-  // "Tambah Kunjungan" SETELAH check-in (beda dari check-in awal) - alurnya
-  // sama (pilih toko -> ambil lokasi -> foto), tapi cuma insert ke
-  // kunjungan_sales, tidak sentuh absen_sales sama sekali.
-  function mulaiTambahKunjungan() {
-    if (handledClients.length === 0) {
-      alert("Belum ada toko yang ditugaskan ke Anda.");
-      return;
-    }
-    setMode("pilih_toko_kunjungan");
-  }
-
-  function pilihTokoUntukKunjungan(client) {
-    setSelectedClient(client);
-    setCatatanAbsen("");
-    setNamaTokoManual("");
-    setAlamatTokoManual("");
-    setFotoKunjunganList([]);
-    setMode("tambah_kunjungan");
-    setLocationError("");
-    setCoords(null);
-    setGettingLocation(true);
-
-    if (!navigator.geolocation) {
-      setLocationError("HP/browser ini tidak mendukung deteksi lokasi.");
-      setGettingLocation(false);
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
-        setGettingLocation(false);
-      },
-      (err) => {
-        setLocationError("Gagal ambil lokasi: " + err.message + " - pastikan izin lokasi diizinkan.");
-        setGettingLocation(false);
-      },
-      { enableHighAccuracy: true, timeout: 15000 }
-    );
-  }
-
   function loadImageFromFile(file) {
     return new Promise((resolve, reject) => {
       const img = new Image();
@@ -12884,8 +13327,6 @@ function AbsenSalesPage({ token, profile }) {
     });
   }
 
-  // Ambil foto dari kamera, tempel watermark koordinat+waktu+nama toko -
-  // persis pola yang sama seperti Laporan Kunjungan, supaya konsisten.
   async function handleFotoSelfie(e) {
     const file = e.target.files[0];
     e.target.value = "";
@@ -12949,14 +13390,14 @@ function AbsenSalesPage({ token, profile }) {
       ctx.fillStyle = "#fff";
       const fontSize = Math.max(14, Math.round(img.width / 40));
       ctx.font = `bold ${fontSize}px sans-serif`;
-      const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
       ctx.fillText(selectedClient ? `Absen - ${selectedClient.nama} (${selectedClient.kode})` : (namaTokoManual.trim() ? `Absen - ${namaTokoManual.trim()}` : "Absen Harian"), textX, img.height - barHeight + fontSize + 10);
       ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
+      const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
       ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
       ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
 
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
-      const extBlob = blob?.type === "image/webp" ? "webp" : "png"; // fallback kalau browser tidak dukung WebP
+      const extBlob = blob?.type === "image/webp" ? "webp" : "png";
       const filePath = `absen-${profile.sales_id}-${Date.now()}.${extBlob}`;
       const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
         method: "POST",
@@ -12969,28 +13410,13 @@ function AbsenSalesPage({ token, profile }) {
       await supabaseFetch(token, "absen_sales", {
         method: "POST",
         body: JSON.stringify({
-          sales_id: profile.sales_id, tanggal: todayStr, client_id: selectedClient?.id || null,
+          sales_id: profile.sales_id, tanggal: todayStr, waktu_absen: new Date().toISOString(),
+          client_id: selectedClient?.id || null,
           nama_toko_manual: selectedClient ? null : namaTokoManual.trim(),
           alamat_toko_manual: selectedClient ? null : alamatTokoManual.trim(),
-          catatan: catatanAbsen.trim(),
-          foto_url: url, latitude: coords.lat, longitude: coords.lng,
+          foto_url: url, catatan: catatanAbsen.trim() || null,
         }),
       });
-
-      // Kalau absen ini dipilih di toko yang TERDAFTAR (bukan toko manual) -
-      // otomatis catat juga sebagai kunjungan, supaya jumlah kunjungan
-      // toko itu (0/3 dst) langsung ikut bertambah tanpa perlu isi laporan
-      // kunjungan terpisah lagi.
-      if (selectedClient) {
-        await supabaseFetch(token, "kunjungan_sales", {
-          method: "POST",
-          body: JSON.stringify({
-            sales_id: profile.sales_id, client_id: selectedClient.id,
-            foto_url: url, latitude: coords.lat, longitude: coords.lng,
-            catatan: "Kunjungan otomatis tercatat dari absen harian",
-          }),
-        }).catch((e) => console.log("Gagal catat kunjungan otomatis:", e.message));
-      }
 
       await load();
       setMode(null);
@@ -13004,145 +13430,13 @@ function AbsenSalesPage({ token, profile }) {
     setUploading(false);
   }
 
-  // Sama persis dengan handleFotoSelfie (foto+watermark peta) TAPI dipakai
-  // untuk "Tambah Kunjungan" SETELAH check-in - jadi cuma insert ke
-  // kunjungan_sales, TIDAK insert ke absen_sales lagi (sudah ada untuk
-  // hari itu dari check-in pagi).
-  async function handleFotoKunjungan(e) {
-    const file = e.target.files[0];
-    e.target.value = "";
-    if (!file || !coords) return;
-    if (!selectedClient && !namaTokoManual.trim()) return; // toko manual wajib isi nama dulu
-    setUploading(true);
-    try {
-      const img = await loadImageFromFile(file);
-      const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-
-      const mapSize = Math.round(Math.min(img.width, img.height) * 0.32);
-      try {
-        const mapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${coords.lat},${coords.lng}&zoom=16&size=${mapSize}x${mapSize}&maptype=mapnik`;
-        const mapRes = await fetch(mapUrl, { mode: "cors" });
-        if (!mapRes.ok) throw new Error("gagal ambil peta");
-        const mapBlob = await mapRes.blob();
-        const mapImg = await loadImageFromFile(mapBlob);
-        const mx = img.width - mapSize - 14;
-        const my = 14;
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(mx - 4, my - 4, mapSize + 8, mapSize + 8);
-        ctx.drawImage(mapImg, mx, my, mapSize, mapSize);
-        ctx.beginPath();
-        ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
-        ctx.fillStyle = "#E4453A";
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      } catch (mapErr) {
-        console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
-      }
-
-      const barHeight = Math.max(90, img.height * 0.12);
-      ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
-
-      const pinSize = barHeight * 0.55;
-      const pinCenterX = 14 + pinSize / 2;
-      const pinCenterY = img.height - barHeight / 2;
-      ctx.save();
-      ctx.translate(pinCenterX, pinCenterY - pinSize * 0.15);
-      ctx.beginPath();
-      ctx.arc(0, 0, pinSize / 2, Math.PI * 1.15, Math.PI * 1.85);
-      ctx.lineTo(0, pinSize * 0.75);
-      ctx.closePath();
-      ctx.fillStyle = "#E4453A";
-      ctx.fill();
-      ctx.beginPath();
-      ctx.arc(0, -pinSize * 0.05, pinSize * 0.22, 0, Math.PI * 2);
-      ctx.fillStyle = "#fff";
-      ctx.fill();
-      ctx.restore();
-
-      const textX = 14 + pinSize + 14;
-      ctx.fillStyle = "#fff";
-      const fontSize = Math.max(14, Math.round(img.width / 40));
-      ctx.font = `bold ${fontSize}px sans-serif`;
-      const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-      ctx.fillText(`Kunjungan - ${selectedClient ? `${selectedClient.nama} (${selectedClient.kode})` : namaTokoManual.trim()}`, textX, img.height - barHeight + fontSize + 10);
-      ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
-      ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
-      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
-
-      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
-      const extBlob = blob?.type === "image/webp" ? "webp" : "png";
-      const filePath = `kunjungan-${profile.sales_id}-${Date.now()}.${extBlob}`;
-      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
-        method: "POST",
-        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": blob?.type || "image/png" },
-        body: blob,
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
-
-      // Cuma tambahkan ke daftar foto dulu - BELUM insert ke database.
-      // Sales bisa ambil foto lagi (berkali-kali) sebelum akhirnya tekan
-      // "Simpan Kunjungan" (lihat simpanKunjunganFinal di bawah).
-      setFotoKunjunganList((prev) => [...prev, url]);
-    } catch (e) {
-      alert("Gagal upload foto: " + e.message);
-    }
-    setUploading(false);
-  }
-
-  async function simpanKunjunganFinal() {
-    if (fotoKunjunganList.length === 0) return;
-    setSavingKunjunganFinal(true);
-    try {
-      await supabaseFetch(token, "kunjungan_sales", {
-        method: "POST",
-        body: JSON.stringify({
-          sales_id: profile.sales_id, client_id: selectedClient?.id || null,
-          nama_toko_manual: selectedClient ? null : namaTokoManual.trim(),
-          alamat_toko_manual: selectedClient ? null : alamatTokoManual.trim(),
-          foto_url: fotoKunjunganList[0], foto_urls: fotoKunjunganList,
-          latitude: coords.lat, longitude: coords.lng,
-          catatan: catatanAbsen.trim() || null,
-        }),
-      });
-      await load();
-      setMode(null);
-      setSelectedClient(null);
-      setNamaTokoManual("");
-      setAlamatTokoManual("");
-      setCatatanAbsen("");
-      setFotoKunjunganList([]);
-    } catch (e) {
-      alert("Gagal simpan kunjungan: " + e.message);
-    }
-    setSavingKunjunganFinal(false);
-  }
-
-  if (loading) return <LoadingState />;
-  if (error) return <ErrorBox error={error} onRetry={load} />;
-
-  const liburHariIni = isMinggu || isLibur;
-
-  const namaHari = now.toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-
-  // ---------- MODE PILIH TOKO ----------
-  // ---------- MODE PILIH TOKO (buat "Tambah Kunjungan" setelah check-in) ----------
-  if (mode === "pilih_toko_kunjungan") {
+  if (mode === "pilih_toko") {
     return (
       <div>
-        <button onClick={() => setMode(null)} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+        <button onClick={() => setMode("checkin")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
           <ChevronLeft size={16} /> Batal
         </button>
-        <PageHeader title="Kunjungan Toko" subtitle="Anda sedang di depan toko yang mana sekarang?" />
+        <PageHeader title="Pilih Toko" subtitle="Anda sedang di depan toko yang mana sekarang?" />
         {handledClients.length === 0 ? (
           <EmptyState text="Belum ada toko yang ditugaskan ke Anda." />
         ) : (
@@ -13154,7 +13448,7 @@ function AbsenSalesPage({ token, profile }) {
                   <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{c.kode}</p>
                 </div>
                 <button
-                  onClick={() => pilihTokoUntukKunjungan(c)}
+                  onClick={() => mulaiAbsen(c)}
                   style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
                 >
                   Pilih
@@ -13163,159 +13457,10 @@ function AbsenSalesPage({ token, profile }) {
             </Card>
           ))
         )}
-        <button
-          onClick={() => pilihTokoUntukKunjungan(null)}
-          style={{ width: "100%", marginTop: 10, padding: "12px", borderRadius: 10, border: "1.5px dashed #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12.5, fontWeight: 700 }}
-        >
-          Toko Tidak Terdaftar
-        </button>
       </div>
     );
   }
 
-  // ---------- MODE TAMBAH KUNJUNGAN (ambil lokasi + foto, SETELAH check-in) ----------
-  if (mode === "tambah_kunjungan") {
-    return (
-      <div>
-        <button onClick={() => { setMode(null); setSelectedClient(null); setNamaTokoManual(""); setAlamatTokoManual(""); setCatatanAbsen(""); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
-          <ChevronLeft size={16} /> Batal
-        </button>
-        <PageHeader title="Kunjungan Toko" subtitle={selectedClient ? `Di depan ${selectedClient.nama}` : "Isi nama toko yang Anda kunjungi"} />
-        {!selectedClient && (
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Nama Toko</label>
-            <input
-              value={namaTokoManual} onChange={(e) => setNamaTokoManual(e.target.value)}
-              placeholder="Isi nama toko tempat Anda kunjungi sekarang"
-              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, marginBottom: 12 }}
-            />
-            <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Alamat</label>
-            <input
-              value={alamatTokoManual} onChange={(e) => setAlamatTokoManual(e.target.value)}
-              placeholder="Isi alamat toko tempat Anda kunjungi sekarang"
-              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5 }}
-            />
-          </div>
-        )}
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Catatan</label>
-          <textarea
-            value={catatanAbsen} onChange={(e) => setCatatanAbsen(e.target.value)}
-            placeholder="Isi catatan kunjungan ini"
-            rows={3}
-            style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, resize: "vertical", fontFamily: "inherit" }}
-          />
-        </div>
-        <Card style={{ textAlign: "center", padding: 30 }}>
-          {gettingLocation ? (
-            <p style={{ fontSize: 13, color: "#6B6F75" }}>Mengambil lokasi GPS Anda...</p>
-          ) : locationError ? (
-            <>
-              <AlertCircle size={30} color="#C0392B" style={{ marginBottom: 10 }} />
-              <p style={{ fontSize: 13, color: "#C0392B", marginBottom: 14 }}>{locationError}</p>
-              <button onClick={() => pilihTokoUntukKunjungan(selectedClient)} style={{ padding: "10px 20px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13 }}>
-                Coba Lagi
-              </button>
-            </>
-          ) : coords ? (
-            <>
-              <Check size={30} color="#28685D" style={{ marginBottom: 10 }} />
-              <p style={{ fontSize: 13, color: "#28685D", fontWeight: 600, marginBottom: 18 }}>Lokasi berhasil diambil.</p>
-
-              {fotoKunjunganList.length > 0 && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 16 }}>
-                  {fotoKunjunganList.map((url, i) => (
-                    <div key={i} style={{ position: "relative" }}>
-                      <img src={url} alt={`Foto ${i + 1}`} style={{ width: 70, height: 70, borderRadius: 9, objectFit: "cover", display: "block" }} />
-                      <button
-                        onClick={() => setFotoKunjunganList((prev) => prev.filter((_, j) => j !== i))}
-                        style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C0392B", color: "#fff", border: "2px solid #fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {(() => {
-                const disabledAmbilFoto = uploading || (!selectedClient && !namaTokoManual.trim());
-                return (
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 24px", borderRadius: 12, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontWeight: 700, fontSize: 13.5, cursor: disabledAmbilFoto ? "not-allowed" : "pointer", opacity: disabledAmbilFoto ? 0.6 : 1 }}>
-                    <Camera size={16} /> {uploading ? "Mengupload..." : fotoKunjunganList.length === 0 ? "Ambil Foto" : "Ambil Foto Lagi"}
-                    <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={disabledAmbilFoto} onChange={handleFotoKunjungan} />
-                  </label>
-                );
-              })()}
-
-              {fotoKunjunganList.length > 0 && (
-                <>
-                  {(() => {
-                    const disabledSimpan = savingKunjunganFinal || uploading || !catatanAbsen.trim() || (!selectedClient && !namaTokoManual.trim());
-                    return (
-                      <button
-                        onClick={simpanKunjunganFinal}
-                        disabled={disabledSimpan}
-                        style={{ display: "block", width: "100%", marginTop: 14, padding: "13px 28px", borderRadius: 12, border: "none", background: disabledSimpan ? "#E4E1DA" : "#24272B", color: disabledSimpan ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 14 }}
-                      >
-                        {savingKunjunganFinal ? "Menyimpan..." : `Simpan Kunjungan (${fotoKunjunganList.length} foto)`}
-                      </button>
-                    );
-                  })()}
-                  {!selectedClient && !namaTokoManual.trim() && (
-                    <p style={{ fontSize: 11.5, color: "#C0392B", margin: "10px 0 0" }}>Isi dulu nama toko di atas.</p>
-                  )}
-                  {(selectedClient || namaTokoManual.trim()) && !catatanAbsen.trim() && (
-                    <p style={{ fontSize: 11.5, color: "#C0392B", margin: "10px 0 0" }}>Isi dulu catatan di atas.</p>
-                  )}
-                </>
-              )}
-            </>
-          ) : null}
-        </Card>
-      </div>
-    );
-  }
-
-  if (mode === "pilih_toko") {
-    return (
-      <div>
-        <button onClick={() => setMode("checkin")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
-          <ChevronLeft size={16} /> Batal
-        </button>
-        <PageHeader title="Pilih Toko" subtitle="Anda sedang di depan toko yang mana sekarang?" />
-        {handledClients.length === 0 ? (
-          <EmptyState text="Belum ada toko yang ditugaskan ke Anda." />
-        ) : (
-          handledClients.map((c) => {
-            const sudahDikunjungi = clientIdSudahKunjunganHariIni.includes(c.id);
-            return (
-              <Card key={c.id} style={{ marginBottom: 10, padding: 14, opacity: sudahDikunjungi ? 0.6 : 1 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div>
-                    <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.nama}</p>
-                    <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{c.kode}</p>
-                    {sudahDikunjungi && (
-                      <p style={{ fontSize: 11, color: "#8A6A1A", margin: "4px 0 0", fontWeight: 600 }}>Sudah ada kunjungan hari ini</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={() => mulaiAbsen(c)}
-                    disabled={sudahDikunjungi}
-                    style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: sudahDikunjungi ? "#E4E1DA" : "#E8A426", color: sudahDikunjungi ? "#9CA0A6" : "#24272B", fontSize: 12.5, fontWeight: 700 }}
-                  >
-                    Pilih
-                  </button>
-                </div>
-              </Card>
-            );
-          })
-        )}
-      </div>
-    );
-  }
-
-  // ---------- MODE CHECKIN (ambil lokasi + foto) ----------
   if (mode === "checkin") {
     return (
       <div>
@@ -13395,7 +13540,6 @@ function AbsenSalesPage({ token, profile }) {
     );
   }
 
-  // ---------- TAMPILAN UTAMA ----------
   return (
     <div>
       <PageHeader title="Absen" subtitle="Absen harian - kecuali hari Minggu & tanggal merah" />
@@ -13415,77 +13559,11 @@ function AbsenSalesPage({ token, profile }) {
           </>
         ) : sudahAbsenHariIni ? (
           <>
-            <div style={{ width: 56, height: 56, borderRadius: "50%", background: waktuCheckout ? "#D8E9E6" : "#FBF0D9", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
-              <Check size={28} color={waktuCheckout ? "#28685D" : "#8A6A1A"} />
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#D8E9E6", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+              <Check size={28} color="#28685D" />
             </div>
-            <p style={{ fontSize: 15, fontWeight: 700, color: waktuCheckout ? "#28685D" : "#24272B", margin: "0 0 4px" }}>
-              {waktuCheckout ? "Sudah Check-Out" : "Sudah Check-In"}
-            </p>
-            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 20px" }}>
-              {waktuCheckout ? `Sampai jumpa besok! (${new Date(waktuCheckout).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })})` : "Jangan lupa catat aktivitas & check-out sebelum pulang."}
-            </p>
-
-            <div style={{ textAlign: "left", background: "#F7F5F1", borderRadius: 12, padding: 14, marginBottom: 16 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>Aktivitas Hari Ini ({timelineHariIni.length})</p>
-                {!waktuCheckout && (
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <button onClick={() => mulaiTambahKunjungan()} style={{ fontSize: 11.5, fontWeight: 700, color: "#28685D", background: "none", border: "none", padding: 0 }}>
-                      📍 Kunjungan Toko
-                    </button>
-                    <button onClick={() => setShowTambahAktivitas(true)} style={{ fontSize: 11.5, fontWeight: 700, color: "#8A6A1A", background: "none", border: "none", padding: 0 }}>
-                      📝 Catatan
-                    </button>
-                  </div>
-                )}
-              </div>
-              {timelineHariIni.length === 0 ? (
-                <p style={{ fontSize: 12, color: "#9CA0A6", margin: 0 }}>Belum ada aktivitas tercatat hari ini.</p>
-              ) : (
-                timelineHariIni.map((item, i) => (
-                  <div key={i} onClick={() => setDetailAktivitasDipilih(item)} style={{ display: "flex", gap: 8, marginBottom: i === timelineHariIni.length - 1 ? 0 : 8, fontSize: 12, cursor: "pointer" }}>
-                    <span style={{ color: "#9CA0A6", flexShrink: 0, fontWeight: 600 }}>
-                      {new Date(item.waktu).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                    </span>
-                    <span style={{ color: "#24272B", textDecoration: "underline", textDecorationColor: "#E4E1DA", textUnderlineOffset: 3 }}>
-                      {item.jenis === "checkin" ? "✅ " : item.jenis === "kunjungan" ? "📍 " : "📝 "}{item.teks}
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {showTambahAktivitas && (
-              <div style={{ textAlign: "left", background: "#fff", border: "1.5px solid #E4E1DA", borderRadius: 12, padding: 14, marginBottom: 16 }}>
-                <textarea
-                  value={catatanAktivitasBaru} onChange={(e) => setCatatanAktivitasBaru(e.target.value)}
-                  placeholder="Contoh: Follow up toko ABC soal pembayaran lewat telepon"
-                  rows={3}
-                  style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, boxSizing: "border-box", resize: "vertical", marginBottom: 10 }}
-                />
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={simpanAktivitas} disabled={savingAktivitas || !catatanAktivitasBaru.trim()} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", background: "#24272B", color: "#fff", fontSize: 12.5, fontWeight: 700 }}>
-                    {savingAktivitas ? "Menyimpan..." : "Simpan Catatan"}
-                  </button>
-                  <button onClick={() => { setShowTambahAktivitas(false); setCatatanAktivitasBaru(""); }} disabled={savingAktivitas} style={{ padding: "10px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12.5, fontWeight: 600 }}>
-                    Batal
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {!waktuCheckout && (
-              <>
-                <button
-                  onClick={lakukanCheckout}
-                  disabled={savingCheckout || !bisaCheckout}
-                  style={{ width: "100%", padding: "13px 32px", borderRadius: 12, border: "none", background: bisaCheckout ? "#24272B" : "#E4E1DA", color: bisaCheckout ? "#fff" : "#9CA0A6", fontWeight: 700, fontSize: 14.5 }}
-                >
-                  {savingCheckout ? "Memproses..." : bisaCheckout ? "Check-Out Sekarang" : "Check-Out (bisa mulai jam 17:00 WIB)"}
-                </button>
-                {errorCheckout && <p style={{ fontSize: 11.5, color: "#C0392B", margin: "8px 0 0" }}>{errorCheckout}</p>}
-              </>
-            )}
+            <p style={{ fontSize: 15, fontWeight: 700, color: "#28685D", margin: "0 0 4px" }}>Sudah Absen Hari Ini</p>
+            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: 0 }}>Lihat & kelola aktivitas hari ini di menu "Laporan Kunjungan".</p>
           </>
         ) : (
           <>
@@ -13530,56 +13608,6 @@ function AbsenSalesPage({ token, profile }) {
             </div>
           </Card>
         ))
-      )}
-
-      {detailAktivitasDipilih && (
-        <div onClick={() => setDetailAktivitasDipilih(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px 16px 0 0", padding: 20, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>
-                {detailAktivitasDipilih.jenis === "checkin" ? "✅ Absen" : detailAktivitasDipilih.jenis === "kunjungan" ? "📍 Kunjungan Toko" : "📝 Catatan Aktivitas"}
-              </p>
-              <button onClick={() => setDetailAktivitasDipilih(null)} style={{ background: "none", border: "none", color: "#9CA0A6", padding: 4 }}>
-                <X size={20} />
-              </button>
-            </div>
-            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 14px" }}>
-              {new Date(detailAktivitasDipilih.waktu).toLocaleString("id-ID", { dateStyle: "full", timeStyle: "short" })}
-            </p>
-
-            {detailAktivitasDipilih.detail?.namaToko && (
-              <div style={{ marginBottom: 12 }}>
-                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{detailAktivitasDipilih.detail.namaToko}</p>
-                {detailAktivitasDipilih.detail.alamatToko && (
-                  <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{detailAktivitasDipilih.detail.alamatToko}</p>
-                )}
-              </div>
-            )}
-
-            {detailAktivitasDipilih.detail?.fotoUrls?.length > 0 && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-                {detailAktivitasDipilih.detail.fotoUrls.map((url, i) => (
-                  <a key={i} href={url} target="_blank" rel="noopener noreferrer">
-                    <img src={url} alt={`Foto ${i + 1}`} style={{ width: 100, height: 100, borderRadius: 10, objectFit: "cover", display: "block" }} />
-                  </a>
-                ))}
-              </div>
-            )}
-
-            {detailAktivitasDipilih.detail?.catatan && (
-              <div style={{ background: "#F7F5F1", borderRadius: 10, padding: 12, marginBottom: 12 }}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", margin: "0 0 4px", textTransform: "uppercase" }}>Catatan</p>
-                <p style={{ fontSize: 13, color: "#24272B", margin: 0, lineHeight: 1.5 }}>{detailAktivitasDipilih.detail.catatan}</p>
-              </div>
-            )}
-
-            {detailAktivitasDipilih.detail?.latitude && (
-              <a href={`https://www.google.com/maps?q=${detailAktivitasDipilih.detail.latitude},${detailAktivitasDipilih.detail.longitude}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#2C5985", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
-                <MapPin size={13} /> Lihat Lokasi di Maps
-              </a>
-            )}
-          </div>
-        </div>
       )}
     </div>
   );
