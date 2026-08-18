@@ -9955,7 +9955,7 @@ function TokoSalesPage({ token, profile }) {
 // check-in hari ini, komponen ini tidak menampilkan apa-apa (return null)
 // - menu "Absen" tetap satu-satunya tempat buat check-in pertama kali.
 // ============================================================
-function RingkasanAbsenHariIni({ token, profile, handledClients }) {
+function RingkasanAbsenHariIni({ token, profile, handledClients, onDataBerubah }) {
   const [loading, setLoading] = useState(true);
   const [sudahAbsenHariIni, setSudahAbsenHariIni] = useState(false);
   const [waktuCheckout, setWaktuCheckout] = useState(null);
@@ -10045,6 +10045,7 @@ function RingkasanAbsenHariIni({ token, profile, handledClients }) {
       setCatatanAktivitasBaru("");
       setShowTambahAktivitas(false);
       await load();
+      onDataBerubah?.(); // beri tahu KunjunganSalesPage (parent) supaya ikut refresh
     } catch (e) {
       alert("Gagal simpan: " + e.message);
     }
@@ -10066,6 +10067,7 @@ function RingkasanAbsenHariIni({ token, profile, handledClients }) {
           body: JSON.stringify({ waktu_checkout: new Date().toISOString() }),
         });
         await load();
+        onDataBerubah?.();
       }
     } catch (e) {
       setErrorCheckout("Gagal check-out: " + e.message);
@@ -10241,6 +10243,7 @@ function RingkasanAbsenHariIni({ token, profile, handledClients }) {
         }),
       });
       await load();
+      onDataBerubah?.(); // beri tahu KunjunganSalesPage (parent) supaya daftar toko & jumlah kunjungan ikut ter-refresh
       setMode(null);
       setSelectedClient(null);
       setNamaTokoManual("");
@@ -11057,7 +11060,7 @@ function KunjunganSalesPage({ token, profile }) {
   return (
     <div>
       <PageHeader title="Laporan Kunjungan" subtitle={`Target: setiap toko dikunjungi ${TARGET_KUNJUNGAN_PER_BULAN}x per bulan`} />
-      <RingkasanAbsenHariIni token={token} profile={profile} handledClients={handledClients} />
+      <RingkasanAbsenHariIni token={token} profile={profile} handledClients={handledClients} onDataBerubah={load} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>
         {handledClients.map((c) => {
           const jumlah = jumlahKunjungan(c.id);
