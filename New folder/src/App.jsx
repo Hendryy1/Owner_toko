@@ -569,20 +569,29 @@ function loadImageFromFileGlobal(file) {
 // hasil watermark siap upload.
 async function buatFotoDenganWatermark(file, coords, labelUtama) {
   const img = await loadImageFromFileGlobal(file);
-  const canvas = document.createElement("canvas");
-  canvas.width = img.width;
-  canvas.height = img.height;
-  const ctx = canvas.getContext("2d");
-  ctx.drawImage(img, 0, 0);
+  // Resize proporsional dulu SEBELUM ditempel watermark - foto kamera HP
+  // modern bisa 4000px+ lebarnya (tidak perlu sebesar itu buat keperluan
+  // verifikasi kunjungan). 1600px masih cukup jelas dibaca teksnya kalau
+  // di-zoom, tapi jauh lebih ringan diupload dibanding ukuran asli kamera.
+  const MAKS_DIMENSI = 1600;
+  const skala = Math.min(1, MAKS_DIMENSI / Math.max(img.width, img.height));
+  const w = Math.round(img.width * skala);
+  const h = Math.round(img.height * skala);
 
-  const mapSize = Math.round(Math.min(img.width, img.height) * 0.32);
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, w, h);
+
+  const mapSize = Math.round(Math.min(w, h) * 0.32);
   try {
     const mapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${coords.lat},${coords.lng}&zoom=16&size=${mapSize}x${mapSize}&maptype=mapnik`;
     const mapRes = await fetch(mapUrl, { mode: "cors" });
     if (!mapRes.ok) throw new Error("gagal ambil peta");
     const mapBlob = await mapRes.blob();
     const mapImg = await loadImageFromFileGlobal(mapBlob);
-    const mx = img.width - mapSize - 14;
+    const mx = w - mapSize - 14;
     const my = 14;
     ctx.fillStyle = "#fff";
     ctx.fillRect(mx - 4, my - 4, mapSize + 8, mapSize + 8);
@@ -600,13 +609,13 @@ async function buatFotoDenganWatermark(file, coords, labelUtama) {
     console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
   }
 
-  const barHeight = Math.max(90, img.height * 0.12);
+  const barHeight = Math.max(90, h * 0.12);
   ctx.fillStyle = "rgba(0,0,0,0.6)";
-  ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+  ctx.fillRect(0, h - barHeight, w, barHeight);
 
   const pinSize = barHeight * 0.55;
   const pinCenterX = 14 + pinSize / 2;
-  const pinCenterY = img.height - barHeight / 2;
+  const pinCenterY = h - barHeight / 2;
   ctx.save();
   ctx.translate(pinCenterX, pinCenterY - pinSize * 0.15);
   ctx.beginPath();
@@ -623,13 +632,13 @@ async function buatFotoDenganWatermark(file, coords, labelUtama) {
 
   const textX = 14 + pinSize + 14;
   ctx.fillStyle = "#fff";
-  const fontSize = Math.max(14, Math.round(img.width / 40));
+  const fontSize = Math.max(14, Math.round(w / 40));
   ctx.font = `bold ${fontSize}px sans-serif`;
   const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-  ctx.fillText(labelUtama, textX, img.height - barHeight + fontSize + 10);
+  ctx.fillText(labelUtama, textX, h - barHeight + fontSize + 10);
   ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
-  ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
-  ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
+  ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize * 2 + 14);
+  ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize * 3 + 18);
 
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
   const extBlob = blob?.type === "image/webp" ? "webp" : "png";
@@ -10101,20 +10110,24 @@ function RingkasanAbsenHariIni({ token, profile, handledClients }) {
     setUploading(true);
     try {
       const img = await loadImageFromFile(file);
+      const MAKS_DIMENSI = 1600;
+      const skala = Math.min(1, MAKS_DIMENSI / Math.max(img.width, img.height));
+      const w = Math.round(img.width * skala);
+      const h = Math.round(img.height * skala);
       const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, w, h);
 
-      const mapSize = Math.round(Math.min(img.width, img.height) * 0.32);
+      const mapSize = Math.round(Math.min(w, h) * 0.32);
       try {
         const mapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${coords.lat},${coords.lng}&zoom=16&size=${mapSize}x${mapSize}&maptype=mapnik`;
         const mapRes = await fetch(mapUrl, { mode: "cors" });
         if (!mapRes.ok) throw new Error("gagal ambil peta");
         const mapBlob = await mapRes.blob();
         const mapImg = await loadImageFromFile(mapBlob);
-        const mx = img.width - mapSize - 14;
+        const mx = w - mapSize - 14;
         const my = 14;
         ctx.fillStyle = "#fff";
         ctx.fillRect(mx - 4, my - 4, mapSize + 8, mapSize + 8);
@@ -10132,13 +10145,13 @@ function RingkasanAbsenHariIni({ token, profile, handledClients }) {
         console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
       }
 
-      const barHeight = Math.max(90, img.height * 0.12);
+      const barHeight = Math.max(90, h * 0.12);
       ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+      ctx.fillRect(0, h - barHeight, w, barHeight);
 
       const pinSize = barHeight * 0.55;
       const pinCenterX = 14 + pinSize / 2;
-      const pinCenterY = img.height - barHeight / 2;
+      const pinCenterY = h - barHeight / 2;
       ctx.save();
       ctx.translate(pinCenterX, pinCenterY - pinSize * 0.15);
       ctx.beginPath();
@@ -10155,13 +10168,13 @@ function RingkasanAbsenHariIni({ token, profile, handledClients }) {
 
       const textX = 14 + pinSize + 14;
       ctx.fillStyle = "#fff";
-      const fontSize = Math.max(14, Math.round(img.width / 40));
+      const fontSize = Math.max(14, Math.round(w / 40));
       ctx.font = `bold ${fontSize}px sans-serif`;
       const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-      ctx.fillText(`Kunjungan - ${selectedClient ? `${selectedClient.nama} (${selectedClient.kode})` : namaTokoManual.trim()}`, textX, img.height - barHeight + fontSize + 10);
+      ctx.fillText(`Kunjungan - ${selectedClient ? `${selectedClient.nama} (${selectedClient.kode})` : namaTokoManual.trim()}`, textX, h - barHeight + fontSize + 10);
       ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
-      ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
-      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
+      ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize * 2 + 14);
+      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize * 3 + 18);
 
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
       const extBlob = blob?.type === "image/webp" ? "webp" : "png";
@@ -10694,24 +10707,32 @@ function KunjunganSalesPage({ token, profile }) {
     setUploading(true);
     try {
       const img = await loadImageFromFile(file);
+      // Resize proporsional dulu SEBELUM ditempel watermark - foto kamera
+      // HP modern bisa 4000px+ lebarnya, tidak perlu sebesar itu buat
+      // verifikasi kunjungan. 1600px masih jelas dibaca tapi jauh lebih
+      // ringan diupload.
+      const MAKS_DIMENSI = 1600;
+      const skala = Math.min(1, MAKS_DIMENSI / Math.max(img.width, img.height));
+      const w = Math.round(img.width * skala);
+      const h = Math.round(img.height * skala);
       const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, w, h);
 
       // Coba tempel potongan peta asli (real map tile) di pojok kanan atas -
       // pakai layanan komunitas OSM yang gratis tanpa API key. Kalau gagal
       // (server sibuk/CORS/dll), lanjut saja tanpa peta - jangan sampai
       // proses check-in gagal gara-gara ini.
-      const mapSize = Math.round(Math.min(img.width, img.height) * 0.32);
+      const mapSize = Math.round(Math.min(w, h) * 0.32);
       try {
         const mapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${coords.lat},${coords.lng}&zoom=16&size=${mapSize}x${mapSize}&maptype=mapnik`;
         const mapRes = await fetch(mapUrl, { mode: "cors" });
         if (!mapRes.ok) throw new Error("gagal ambil peta");
         const mapBlob = await mapRes.blob();
         const mapImg = await loadImageFromFile(mapBlob);
-        const mx = img.width - mapSize - 14;
+        const mx = w - mapSize - 14;
         const my = 14;
         // Bingkai putih + bayangan tipis di sekeliling potongan peta
         ctx.fillStyle = "#fff";
@@ -10732,14 +10753,14 @@ function KunjunganSalesPage({ token, profile }) {
       }
 
       // Watermark di bagian bawah foto (teks + ikon pin peta)
-      const barHeight = Math.max(90, img.height * 0.12);
+      const barHeight = Math.max(90, h * 0.12);
       ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+      ctx.fillRect(0, h - barHeight, w, barHeight);
 
       // Gambar ikon pin peta (bentuk teardrop) di kiri watermark
       const pinSize = barHeight * 0.55;
       const pinCenterX = 14 + pinSize / 2;
-      const pinCenterY = img.height - barHeight / 2;
+      const pinCenterY = h - barHeight / 2;
       ctx.save();
       ctx.translate(pinCenterX, pinCenterY - pinSize * 0.15);
       ctx.beginPath();
@@ -10759,13 +10780,13 @@ function KunjunganSalesPage({ token, profile }) {
       // Teks di sebelah kanan ikon pin
       const textX = 14 + pinSize + 14;
       ctx.fillStyle = "#fff";
-      const fontSize = Math.max(14, Math.round(img.width / 40));
+      const fontSize = Math.max(14, Math.round(w / 40));
       ctx.font = `bold ${fontSize}px sans-serif`;
       const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-      ctx.fillText(`${selectedClient.nama} (${selectedClient.kode})`, textX, img.height - barHeight + fontSize + 10);
+      ctx.fillText(`${selectedClient.nama} (${selectedClient.kode})`, textX, h - barHeight + fontSize + 10);
       ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
-      ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
-      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
+      ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize * 2 + 14);
+      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize * 3 + 18);
 
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
       const extBlob = blob?.type === "image/webp" ? "webp" : "png"; // fallback kalau browser tidak dukung WebP
@@ -13334,20 +13355,24 @@ function AbsenSalesPage({ token, profile }) {
     setUploading(true);
     try {
       const img = await loadImageFromFile(file);
+      const MAKS_DIMENSI = 1600;
+      const skala = Math.min(1, MAKS_DIMENSI / Math.max(img.width, img.height));
+      const w = Math.round(img.width * skala);
+      const h = Math.round(img.height * skala);
       const canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = w;
+      canvas.height = h;
       const ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, w, h);
 
-      const mapSize = Math.round(Math.min(img.width, img.height) * 0.32);
+      const mapSize = Math.round(Math.min(w, h) * 0.32);
       try {
         const mapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${coords.lat},${coords.lng}&zoom=16&size=${mapSize}x${mapSize}&maptype=mapnik`;
         const mapRes = await fetch(mapUrl, { mode: "cors" });
         if (!mapRes.ok) throw new Error("gagal ambil peta");
         const mapBlob = await mapRes.blob();
         const mapImg = await loadImageFromFile(mapBlob);
-        const mx = img.width - mapSize - 14;
+        const mx = w - mapSize - 14;
         const my = 14;
         ctx.fillStyle = "#fff";
         ctx.fillRect(mx - 4, my - 4, mapSize + 8, mapSize + 8);
@@ -13365,13 +13390,13 @@ function AbsenSalesPage({ token, profile }) {
         console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
       }
 
-      const barHeight = Math.max(90, img.height * 0.12);
+      const barHeight = Math.max(90, h * 0.12);
       ctx.fillStyle = "rgba(0,0,0,0.6)";
-      ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+      ctx.fillRect(0, h - barHeight, w, barHeight);
 
       const pinSize = barHeight * 0.55;
       const pinCenterX = 14 + pinSize / 2;
-      const pinCenterY = img.height - barHeight / 2;
+      const pinCenterY = h - barHeight / 2;
       ctx.save();
       ctx.translate(pinCenterX, pinCenterY - pinSize * 0.15);
       ctx.beginPath();
@@ -13388,13 +13413,13 @@ function AbsenSalesPage({ token, profile }) {
 
       const textX = 14 + pinSize + 14;
       ctx.fillStyle = "#fff";
-      const fontSize = Math.max(14, Math.round(img.width / 40));
+      const fontSize = Math.max(14, Math.round(w / 40));
       ctx.font = `bold ${fontSize}px sans-serif`;
-      ctx.fillText(selectedClient ? `Absen - ${selectedClient.nama} (${selectedClient.kode})` : (namaTokoManual.trim() ? `Absen - ${namaTokoManual.trim()}` : "Absen Harian"), textX, img.height - barHeight + fontSize + 10);
+      ctx.fillText(selectedClient ? `Absen - ${selectedClient.nama} (${selectedClient.kode})` : (namaTokoManual.trim() ? `Absen - ${namaTokoManual.trim()}` : "Absen Harian"), textX, h - barHeight + fontSize + 10);
       ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
       const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-      ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
-      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
+      ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize * 2 + 14);
+      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize * 3 + 18);
 
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
       const extBlob = blob?.type === "image/webp" ? "webp" : "png";
