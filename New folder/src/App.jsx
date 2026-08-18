@@ -12734,7 +12734,7 @@ function AbsenSalesPage({ token, profile }) {
   const timelineHariIni = [
     ...(dataCheckinHariIni ? [{
       jenis: "checkin", waktu: dataCheckinHariIni.waktu_absen,
-      teks: dataCheckinHariIni.clients ? `Check-In di ${dataCheckinHariIni.clients.nama}` : `Check-In di ${dataCheckinHariIni.nama_toko_manual || "lokasi"}`,
+      teks: dataCheckinHariIni.clients ? `Absen di ${dataCheckinHariIni.clients.nama}` : `Absen di ${dataCheckinHariIni.nama_toko_manual || "lokasi"}`,
       detail: {
         fotoUrls: dataCheckinHariIni.foto_url ? [dataCheckinHariIni.foto_url] : [],
         catatan: dataCheckinHariIni.catatan,
@@ -13537,7 +13537,7 @@ function AbsenSalesPage({ token, profile }) {
           <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px 16px 0 0", padding: 20, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
               <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>
-                {detailAktivitasDipilih.jenis === "checkin" ? "✅ Check-In" : detailAktivitasDipilih.jenis === "kunjungan" ? "📍 Kunjungan Toko" : "📝 Catatan Aktivitas"}
+                {detailAktivitasDipilih.jenis === "checkin" ? "✅ Absen" : detailAktivitasDipilih.jenis === "kunjungan" ? "📍 Kunjungan Toko" : "📝 Catatan Aktivitas"}
               </p>
               <button onClick={() => setDetailAktivitasDipilih(null)} style={{ background: "none", border: "none", color: "#9CA0A6", padding: 4 }}>
                 <X size={20} />
