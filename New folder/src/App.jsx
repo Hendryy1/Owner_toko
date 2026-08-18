@@ -13783,6 +13783,7 @@ function RekapAbsenPage({ token, setPage }) {
   const [detailSales, setDetailSales] = useState(null); // { id, nama } - sales yang lagi dilihat detailnya
   const [detailAbsenList, setDetailAbsenList] = useState([]);
   const [detailTimelineByTanggal, setDetailTimelineByTanggal] = useState({});
+  const [tanggalDipilih, setTanggalDipilih] = useState(null); // tanggal yang diklik di kalender - null berarti belum pilih
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   const now = viewDate;
@@ -13817,6 +13818,7 @@ function RekapAbsenPage({ token, setPage }) {
 
   async function bukaDetailAbsen(s) {
     setDetailSales(s);
+    setTanggalDipilih(null);
     setLoadingDetail(true);
     try {
       const [rows, kunjunganRows, aktivitasRows] = await Promise.all([
@@ -13936,56 +13938,107 @@ function RekapAbsenPage({ token, setPage }) {
 
             {loadingDetail ? (
               <p style={{ fontSize: 12.5, color: "#9CA0A6", textAlign: "center", padding: "20px 0" }}>Memuat...</p>
-            ) : detailAbsenList.length === 0 ? (
-              <EmptyState text="Belum ada riwayat absen bulan ini." />
             ) : (
-              detailAbsenList.map((a, i) => (
-                <div key={i} style={{ padding: "12px 0", borderBottom: i < detailAbsenList.length - 1 ? "1px solid #F0EDE6" : "none" }}>
-                  <div style={{ display: "flex", gap: 12 }}>
-                    {a.foto_url && (
-                      <img src={a.foto_url} alt="Bukti absen" style={{ width: 64, height: 64, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
-                    )}
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                        <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 4px" }}>
-                          {new Date(a.tanggal).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
-                        </p>
-                        <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0, whiteSpace: "nowrap" }}>
-                          Check-in {new Date(a.waktu_absen).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                          {a.waktu_checkout ? ` - Check-out ${new Date(a.waktu_checkout).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}` : " - belum check-out"}
-                        </p>
+              <>
+                {(() => {
+                  const tanggalPunyaData = new Set(detailAbsenList.map((a) => a.tanggal));
+                  const offsetHariPertama = new Date(now.getFullYear(), now.getMonth(), 1).getDay(); // 0=Minggu
+                  const selElemen = [];
+                  for (let i = 0; i < offsetHariPertama; i++) selElemen.push(null);
+                  for (let d = 1; d <= totalHariBulanIni; d++) selElemen.push(d);
+
+                  return (
+                    <div style={{ marginBottom: 18 }}>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 6 }}>
+                        {["M", "S", "S", "R", "K", "J", "S"].map((h, i) => (
+                          <p key={i} style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textAlign: "center", margin: 0 }}>{h}</p>
+                        ))}
                       </div>
-                      {a.clients ? (
-                        <>
-                          <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{a.clients.nama} ({a.clients.kode})</p>
-                          <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{a.clients.alamat || "-"}</p>
-                        </>
-                      ) : (
-                        <>
-                          <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{a.nama_toko_manual || "Absen Harian"}</p>
-                          {a.alamat_toko_manual && <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{a.alamat_toko_manual}</p>}
-                        </>
-                      )}
-                      {a.catatan && (
-                        <p style={{ fontSize: 12, color: "#8A6A1A", margin: "6px 0 0", fontStyle: "italic" }}>"{a.catatan}"</p>
-                      )}
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+                        {selElemen.map((d, i) => {
+                          if (d === null) return <div key={i} />;
+                          const tglStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+                          const punyaData = tanggalPunyaData.has(tglStr);
+                          const dipilih = tanggalDipilih === tglStr;
+                          return (
+                            <button
+                              key={i}
+                              onClick={() => punyaData && setTanggalDipilih(dipilih ? null : tglStr)}
+                              disabled={!punyaData}
+                              style={{
+                                aspectRatio: "1", borderRadius: 8, border: dipilih ? "2px solid #24272B" : "none",
+                                background: punyaData ? "#D8E9E6" : "#F7F5F1",
+                                color: punyaData ? "#28685D" : "#C7C4BC",
+                                fontWeight: punyaData ? 700 : 500, fontSize: 12.5,
+                                cursor: punyaData ? "pointer" : "default",
+                              }}
+                            >
+                              {d}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p style={{ fontSize: 11, color: "#9CA0A6", margin: "10px 0 0", display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ width: 10, height: 10, borderRadius: 3, background: "#D8E9E6", display: "inline-block" }} /> Tanggal masuk kerja - klik untuk lihat detail
+                      </p>
                     </div>
-                  </div>
-                  {(detailTimelineByTanggal[a.tanggal] || []).length > 0 && (
-                    <div style={{ marginTop: 10, marginLeft: a.foto_url ? 76 : 0, background: "#F7F5F1", borderRadius: 10, padding: 10 }}>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", margin: "0 0 6px", textTransform: "uppercase" }}>Aktivitas Hari Itu</p>
-                      {detailTimelineByTanggal[a.tanggal].map((item, j) => (
-                        <div key={j} style={{ display: "flex", gap: 8, marginBottom: j === detailTimelineByTanggal[a.tanggal].length - 1 ? 0 : 6, fontSize: 11.5 }}>
-                          <span style={{ color: "#9CA0A6", flexShrink: 0, fontWeight: 600 }}>
-                            {new Date(item.waktu).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                          </span>
-                          <span style={{ color: "#24272B" }}>{item.jenis === "kunjungan" ? "📍 " : "📝 "}{item.teks}</span>
+                  );
+                })()}
+
+                {!tanggalDipilih ? (
+                  <EmptyState text="Pilih tanggal berwarna hijau di atas untuk lihat detail absen & aktivitas hari itu." />
+                ) : (() => {
+                  const a = detailAbsenList.find((x) => x.tanggal === tanggalDipilih);
+                  if (!a) return null;
+                  return (
+                    <div style={{ padding: "14px 0", borderTop: "1px solid #F0EDE6" }}>
+                      <div style={{ display: "flex", gap: 12 }}>
+                        {a.foto_url && (
+                          <img src={a.foto_url} alt="Bukti absen" style={{ width: 64, height: 64, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
+                        )}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 4px" }}>
+                              {new Date(a.tanggal).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
+                            </p>
+                            <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0, whiteSpace: "nowrap" }}>
+                              Check-in {new Date(a.waktu_absen).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                              {a.waktu_checkout ? ` - Check-out ${new Date(a.waktu_checkout).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}` : " - belum check-out"}
+                            </p>
+                          </div>
+                          {a.clients ? (
+                            <>
+                              <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{a.clients.nama} ({a.clients.kode})</p>
+                              <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{a.clients.alamat || "-"}</p>
+                            </>
+                          ) : (
+                            <>
+                              <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{a.nama_toko_manual || "Absen Harian"}</p>
+                              {a.alamat_toko_manual && <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{a.alamat_toko_manual}</p>}
+                            </>
+                          )}
+                          {a.catatan && (
+                            <p style={{ fontSize: 12, color: "#8A6A1A", margin: "6px 0 0", fontStyle: "italic" }}>"{a.catatan}"</p>
+                          )}
                         </div>
-                      ))}
+                      </div>
+                      {(detailTimelineByTanggal[a.tanggal] || []).length > 0 && (
+                        <div style={{ marginTop: 10, marginLeft: a.foto_url ? 76 : 0, background: "#F7F5F1", borderRadius: 10, padding: 10 }}>
+                          <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", margin: "0 0 6px", textTransform: "uppercase" }}>Aktivitas Hari Itu</p>
+                          {detailTimelineByTanggal[a.tanggal].map((item, j) => (
+                            <div key={j} style={{ display: "flex", gap: 8, marginBottom: j === detailTimelineByTanggal[a.tanggal].length - 1 ? 0 : 6, fontSize: 11.5 }}>
+                              <span style={{ color: "#9CA0A6", flexShrink: 0, fontWeight: 600 }}>
+                                {new Date(item.waktu).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                              </span>
+                              <span style={{ color: "#24272B" }}>{item.jenis === "kunjungan" ? "📍 " : "📝 "}{item.teks}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              ))
+                  );
+                })()}
+              </>
             )}
           </div>
         </div>
