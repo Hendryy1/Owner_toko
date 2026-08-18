@@ -12675,6 +12675,8 @@ function AbsenSalesPage({ token, profile }) {
   // ditampilkan berurutan waktu supaya Owner/Sales bisa lihat riwayat
   // penuh hari itu dalam 1 tempat.
   const [waktuCheckout, setWaktuCheckout] = useState(null);
+  const [dataCheckinHariIni, setDataCheckinHariIni] = useState(null);
+  const [detailAktivitasDipilih, setDetailAktivitasDipilih] = useState(null);
   const [fotoKunjunganList, setFotoKunjunganList] = useState([]); // [{ url, previewLocal }] - bisa lebih dari 1 foto per kunjungan, diambil satu-satu
   const [savingKunjunganFinal, setSavingKunjunganFinal] = useState(false);
   const [kunjunganHariIniDetail, setKunjunganHariIniDetail] = useState([]);
@@ -12703,14 +12705,15 @@ function AbsenSalesPage({ token, profile }) {
     setError("");
     try {
       const [absenHariIni, liburRows, riwayatRows, clients, kunjunganHariIni, aktivitasRows] = await Promise.all([
-        supabaseFetch(token, `absen_sales?select=id,waktu_checkout&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
+        supabaseFetch(token, `absen_sales?select=id,waktu_absen,waktu_checkout,foto_url,nama_toko_manual,alamat_toko_manual,catatan,clients(nama,kode)&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `hari_libur?select=keterangan&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `absen_sales?select=tanggal,waktu_absen,foto_url,nama_toko_manual,clients(nama)&sales_id=eq.${profile.sales_id}&order=tanggal.desc&limit=14`),
         supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&status=eq.aktif&order=nama.asc`),
-        supabaseFetch(token, `kunjungan_sales?select=client_id,created_at,clients(nama)&sales_id=eq.${profile.sales_id}&created_at=gte.${todayStr}T00:00:00&created_at=lte.${todayStr}T23:59:59&order=created_at.asc`),
+        supabaseFetch(token, `kunjungan_sales?select=client_id,created_at,foto_url,foto_urls,latitude,longitude,catatan,nama_toko_manual,alamat_toko_manual,clients(nama,kode)&sales_id=eq.${profile.sales_id}&created_at=gte.${todayStr}T00:00:00&created_at=lte.${todayStr}T23:59:59&order=created_at.asc`),
         supabaseFetch(token, `aktivitas_harian_sales?select=id,catatan,created_at&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}&order=created_at.asc`),
       ]);
       setSudahAbsenHariIni(absenHariIni.length > 0);
+      setDataCheckinHariIni(absenHariIni[0] || null);
       setWaktuCheckout(absenHariIni[0]?.waktu_checkout || null);
       setIsLibur(liburRows.length > 0);
       setKeteranganLibur(liburRows[0]?.keterangan || "");
@@ -12724,12 +12727,31 @@ function AbsenSalesPage({ token, profile }) {
   }
   useEffect(() => { load(); }, []);
 
-  // Timeline gabungan kunjungan toko + catatan aktivitas bebas, diurutkan
-  // berdasarkan waktu - supaya Sales/Owner lihat riwayat penuh 1 hari
-  // dalam urutan kronologis yang masuk akal.
+  // Timeline gabungan check-in + kunjungan toko + catatan aktivitas bebas,
+  // diurutkan berdasarkan waktu - supaya Sales/Owner lihat riwayat penuh 1
+  // hari dalam urutan kronologis yang masuk akal. Check-in SENGAJA ikut
+  // dihitung sebagai aktivitas pertama (bukan "0" sebelum ada apa-apa lagi).
   const timelineHariIni = [
-    ...kunjunganHariIniDetail.map((k) => ({ jenis: "kunjungan", waktu: k.created_at, teks: `Kunjungan ke ${k.clients?.nama || "toko"}` })),
-    ...aktivitasHariIni.map((a) => ({ jenis: "catatan", waktu: a.created_at, teks: a.catatan })),
+    ...(dataCheckinHariIni ? [{
+      jenis: "checkin", waktu: dataCheckinHariIni.waktu_absen,
+      teks: dataCheckinHariIni.clients ? `Check-In di ${dataCheckinHariIni.clients.nama}` : `Check-In di ${dataCheckinHariIni.nama_toko_manual || "lokasi"}`,
+      detail: {
+        fotoUrls: dataCheckinHariIni.foto_url ? [dataCheckinHariIni.foto_url] : [],
+        catatan: dataCheckinHariIni.catatan,
+        namaToko: dataCheckinHariIni.clients?.nama || dataCheckinHariIni.nama_toko_manual,
+        alamatToko: dataCheckinHariIni.alamat_toko_manual,
+      },
+    }] : []),
+    ...kunjunganHariIniDetail.map((k) => ({
+      jenis: "kunjungan", waktu: k.created_at,
+      teks: `Kunjungan ke ${k.clients?.nama || k.nama_toko_manual || "toko"}`,
+      detail: {
+        fotoUrls: k.foto_urls && k.foto_urls.length > 0 ? k.foto_urls : (k.foto_url ? [k.foto_url] : []),
+        catatan: k.catatan, namaToko: k.clients?.nama || k.nama_toko_manual, alamatToko: k.alamat_toko_manual,
+        latitude: k.latitude, longitude: k.longitude,
+      },
+    })),
+    ...aktivitasHariIni.map((a) => ({ jenis: "catatan", waktu: a.created_at, teks: a.catatan, detail: { catatan: a.catatan } })),
   ].sort((a, b) => new Date(a.waktu) - new Date(b.waktu));
 
   // Check-out cuma boleh setelah jam 17:00 WIB - asumsi HP staff sudah
@@ -13421,12 +13443,12 @@ function AbsenSalesPage({ token, profile }) {
                 <p style={{ fontSize: 12, color: "#9CA0A6", margin: 0 }}>Belum ada aktivitas tercatat hari ini.</p>
               ) : (
                 timelineHariIni.map((item, i) => (
-                  <div key={i} style={{ display: "flex", gap: 8, marginBottom: i === timelineHariIni.length - 1 ? 0 : 8, fontSize: 12 }}>
+                  <div key={i} onClick={() => setDetailAktivitasDipilih(item)} style={{ display: "flex", gap: 8, marginBottom: i === timelineHariIni.length - 1 ? 0 : 8, fontSize: 12, cursor: "pointer" }}>
                     <span style={{ color: "#9CA0A6", flexShrink: 0, fontWeight: 600 }}>
                       {new Date(item.waktu).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                     </span>
-                    <span style={{ color: "#24272B" }}>
-                      {item.jenis === "kunjungan" ? "📍 " : "📝 "}{item.teks}
+                    <span style={{ color: "#24272B", textDecoration: "underline", textDecorationColor: "#E4E1DA", textUnderlineOffset: 3 }}>
+                      {item.jenis === "checkin" ? "✅ " : item.jenis === "kunjungan" ? "📍 " : "📝 "}{item.teks}
                     </span>
                   </div>
                 ))
@@ -13508,6 +13530,56 @@ function AbsenSalesPage({ token, profile }) {
             </div>
           </Card>
         ))
+      )}
+
+      {detailAktivitasDipilih && (
+        <div onClick={() => setDetailAktivitasDipilih(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px 16px 0 0", padding: 20, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>
+                {detailAktivitasDipilih.jenis === "checkin" ? "✅ Check-In" : detailAktivitasDipilih.jenis === "kunjungan" ? "📍 Kunjungan Toko" : "📝 Catatan Aktivitas"}
+              </p>
+              <button onClick={() => setDetailAktivitasDipilih(null)} style={{ background: "none", border: "none", color: "#9CA0A6", padding: 4 }}>
+                <X size={20} />
+              </button>
+            </div>
+            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 14px" }}>
+              {new Date(detailAktivitasDipilih.waktu).toLocaleString("id-ID", { dateStyle: "full", timeStyle: "short" })}
+            </p>
+
+            {detailAktivitasDipilih.detail?.namaToko && (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{detailAktivitasDipilih.detail.namaToko}</p>
+                {detailAktivitasDipilih.detail.alamatToko && (
+                  <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{detailAktivitasDipilih.detail.alamatToko}</p>
+                )}
+              </div>
+            )}
+
+            {detailAktivitasDipilih.detail?.fotoUrls?.length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+                {detailAktivitasDipilih.detail.fotoUrls.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                    <img src={url} alt={`Foto ${i + 1}`} style={{ width: 100, height: 100, borderRadius: 10, objectFit: "cover", display: "block" }} />
+                  </a>
+                ))}
+              </div>
+            )}
+
+            {detailAktivitasDipilih.detail?.catatan && (
+              <div style={{ background: "#F7F5F1", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", margin: "0 0 4px", textTransform: "uppercase" }}>Catatan</p>
+                <p style={{ fontSize: 13, color: "#24272B", margin: 0, lineHeight: 1.5 }}>{detailAktivitasDipilih.detail.catatan}</p>
+              </div>
+            )}
+
+            {detailAktivitasDipilih.detail?.latitude && (
+              <a href={`https://www.google.com/maps?q=${detailAktivitasDipilih.detail.latitude},${detailAktivitasDipilih.detail.longitude}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#2C5985", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
+                <MapPin size={13} /> Lihat Lokasi di Maps
+              </a>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
