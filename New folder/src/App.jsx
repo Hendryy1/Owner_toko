@@ -13313,6 +13313,8 @@ function AbsenSalesPage({ token, profile }) {
   const [coords, setCoords] = useState(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
+  const [fotoAbsenList, setFotoAbsenList] = useState([]); // bisa lebih dari 1 foto, diambil satu-satu sebelum simpan
+  const [savingAbsenFinal, setSavingAbsenFinal] = useState(false);
 
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
@@ -13360,6 +13362,7 @@ function AbsenSalesPage({ token, profile }) {
 
   function mulaiAbsen(client) {
     setSelectedClient(client);
+    setFotoAbsenList([]);
     setMode("checkin");
     setLocationError("");
     setCoords(null);
@@ -13490,6 +13493,21 @@ function AbsenSalesPage({ token, profile }) {
       if (!res.ok) throw new Error(await res.text());
       const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
 
+      // Cuma tambahkan ke daftar foto dulu - BELUM insert ke database.
+      // Sales bisa ambil foto lagi (berkali-kali) sebelum akhirnya tekan
+      // "Simpan Absen" (lihat simpanAbsenFinal di bawah) - sama pola
+      // dengan "Tambah Kunjungan" di Laporan Kunjungan.
+      setFotoAbsenList((prev) => [...prev, url]);
+    } catch (e) {
+      alert("Gagal upload foto: " + e.message);
+    }
+    setUploading(false);
+  }
+
+  async function simpanAbsenFinal() {
+    if (fotoAbsenList.length === 0) return;
+    setSavingAbsenFinal(true);
+    try {
       await supabaseFetch(token, "absen_sales", {
         method: "POST",
         body: JSON.stringify({
@@ -13497,7 +13515,8 @@ function AbsenSalesPage({ token, profile }) {
           client_id: selectedClient?.id || null,
           nama_toko_manual: selectedClient ? null : namaTokoManual.trim(),
           alamat_toko_manual: selectedClient ? null : alamatTokoManual.trim(),
-          foto_url: url, catatan: catatanAbsen.trim() || null,
+          foto_url: fotoAbsenList[0], foto_urls: fotoAbsenList,
+          catatan: catatanAbsen.trim() || null,
         }),
       });
 
@@ -13507,10 +13526,11 @@ function AbsenSalesPage({ token, profile }) {
       setNamaTokoManual("");
       setAlamatTokoManual("");
       setCatatanAbsen("");
+      setFotoAbsenList([]);
     } catch (e) {
       alert("Gagal simpan absen: " + e.message);
     }
-    setUploading(false);
+    setSavingAbsenFinal(false);
   }
 
   if (mode === "pilih_toko") {
@@ -13547,7 +13567,7 @@ function AbsenSalesPage({ token, profile }) {
   if (mode === "checkin") {
     return (
       <div>
-        <button onClick={() => { setMode(null); setSelectedClient(null); setNamaTokoManual(""); setAlamatTokoManual(""); setCatatanAbsen(""); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+        <button onClick={() => { setMode(null); setSelectedClient(null); setNamaTokoManual(""); setAlamatTokoManual(""); setCatatanAbsen(""); setFotoAbsenList([]); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
           <ChevronLeft size={16} /> Batal
         </button>
         <PageHeader title="Absen" subtitle={selectedClient ? `Di depan ${selectedClient.nama}` : "Absen harian"} />
@@ -13599,17 +13619,51 @@ function AbsenSalesPage({ token, profile }) {
             <>
               <Check size={30} color="#28685D" style={{ marginBottom: 10 }} />
               <p style={{ fontSize: 13, color: "#28685D", fontWeight: 600, marginBottom: 18 }}>Lokasi berhasil diambil.</p>
+
+              {fotoAbsenList.length > 0 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 16 }}>
+                  {fotoAbsenList.map((url, i) => (
+                    <div key={i} style={{ position: "relative" }}>
+                      <img src={url} alt={`Foto ${i + 1}`} style={{ width: 70, height: 70, borderRadius: 9, objectFit: "cover", display: "block" }} />
+                      <button
+                        onClick={() => setFotoAbsenList((prev) => prev.filter((_, j) => j !== i))}
+                        style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C0392B", color: "#fff", border: "2px solid #fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {(() => {
                 const belumIsiTokoManual = !selectedClient && (!namaTokoManual.trim() || !alamatTokoManual.trim());
-                const belumIsiCatatan = !catatanAbsen.trim();
-                const disabledTombol = uploading || belumIsiTokoManual || belumIsiCatatan;
+                const disabledAmbilFoto = uploading || belumIsiTokoManual;
                 return (
-                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "13px 28px", borderRadius: 12, border: "none", background: disabledTombol ? "#E4E1DA" : "#E8A426", color: disabledTombol ? "#9CA0A6" : "#24272B", fontWeight: 700, fontSize: 14, cursor: disabledTombol ? "not-allowed" : "pointer" }}>
-                    <Camera size={17} /> {uploading ? "Menyimpan..." : "Ambil Foto & Absen"}
-                    <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={disabledTombol} onChange={handleFotoSelfie} />
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 24px", borderRadius: 12, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontWeight: 700, fontSize: 13.5, cursor: disabledAmbilFoto ? "not-allowed" : "pointer", opacity: disabledAmbilFoto ? 0.6 : 1 }}>
+                    <Camera size={16} /> {uploading ? "Mengupload..." : fotoAbsenList.length === 0 ? "Ambil Foto" : "Ambil Foto Lagi"}
+                    <input ref={fileInputRef} type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={disabledAmbilFoto} onChange={handleFotoSelfie} />
                   </label>
                 );
               })()}
+
+              {fotoAbsenList.length > 0 && (
+                <>
+                  {(() => {
+                    const belumIsiTokoManual = !selectedClient && (!namaTokoManual.trim() || !alamatTokoManual.trim());
+                    const disabledSimpan = savingAbsenFinal || uploading || !catatanAbsen.trim() || belumIsiTokoManual;
+                    return (
+                      <button
+                        onClick={simpanAbsenFinal}
+                        disabled={disabledSimpan}
+                        style={{ display: "block", width: "100%", marginTop: 14, padding: "13px 28px", borderRadius: 12, border: "none", background: disabledSimpan ? "#E4E1DA" : "#24272B", color: disabledSimpan ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 14 }}
+                      >
+                        {savingAbsenFinal ? "Menyimpan..." : `Simpan Absen (${fotoAbsenList.length} foto)`}
+                      </button>
+                    );
+                  })()}
+                </>
+              )}
               {!selectedClient && (!namaTokoManual.trim() || !alamatTokoManual.trim()) && (
                 <p style={{ fontSize: 11.5, color: "#C0392B", margin: "10px 0 0" }}>Isi dulu nama toko dan alamat di atas.</p>
               )}
