@@ -567,7 +567,7 @@ function loadImageFromFileGlobal(file) {
 // sebuah foto - dipakai bareng oleh Absen, Laporan Kunjungan, dan Bukti
 // Barang Sampai supaya semuanya konsisten formatnya. Mengembalikan blob
 // hasil watermark siap upload.
-async function buatFotoDenganWatermark(file, coords, labelUtama) {
+async function buatFotoDenganWatermark(file, coords, labelUtama, alamatToko) {
   const img = await loadImageFromFileGlobal(file);
   // Resize proporsional dulu SEBELUM ditempel watermark - foto kamera HP
   // modern bisa 4000px+ lebarnya (tidak perlu sebesar itu buat keperluan
@@ -609,11 +609,13 @@ async function buatFotoDenganWatermark(file, coords, labelUtama) {
     console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
   }
 
-  const barHeight = Math.max(90, h * 0.12);
+  // Bar watermark sekarang 4 baris (nama, alamat, waktu, koordinat) -
+  // dinaikkan sedikit dari sebelumnya (3 baris) supaya tetap muat rapi.
+  const barHeight = Math.max(108, h * 0.15);
   ctx.fillStyle = "rgba(0,0,0,0.6)";
   ctx.fillRect(0, h - barHeight, w, barHeight);
 
-  const pinSize = barHeight * 0.55;
+  const pinSize = barHeight * 0.4;
   const pinCenterX = 14 + pinSize / 2;
   const pinCenterY = h - barHeight / 2;
   ctx.save();
@@ -632,13 +634,28 @@ async function buatFotoDenganWatermark(file, coords, labelUtama) {
 
   const textX = 14 + pinSize + 14;
   ctx.fillStyle = "#fff";
-  const fontSize = Math.max(14, Math.round(w / 40));
+  const fontSize = Math.max(13, Math.round(w / 45));
+  const fontKecil = Math.round(fontSize * 0.8);
   ctx.font = `bold ${fontSize}px sans-serif`;
   const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-  ctx.fillText(labelUtama, textX, h - barHeight + fontSize + 10);
-  ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
-  ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize * 2 + 14);
-  ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize * 3 + 18);
+
+  // Potong alamat kalau kepanjangan, supaya tidak keluar dari batas foto
+  const maksKarakterAlamat = Math.floor((w - textX - 14) / (fontKecil * 0.52));
+  const alamatDitampilkan = alamatToko && alamatToko.length > maksKarakterAlamat
+    ? alamatToko.slice(0, maksKarakterAlamat - 3) + "..."
+    : alamatToko;
+
+  let baris = 1;
+  ctx.fillText(labelUtama, textX, h - barHeight + fontSize * baris + 8);
+  ctx.font = `${fontKecil}px sans-serif`;
+  if (alamatDitampilkan) {
+    baris++;
+    ctx.fillText(alamatDitampilkan, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
+  }
+  baris++;
+  ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
+  baris++;
+  ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
 
   const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
   const extBlob = blob?.type === "image/webp" ? "webp" : "png";
@@ -9732,7 +9749,7 @@ function OmzetSalesPage({ token, profile }) {
 
       const [salesRow, clientsRows, ordersRows] = await Promise.all([
         supabaseFetch(token, `sales?select=target_omzet_bulanan&id=eq.${profile.sales_id}`),
-        supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&order=nama.asc`),
+        supabaseFetch(token, `clients?select=id,nama,kode,alamat&sales_id=eq.${profile.sales_id}&order=nama.asc`),
         supabaseFetch(token, `orders?select=client_id,status,order_items(subtotal_setelah_diskon)&sales_id=eq.${profile.sales_id}&status=neq.ditolak&tanggal=gte.${startDate}&tanggal=lt.${endDate}`),
       ]);
 
@@ -10145,11 +10162,11 @@ function RingkasanAbsenHariIni({ token, profile, handledClients }) {
         console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
       }
 
-      const barHeight = Math.max(90, h * 0.12);
+      const barHeight = Math.max(108, h * 0.15);
       ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.fillRect(0, h - barHeight, w, barHeight);
 
-      const pinSize = barHeight * 0.55;
+      const pinSize = barHeight * 0.4;
       const pinCenterX = 14 + pinSize / 2;
       const pinCenterY = h - barHeight / 2;
       ctx.save();
@@ -10168,13 +10185,27 @@ function RingkasanAbsenHariIni({ token, profile, handledClients }) {
 
       const textX = 14 + pinSize + 14;
       ctx.fillStyle = "#fff";
-      const fontSize = Math.max(14, Math.round(w / 40));
+      const fontSize = Math.max(13, Math.round(w / 45));
+      const fontKecil = Math.round(fontSize * 0.8);
       ctx.font = `bold ${fontSize}px sans-serif`;
       const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-      ctx.fillText(`Kunjungan - ${selectedClient ? `${selectedClient.nama} (${selectedClient.kode})` : namaTokoManual.trim()}`, textX, h - barHeight + fontSize + 10);
-      ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
-      ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize * 2 + 14);
-      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize * 3 + 18);
+      const alamatToko = selectedClient ? selectedClient.alamat : alamatTokoManual.trim();
+      const maksKarakterAlamat = Math.floor((w - textX - 14) / (fontKecil * 0.52));
+      const alamatDitampilkan = alamatToko && alamatToko.length > maksKarakterAlamat
+        ? alamatToko.slice(0, maksKarakterAlamat - 3) + "..."
+        : alamatToko;
+
+      let baris = 1;
+      ctx.fillText(`Kunjungan - ${selectedClient ? `${selectedClient.nama} (${selectedClient.kode})` : namaTokoManual.trim()}`, textX, h - barHeight + fontSize * baris + 8);
+      ctx.font = `${fontKecil}px sans-serif`;
+      if (alamatDitampilkan) {
+        baris++;
+        ctx.fillText(alamatDitampilkan, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
+      }
+      baris++;
+      ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
+      baris++;
+      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
 
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
       const extBlob = blob?.type === "image/webp" ? "webp" : "png";
@@ -10753,12 +10784,12 @@ function KunjunganSalesPage({ token, profile }) {
       }
 
       // Watermark di bagian bawah foto (teks + ikon pin peta)
-      const barHeight = Math.max(90, h * 0.12);
+      const barHeight = Math.max(108, h * 0.15);
       ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.fillRect(0, h - barHeight, w, barHeight);
 
       // Gambar ikon pin peta (bentuk teardrop) di kiri watermark
-      const pinSize = barHeight * 0.55;
+      const pinSize = barHeight * 0.4;
       const pinCenterX = 14 + pinSize / 2;
       const pinCenterY = h - barHeight / 2;
       ctx.save();
@@ -10780,13 +10811,26 @@ function KunjunganSalesPage({ token, profile }) {
       // Teks di sebelah kanan ikon pin
       const textX = 14 + pinSize + 14;
       ctx.fillStyle = "#fff";
-      const fontSize = Math.max(14, Math.round(w / 40));
+      const fontSize = Math.max(13, Math.round(w / 45));
+      const fontKecil = Math.round(fontSize * 0.8);
       ctx.font = `bold ${fontSize}px sans-serif`;
       const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-      ctx.fillText(`${selectedClient.nama} (${selectedClient.kode})`, textX, h - barHeight + fontSize + 10);
-      ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
-      ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize * 2 + 14);
-      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize * 3 + 18);
+      const maksKarakterAlamat = Math.floor((w - textX - 14) / (fontKecil * 0.52));
+      const alamatDitampilkan = selectedClient.alamat && selectedClient.alamat.length > maksKarakterAlamat
+        ? selectedClient.alamat.slice(0, maksKarakterAlamat - 3) + "..."
+        : selectedClient.alamat;
+
+      let baris = 1;
+      ctx.fillText(`${selectedClient.nama} (${selectedClient.kode})`, textX, h - barHeight + fontSize * baris + 8);
+      ctx.font = `${fontKecil}px sans-serif`;
+      if (alamatDitampilkan) {
+        baris++;
+        ctx.fillText(alamatDitampilkan, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
+      }
+      baris++;
+      ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
+      baris++;
+      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
 
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
       const extBlob = blob?.type === "image/webp" ? "webp" : "png"; // fallback kalau browser tidak dukung WebP
@@ -13286,7 +13330,7 @@ function AbsenSalesPage({ token, profile }) {
         supabaseFetch(token, `absen_sales?select=id&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `hari_libur?select=keterangan&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `absen_sales?select=tanggal,waktu_absen,foto_url,nama_toko_manual,clients(nama)&sales_id=eq.${profile.sales_id}&order=tanggal.desc&limit=14`),
-        supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&status=eq.aktif&order=nama.asc`),
+        supabaseFetch(token, `clients?select=id,nama,kode,alamat&sales_id=eq.${profile.sales_id}&status=eq.aktif&order=nama.asc`),
       ]);
       setSudahAbsenHariIni(absenHariIni.length > 0);
       setIsLibur(liburRows.length > 0);
@@ -13390,11 +13434,11 @@ function AbsenSalesPage({ token, profile }) {
         console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
       }
 
-      const barHeight = Math.max(90, h * 0.12);
+      const barHeight = Math.max(108, h * 0.15);
       ctx.fillStyle = "rgba(0,0,0,0.6)";
       ctx.fillRect(0, h - barHeight, w, barHeight);
 
-      const pinSize = barHeight * 0.55;
+      const pinSize = barHeight * 0.4;
       const pinCenterX = 14 + pinSize / 2;
       const pinCenterY = h - barHeight / 2;
       ctx.save();
@@ -13413,13 +13457,27 @@ function AbsenSalesPage({ token, profile }) {
 
       const textX = 14 + pinSize + 14;
       ctx.fillStyle = "#fff";
-      const fontSize = Math.max(14, Math.round(w / 40));
+      const fontSize = Math.max(13, Math.round(w / 45));
+      const fontKecil = Math.round(fontSize * 0.8);
       ctx.font = `bold ${fontSize}px sans-serif`;
-      ctx.fillText(selectedClient ? `Absen - ${selectedClient.nama} (${selectedClient.kode})` : (namaTokoManual.trim() ? `Absen - ${namaTokoManual.trim()}` : "Absen Harian"), textX, h - barHeight + fontSize + 10);
-      ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
       const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-      ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize * 2 + 14);
-      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize * 3 + 18);
+      const alamatToko = selectedClient ? selectedClient.alamat : alamatTokoManual.trim();
+      const maksKarakterAlamat = Math.floor((w - textX - 14) / (fontKecil * 0.52));
+      const alamatDitampilkan = alamatToko && alamatToko.length > maksKarakterAlamat
+        ? alamatToko.slice(0, maksKarakterAlamat - 3) + "..."
+        : alamatToko;
+
+      let baris = 1;
+      ctx.fillText(selectedClient ? `Absen - ${selectedClient.nama} (${selectedClient.kode})` : (namaTokoManual.trim() ? `Absen - ${namaTokoManual.trim()}` : "Absen Harian"), textX, h - barHeight + fontSize * baris + 8);
+      ctx.font = `${fontKecil}px sans-serif`;
+      if (alamatDitampilkan) {
+        baris++;
+        ctx.fillText(alamatDitampilkan, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
+      }
+      baris++;
+      ctx.fillText(`${waktu}`, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
+      baris++;
+      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, h - barHeight + fontSize + fontKecil * (baris - 1) + 12);
 
       const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
       const extBlob = blob?.type === "image/webp" ? "webp" : "png";
@@ -14353,7 +14411,7 @@ function CatatanTokoSalesPage({ token, profile }) {
     setLoading(true);
     setError("");
     try {
-      const rows = await supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&status=eq.aktif&order=nama.asc`);
+      const rows = await supabaseFetch(token, `clients?select=id,nama,kode,alamat&sales_id=eq.${profile.sales_id}&status=eq.aktif&order=nama.asc`);
       setClients(rows);
     } catch (e) { setError(e.message); }
     setLoading(false);
