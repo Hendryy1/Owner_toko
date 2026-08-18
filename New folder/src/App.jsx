@@ -13784,6 +13784,7 @@ function RekapAbsenPage({ token, setPage }) {
   const [detailAbsenList, setDetailAbsenList] = useState([]);
   const [detailTimelineByTanggal, setDetailTimelineByTanggal] = useState({});
   const [tanggalDipilih, setTanggalDipilih] = useState(null); // tanggal yang diklik di kalender - null berarti belum pilih
+  const [detailAktivitasDipilih, setDetailAktivitasDipilih] = useState(null); // item timeline yang diklik buat lihat detail (foto dkk)
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   const now = viewDate;
@@ -13826,7 +13827,7 @@ function RekapAbsenPage({ token, setPage }) {
           token,
           `absen_sales?select=tanggal,waktu_absen,waktu_checkout,foto_url,nama_toko_manual,alamat_toko_manual,catatan,clients(nama,kode,alamat)&sales_id=eq.${s.id}&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=tanggal.desc`
         ),
-        supabaseFetch(token, `kunjungan_sales?select=client_id,created_at,clients(nama)&sales_id=eq.${s.id}&created_at=gte.${startBulan}T00:00:00&created_at=lt.${endBulan}T00:00:00&order=created_at.asc`),
+        supabaseFetch(token, `kunjungan_sales?select=client_id,created_at,foto_url,foto_urls,latitude,longitude,catatan,nama_toko_manual,alamat_toko_manual,clients(nama,kode,alamat)&sales_id=eq.${s.id}&created_at=gte.${startBulan}T00:00:00&created_at=lt.${endBulan}T00:00:00&order=created_at.asc`),
         supabaseFetch(token, `aktivitas_harian_sales?select=tanggal,catatan,created_at&sales_id=eq.${s.id}&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=created_at.asc`),
       ]);
       setDetailAbsenList(rows);
@@ -13835,11 +13836,19 @@ function RekapAbsenPage({ token, setPage }) {
         kunjunganRows.forEach((k) => {
           const tgl = k.created_at.slice(0, 10);
           if (!map[tgl]) map[tgl] = [];
-          map[tgl].push({ jenis: "kunjungan", waktu: k.created_at, teks: `Kunjungan ke ${k.clients?.nama || "toko"}` });
+          map[tgl].push({
+            jenis: "kunjungan", waktu: k.created_at,
+            teks: `Kunjungan ke ${k.clients?.nama || k.nama_toko_manual || "toko"}`,
+            detail: {
+              fotoUrls: k.foto_urls && k.foto_urls.length > 0 ? k.foto_urls : (k.foto_url ? [k.foto_url] : []),
+              catatan: k.catatan, namaToko: k.clients?.nama || k.nama_toko_manual, alamatToko: k.clients?.alamat || k.alamat_toko_manual,
+              latitude: k.latitude, longitude: k.longitude,
+            },
+          });
         });
         aktivitasRows.forEach((a) => {
           if (!map[a.tanggal]) map[a.tanggal] = [];
-          map[a.tanggal].push({ jenis: "catatan", waktu: a.created_at, teks: a.catatan });
+          map[a.tanggal].push({ jenis: "catatan", waktu: a.created_at, teks: a.catatan, detail: { catatan: a.catatan } });
         });
         Object.keys(map).forEach((tgl) => map[tgl].sort((a, b) => new Date(a.waktu) - new Date(b.waktu)));
         return map;
@@ -13928,17 +13937,22 @@ function RekapAbsenPage({ token, setPage }) {
           <div style={{ background: "#fff", borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 480, maxHeight: "82vh", overflowY: "auto", padding: "20px 20px 28px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
               <div>
-                <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700, textTransform: "uppercase" }}>Detail Absen</p>
+                {tanggalDipilih && (
+                  <button onClick={() => setTanggalDipilih(null)} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 12.5, marginBottom: 8, padding: 0 }}>
+                    <ChevronLeft size={15} /> Kembali ke Kalender
+                  </button>
+                )}
+                <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700, textTransform: "uppercase" }}>{tanggalDipilih ? "Detail Absen" : "Pilih Tanggal"}</p>
                 <h2 className="disp" style={{ fontSize: 19, fontWeight: 700, color: "#24272B", margin: 0 }}>{detailSales.nama}</h2>
               </div>
-              <button onClick={() => setDetailSales(null)} style={{ background: "#F7F5F1", border: "none", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <button onClick={() => setDetailSales(null)} style={{ background: "#F7F5F1", border: "none", borderRadius: "50%", width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                 <X size={16} color="#6B6F75" />
               </button>
             </div>
 
             {loadingDetail ? (
               <p style={{ fontSize: 12.5, color: "#9CA0A6", textAlign: "center", padding: "20px 0" }}>Memuat...</p>
-            ) : (
+            ) : !tanggalDipilih ? (
               <>
                 {(() => {
                   const tanggalPunyaData = new Set(detailAbsenList.map((a) => a.tanggal));
@@ -13984,10 +13998,8 @@ function RekapAbsenPage({ token, setPage }) {
                     </div>
                   );
                 })()}
-
-                {!tanggalDipilih ? (
-                  <EmptyState text="Pilih tanggal berwarna hijau di atas untuk lihat detail absen & aktivitas hari itu." />
-                ) : (() => {
+              </>
+            ) : (() => {
                   const a = detailAbsenList.find((x) => x.tanggal === tanggalDipilih);
                   if (!a) return null;
                   return (
@@ -14026,11 +14038,11 @@ function RekapAbsenPage({ token, setPage }) {
                         <div style={{ marginTop: 10, marginLeft: a.foto_url ? 76 : 0, background: "#F7F5F1", borderRadius: 10, padding: 10 }}>
                           <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", margin: "0 0 6px", textTransform: "uppercase" }}>Aktivitas Hari Itu</p>
                           {detailTimelineByTanggal[a.tanggal].map((item, j) => (
-                            <div key={j} style={{ display: "flex", gap: 8, marginBottom: j === detailTimelineByTanggal[a.tanggal].length - 1 ? 0 : 6, fontSize: 11.5 }}>
+                            <div key={j} onClick={() => setDetailAktivitasDipilih(item)} style={{ display: "flex", gap: 8, marginBottom: j === detailTimelineByTanggal[a.tanggal].length - 1 ? 0 : 6, fontSize: 11.5, cursor: "pointer" }}>
                               <span style={{ color: "#9CA0A6", flexShrink: 0, fontWeight: 600 }}>
                                 {new Date(item.waktu).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
                               </span>
-                              <span style={{ color: "#24272B" }}>{item.jenis === "kunjungan" ? "📍 " : "📝 "}{item.teks}</span>
+                              <span style={{ color: "#24272B", textDecoration: "underline", textDecorationColor: "#E4E1DA", textUnderlineOffset: 3 }}>{item.jenis === "kunjungan" ? "📍 " : "📝 "}{item.teks}</span>
                             </div>
                           ))}
                         </div>
@@ -14038,7 +14050,55 @@ function RekapAbsenPage({ token, setPage }) {
                     </div>
                   );
                 })()}
-              </>
+          </div>
+        </div>
+      )}
+
+      {detailAktivitasDipilih && (
+        <div onClick={() => setDetailAktivitasDipilih(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "flex-end", justifyContent: "center" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px 16px 0 0", padding: 20, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>
+                {detailAktivitasDipilih.jenis === "kunjungan" ? "📍 Kunjungan Toko" : "📝 Catatan Aktivitas"}
+              </p>
+              <button onClick={() => setDetailAktivitasDipilih(null)} style={{ background: "none", border: "none", color: "#9CA0A6", padding: 4 }}>
+                <X size={20} />
+              </button>
+            </div>
+            <p style={{ fontSize: 12, color: "#9CA0A6", margin: "0 0 14px" }}>
+              {new Date(detailAktivitasDipilih.waktu).toLocaleString("id-ID", { dateStyle: "full", timeStyle: "short" })}
+            </p>
+
+            {detailAktivitasDipilih.detail?.namaToko && (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{detailAktivitasDipilih.detail.namaToko}</p>
+                {detailAktivitasDipilih.detail.alamatToko && (
+                  <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{detailAktivitasDipilih.detail.alamatToko}</p>
+                )}
+              </div>
+            )}
+
+            {detailAktivitasDipilih.detail?.fotoUrls?.length > 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+                {detailAktivitasDipilih.detail.fotoUrls.map((url, i) => (
+                  <a key={i} href={url} target="_blank" rel="noopener noreferrer">
+                    <img src={url} alt={`Foto ${i + 1}`} style={{ width: 100, height: 100, borderRadius: 10, objectFit: "cover", display: "block" }} />
+                  </a>
+                ))}
+              </div>
+            )}
+
+            {detailAktivitasDipilih.detail?.catatan && (
+              <div style={{ background: "#F7F5F1", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", margin: "0 0 4px", textTransform: "uppercase" }}>Catatan</p>
+                <p style={{ fontSize: 13, color: "#24272B", margin: 0, lineHeight: 1.5 }}>{detailAktivitasDipilih.detail.catatan}</p>
+              </div>
+            )}
+
+            {detailAktivitasDipilih.detail?.latitude && (
+              <a href={`https://www.google.com/maps?q=${detailAktivitasDipilih.detail.latitude},${detailAktivitasDipilih.detail.longitude}`} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#2C5985", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4, textDecoration: "none" }}>
+                <MapPin size={13} /> Lihat Lokasi di Maps
+              </a>
             )}
           </div>
         </div>
