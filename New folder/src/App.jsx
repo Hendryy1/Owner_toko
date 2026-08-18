@@ -13438,7 +13438,7 @@ function AbsenSalesPage({ token, profile }) {
         </button>
         <PageHeader title="Pilih Toko" subtitle="Anda sedang di depan toko yang mana sekarang?" />
         {handledClients.length === 0 ? (
-          <EmptyState text="Belum ada toko yang ditugaskan ke Anda." />
+          <EmptyState text="Anda belum punya toko terdaftar. Klik 'Batal' untuk kembali dan isi form toko baru/belum terdaftar." />
         ) : (
           handledClients.map((c) => (
             <Card key={c.id} style={{ marginBottom: 10, padding: 14 }}>
@@ -13468,7 +13468,7 @@ function AbsenSalesPage({ token, profile }) {
           <ChevronLeft size={16} /> Batal
         </button>
         <PageHeader title="Absen" subtitle={selectedClient ? `Di depan ${selectedClient.nama}` : "Absen harian"} />
-        {!selectedClient && handledClients.length > 0 && (
+        {!selectedClient && (
           <button onClick={() => setMode("pilih_toko")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#8A6A1A", fontSize: 12.5, fontWeight: 600, marginBottom: 14, padding: 0 }}>
             <MapPin size={14} /> Kunjungan toko terdaftar? Pilih ini.
           </button>
