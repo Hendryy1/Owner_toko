@@ -12670,6 +12670,21 @@ function AbsenSalesPage({ token, profile }) {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef(null);
 
+  // Log Aktivitas Harian + Check-Out - waktuCheckout null berarti belum
+  // check-out. Timeline gabungan (kunjunganHariIni + aktivitasHariIni)
+  // ditampilkan berurutan waktu supaya Owner/Sales bisa lihat riwayat
+  // penuh hari itu dalam 1 tempat.
+  const [waktuCheckout, setWaktuCheckout] = useState(null);
+  const [fotoKunjunganList, setFotoKunjunganList] = useState([]); // [{ url, previewLocal }] - bisa lebih dari 1 foto per kunjungan, diambil satu-satu
+  const [savingKunjunganFinal, setSavingKunjunganFinal] = useState(false);
+  const [kunjunganHariIniDetail, setKunjunganHariIniDetail] = useState([]);
+  const [aktivitasHariIni, setAktivitasHariIni] = useState([]);
+  const [showTambahAktivitas, setShowTambahAktivitas] = useState(false);
+  const [catatanAktivitasBaru, setCatatanAktivitasBaru] = useState("");
+  const [savingAktivitas, setSavingAktivitas] = useState(false);
+  const [savingCheckout, setSavingCheckout] = useState(false);
+  const [errorCheckout, setErrorCheckout] = useState("");
+
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   const isMinggu = now.getDay() === 0;
@@ -12687,23 +12702,79 @@ function AbsenSalesPage({ token, profile }) {
     setLoading(true);
     setError("");
     try {
-      const [absenHariIni, liburRows, riwayatRows, clients, kunjunganHariIni] = await Promise.all([
-        supabaseFetch(token, `absen_sales?select=id&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
+      const [absenHariIni, liburRows, riwayatRows, clients, kunjunganHariIni, aktivitasRows] = await Promise.all([
+        supabaseFetch(token, `absen_sales?select=id,waktu_checkout&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `hari_libur?select=keterangan&tanggal=eq.${todayStr}`),
         supabaseFetch(token, `absen_sales?select=tanggal,waktu_absen,foto_url,nama_toko_manual,clients(nama)&sales_id=eq.${profile.sales_id}&order=tanggal.desc&limit=14`),
         supabaseFetch(token, `clients?select=id,nama,kode&sales_id=eq.${profile.sales_id}&status=eq.aktif&order=nama.asc`),
-        supabaseFetch(token, `kunjungan_sales?select=client_id&sales_id=eq.${profile.sales_id}&created_at=gte.${todayStr}T00:00:00&created_at=lte.${todayStr}T23:59:59`),
+        supabaseFetch(token, `kunjungan_sales?select=client_id,created_at,clients(nama)&sales_id=eq.${profile.sales_id}&created_at=gte.${todayStr}T00:00:00&created_at=lte.${todayStr}T23:59:59&order=created_at.asc`),
+        supabaseFetch(token, `aktivitas_harian_sales?select=id,catatan,created_at&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}&order=created_at.asc`),
       ]);
       setSudahAbsenHariIni(absenHariIni.length > 0);
+      setWaktuCheckout(absenHariIni[0]?.waktu_checkout || null);
       setIsLibur(liburRows.length > 0);
       setKeteranganLibur(liburRows[0]?.keterangan || "");
       setRiwayat(riwayatRows);
       setHandledClients(clients);
       setClientIdSudahKunjunganHariIni(kunjunganHariIni.map((k) => k.client_id));
+      setKunjunganHariIniDetail(kunjunganHariIni);
+      setAktivitasHariIni(aktivitasRows);
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  // Timeline gabungan kunjungan toko + catatan aktivitas bebas, diurutkan
+  // berdasarkan waktu - supaya Sales/Owner lihat riwayat penuh 1 hari
+  // dalam urutan kronologis yang masuk akal.
+  const timelineHariIni = [
+    ...kunjunganHariIniDetail.map((k) => ({ jenis: "kunjungan", waktu: k.created_at, teks: `Kunjungan ke ${k.clients?.nama || "toko"}` })),
+    ...aktivitasHariIni.map((a) => ({ jenis: "catatan", waktu: a.created_at, teks: a.catatan })),
+  ].sort((a, b) => new Date(a.waktu) - new Date(b.waktu));
+
+  // Check-out cuma boleh setelah jam 17:00 WIB - asumsi HP staff sudah
+  // pakai zona waktu WIB (bisnis ini beroperasi di Riau/Sumatra).
+  const jamSekarang = new Date().getHours();
+  const bisaCheckout = jamSekarang >= 17;
+
+  async function simpanAktivitas() {
+    if (!catatanAktivitasBaru.trim()) return;
+    setSavingAktivitas(true);
+    try {
+      await supabaseFetch(token, "aktivitas_harian_sales", {
+        method: "POST",
+        body: JSON.stringify({ sales_id: profile.sales_id, tanggal: todayStr, catatan: catatanAktivitasBaru.trim() }),
+      });
+      setCatatanAktivitasBaru("");
+      setShowTambahAktivitas(false);
+      await load();
+    } catch (e) {
+      alert("Gagal simpan: " + e.message);
+    }
+    setSavingAktivitas(false);
+  }
+
+  async function lakukanCheckout() {
+    setErrorCheckout("");
+    if (!bisaCheckout) {
+      setErrorCheckout("Check-Out baru bisa dilakukan setelah jam 17:00 WIB.");
+      return;
+    }
+    setSavingCheckout(true);
+    try {
+      const rows = await supabaseFetch(token, `absen_sales?select=id&sales_id=eq.${profile.sales_id}&tanggal=eq.${todayStr}`);
+      if (rows[0]) {
+        await supabaseFetch(token, `absen_sales?id=eq.${rows[0].id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ waktu_checkout: new Date().toISOString() }),
+        });
+        await load();
+      }
+    } catch (e) {
+      setErrorCheckout("Gagal check-out: " + e.message);
+    }
+    setSavingCheckout(false);
+  }
 
   // Tampilkan pesan jelas kalau akun ini bukan akun Sales (tidak punya
   // sales_id) - taruh SETELAH semua hook dipanggil, supaya urutan hook
@@ -12720,6 +12791,44 @@ function AbsenSalesPage({ token, profile }) {
   function mulaiAbsen(client) {
     setSelectedClient(client);
     setMode("checkin");
+    setLocationError("");
+    setCoords(null);
+    setGettingLocation(true);
+
+    if (!navigator.geolocation) {
+      setLocationError("HP/browser ini tidak mendukung deteksi lokasi.");
+      setGettingLocation(false);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setGettingLocation(false);
+      },
+      (err) => {
+        setLocationError("Gagal ambil lokasi: " + err.message + " - pastikan izin lokasi diizinkan.");
+        setGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  }
+
+  // "Tambah Kunjungan" SETELAH check-in (beda dari check-in awal) - alurnya
+  // sama (pilih toko -> ambil lokasi -> foto), tapi cuma insert ke
+  // kunjungan_sales, tidak sentuh absen_sales sama sekali.
+  function mulaiTambahKunjungan() {
+    if (handledClients.length === 0) {
+      alert("Belum ada toko yang ditugaskan ke Anda.");
+      return;
+    }
+    setMode("pilih_toko_kunjungan");
+  }
+
+  function pilihTokoUntukKunjungan(client) {
+    setSelectedClient(client);
+    setCatatanAbsen("");
+    setFotoKunjunganList([]);
+    setMode("tambah_kunjungan");
     setLocationError("");
     setCoords(null);
     setGettingLocation(true);
@@ -12871,13 +12980,249 @@ function AbsenSalesPage({ token, profile }) {
     setUploading(false);
   }
 
+  // Sama persis dengan handleFotoSelfie (foto+watermark peta) TAPI dipakai
+  // untuk "Tambah Kunjungan" SETELAH check-in - jadi cuma insert ke
+  // kunjungan_sales, TIDAK insert ke absen_sales lagi (sudah ada untuk
+  // hari itu dari check-in pagi).
+  async function handleFotoKunjungan(e) {
+    const file = e.target.files[0];
+    e.target.value = "";
+    if (!file || !coords || !selectedClient) return;
+    setUploading(true);
+    try {
+      const img = await loadImageFromFile(file);
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+
+      const mapSize = Math.round(Math.min(img.width, img.height) * 0.32);
+      try {
+        const mapUrl = `https://staticmap.openstreetmap.de/staticmap.php?center=${coords.lat},${coords.lng}&zoom=16&size=${mapSize}x${mapSize}&maptype=mapnik`;
+        const mapRes = await fetch(mapUrl, { mode: "cors" });
+        if (!mapRes.ok) throw new Error("gagal ambil peta");
+        const mapBlob = await mapRes.blob();
+        const mapImg = await loadImageFromFile(mapBlob);
+        const mx = img.width - mapSize - 14;
+        const my = 14;
+        ctx.fillStyle = "#fff";
+        ctx.fillRect(mx - 4, my - 4, mapSize + 8, mapSize + 8);
+        ctx.drawImage(mapImg, mx, my, mapSize, mapSize);
+        ctx.beginPath();
+        ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
+        ctx.fillStyle = "#E4453A";
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(mx + mapSize / 2, my + mapSize / 2, 7, 0, Math.PI * 2);
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      } catch (mapErr) {
+        console.log("Peta asli gagal dimuat, lanjut tanpa peta:", mapErr.message);
+      }
+
+      const barHeight = Math.max(90, img.height * 0.12);
+      ctx.fillStyle = "rgba(0,0,0,0.6)";
+      ctx.fillRect(0, img.height - barHeight, img.width, barHeight);
+
+      const pinSize = barHeight * 0.55;
+      const pinCenterX = 14 + pinSize / 2;
+      const pinCenterY = img.height - barHeight / 2;
+      ctx.save();
+      ctx.translate(pinCenterX, pinCenterY - pinSize * 0.15);
+      ctx.beginPath();
+      ctx.arc(0, 0, pinSize / 2, Math.PI * 1.15, Math.PI * 1.85);
+      ctx.lineTo(0, pinSize * 0.75);
+      ctx.closePath();
+      ctx.fillStyle = "#E4453A";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(0, -pinSize * 0.05, pinSize * 0.22, 0, Math.PI * 2);
+      ctx.fillStyle = "#fff";
+      ctx.fill();
+      ctx.restore();
+
+      const textX = 14 + pinSize + 14;
+      ctx.fillStyle = "#fff";
+      const fontSize = Math.max(14, Math.round(img.width / 40));
+      ctx.font = `bold ${fontSize}px sans-serif`;
+      const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
+      ctx.fillText(`Kunjungan - ${selectedClient.nama} (${selectedClient.kode})`, textX, img.height - barHeight + fontSize + 10);
+      ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
+      ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
+      ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
+
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/webp", 0.85));
+      const extBlob = blob?.type === "image/webp" ? "webp" : "png";
+      const filePath = `kunjungan-${profile.sales_id}-${Date.now()}.${extBlob}`;
+      const res = await fetch(`${SUPABASE_URL}/storage/v1/object/produk-gambar/${filePath}`, {
+        method: "POST",
+        headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}`, "Content-Type": blob?.type || "image/png" },
+        body: blob,
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const url = `${SUPABASE_URL}/storage/v1/object/public/produk-gambar/${filePath}`;
+
+      // Cuma tambahkan ke daftar foto dulu - BELUM insert ke database.
+      // Sales bisa ambil foto lagi (berkali-kali) sebelum akhirnya tekan
+      // "Simpan Kunjungan" (lihat simpanKunjunganFinal di bawah).
+      setFotoKunjunganList((prev) => [...prev, url]);
+    } catch (e) {
+      alert("Gagal upload foto: " + e.message);
+    }
+    setUploading(false);
+  }
+
+  async function simpanKunjunganFinal() {
+    if (fotoKunjunganList.length === 0) return;
+    setSavingKunjunganFinal(true);
+    try {
+      await supabaseFetch(token, "kunjungan_sales", {
+        method: "POST",
+        body: JSON.stringify({
+          sales_id: profile.sales_id, client_id: selectedClient.id,
+          foto_url: fotoKunjunganList[0], foto_urls: fotoKunjunganList,
+          latitude: coords.lat, longitude: coords.lng,
+          catatan: catatanAbsen.trim() || null,
+        }),
+      });
+      await load();
+      setMode(null);
+      setSelectedClient(null);
+      setCatatanAbsen("");
+      setFotoKunjunganList([]);
+    } catch (e) {
+      alert("Gagal simpan kunjungan: " + e.message);
+    }
+    setSavingKunjunganFinal(false);
+  }
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
   const liburHariIni = isMinggu || isLibur;
+
   const namaHari = now.toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   // ---------- MODE PILIH TOKO ----------
+  // ---------- MODE PILIH TOKO (buat "Tambah Kunjungan" setelah check-in) ----------
+  if (mode === "pilih_toko_kunjungan") {
+    return (
+      <div>
+        <button onClick={() => setMode(null)} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+          <ChevronLeft size={16} /> Batal
+        </button>
+        <PageHeader title="Kunjungan Toko" subtitle="Anda sedang di depan toko yang mana sekarang?" />
+        {handledClients.length === 0 ? (
+          <EmptyState text="Belum ada toko yang ditugaskan ke Anda." />
+        ) : (
+          handledClients.map((c) => (
+            <Card key={c.id} style={{ marginBottom: 10, padding: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: 0 }}>{c.nama}</p>
+                  <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "2px 0 0" }}>{c.kode}</p>
+                </div>
+                <button
+                  onClick={() => pilihTokoUntukKunjungan(c)}
+                  style={{ padding: "8px 16px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12.5, fontWeight: 700 }}
+                >
+                  Pilih
+                </button>
+              </div>
+            </Card>
+          ))
+        )}
+      </div>
+    );
+  }
+
+  // ---------- MODE TAMBAH KUNJUNGAN (ambil lokasi + foto, SETELAH check-in) ----------
+  if (mode === "tambah_kunjungan") {
+    return (
+      <div>
+        <button onClick={() => { setMode(null); setSelectedClient(null); setCatatanAbsen(""); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+          <ChevronLeft size={16} /> Batal
+        </button>
+        <PageHeader title="Kunjungan Toko" subtitle={`Di depan ${selectedClient?.nama || ""}`} />
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Catatan</label>
+          <textarea
+            value={catatanAbsen} onChange={(e) => setCatatanAbsen(e.target.value)}
+            placeholder="Isi catatan kunjungan ini"
+            rows={3}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, resize: "vertical", fontFamily: "inherit" }}
+          />
+        </div>
+        <Card style={{ textAlign: "center", padding: 30 }}>
+          {gettingLocation ? (
+            <p style={{ fontSize: 13, color: "#6B6F75" }}>Mengambil lokasi GPS Anda...</p>
+          ) : locationError ? (
+            <>
+              <AlertCircle size={30} color="#C0392B" style={{ marginBottom: 10 }} />
+              <p style={{ fontSize: 13, color: "#C0392B", marginBottom: 14 }}>{locationError}</p>
+              <button onClick={() => pilihTokoUntukKunjungan(selectedClient)} style={{ padding: "10px 20px", borderRadius: 9, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13 }}>
+                Coba Lagi
+              </button>
+            </>
+          ) : coords ? (
+            <>
+              <Check size={30} color="#28685D" style={{ marginBottom: 10 }} />
+              <p style={{ fontSize: 13, color: "#28685D", fontWeight: 600, marginBottom: 18 }}>Lokasi berhasil diambil.</p>
+
+              {fotoKunjunganList.length > 0 && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginBottom: 16 }}>
+                  {fotoKunjunganList.map((url, i) => (
+                    <div key={i} style={{ position: "relative" }}>
+                      <img src={url} alt={`Foto ${i + 1}`} style={{ width: 70, height: 70, borderRadius: 9, objectFit: "cover", display: "block" }} />
+                      <button
+                        onClick={() => setFotoKunjunganList((prev) => prev.filter((_, j) => j !== i))}
+                        style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", background: "#C0392B", color: "#fff", border: "2px solid #fff", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: 0 }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(() => {
+                const disabledAmbilFoto = uploading;
+                return (
+                  <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 24px", borderRadius: 12, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontWeight: 700, fontSize: 13.5, cursor: disabledAmbilFoto ? "not-allowed" : "pointer", opacity: disabledAmbilFoto ? 0.6 : 1 }}>
+                    <Camera size={16} /> {uploading ? "Mengupload..." : fotoKunjunganList.length === 0 ? "Ambil Foto" : "Ambil Foto Lagi"}
+                    <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} disabled={disabledAmbilFoto} onChange={handleFotoKunjungan} />
+                  </label>
+                );
+              })()}
+
+              {fotoKunjunganList.length > 0 && (
+                <>
+                  {(() => {
+                    const disabledSimpan = savingKunjunganFinal || uploading || !catatanAbsen.trim();
+                    return (
+                      <button
+                        onClick={simpanKunjunganFinal}
+                        disabled={disabledSimpan}
+                        style={{ display: "block", width: "100%", marginTop: 14, padding: "13px 28px", borderRadius: 12, border: "none", background: disabledSimpan ? "#E4E1DA" : "#24272B", color: disabledSimpan ? "#9CA0A6" : "#fff", fontWeight: 700, fontSize: 14 }}
+                      >
+                        {savingKunjunganFinal ? "Menyimpan..." : `Simpan Kunjungan (${fotoKunjunganList.length} foto)`}
+                      </button>
+                    );
+                  })()}
+                  {!catatanAbsen.trim() && (
+                    <p style={{ fontSize: 11.5, color: "#C0392B", margin: "10px 0 0" }}>Isi dulu catatan di atas.</p>
+                  )}
+                </>
+              )}
+            </>
+          ) : null}
+        </Card>
+      </div>
+    );
+  }
+
   if (mode === "pilih_toko") {
     return (
       <div>
@@ -13013,11 +13358,77 @@ function AbsenSalesPage({ token, profile }) {
           </>
         ) : sudahAbsenHariIni ? (
           <>
-            <div style={{ width: 56, height: 56, borderRadius: "50%", background: "#D8E9E6", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
-              <Check size={28} color="#28685D" />
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: waktuCheckout ? "#D8E9E6" : "#FBF0D9", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+              <Check size={28} color={waktuCheckout ? "#28685D" : "#8A6A1A"} />
             </div>
-            <p style={{ fontSize: 15, fontWeight: 700, color: "#28685D", margin: "0 0 4px" }}>Sudah Absen Hari Ini</p>
-            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: 0 }}>Sampai jumpa besok!</p>
+            <p style={{ fontSize: 15, fontWeight: 700, color: waktuCheckout ? "#28685D" : "#24272B", margin: "0 0 4px" }}>
+              {waktuCheckout ? "Sudah Check-Out" : "Sudah Check-In"}
+            </p>
+            <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 20px" }}>
+              {waktuCheckout ? `Sampai jumpa besok! (${new Date(waktuCheckout).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })})` : "Jangan lupa catat aktivitas & check-out sebelum pulang."}
+            </p>
+
+            <div style={{ textAlign: "left", background: "#F7F5F1", borderRadius: 12, padding: 14, marginBottom: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: "#24272B", margin: 0 }}>Aktivitas Hari Ini ({timelineHariIni.length})</p>
+                {!waktuCheckout && (
+                  <div style={{ display: "flex", gap: 10 }}>
+                    <button onClick={() => mulaiTambahKunjungan()} style={{ fontSize: 11.5, fontWeight: 700, color: "#28685D", background: "none", border: "none", padding: 0 }}>
+                      📍 Kunjungan Toko
+                    </button>
+                    <button onClick={() => setShowTambahAktivitas(true)} style={{ fontSize: 11.5, fontWeight: 700, color: "#8A6A1A", background: "none", border: "none", padding: 0 }}>
+                      📝 Catatan
+                    </button>
+                  </div>
+                )}
+              </div>
+              {timelineHariIni.length === 0 ? (
+                <p style={{ fontSize: 12, color: "#9CA0A6", margin: 0 }}>Belum ada aktivitas tercatat hari ini.</p>
+              ) : (
+                timelineHariIni.map((item, i) => (
+                  <div key={i} style={{ display: "flex", gap: 8, marginBottom: i === timelineHariIni.length - 1 ? 0 : 8, fontSize: 12 }}>
+                    <span style={{ color: "#9CA0A6", flexShrink: 0, fontWeight: 600 }}>
+                      {new Date(item.waktu).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <span style={{ color: "#24272B" }}>
+                      {item.jenis === "kunjungan" ? "📍 " : "📝 "}{item.teks}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {showTambahAktivitas && (
+              <div style={{ textAlign: "left", background: "#fff", border: "1.5px solid #E4E1DA", borderRadius: 12, padding: 14, marginBottom: 16 }}>
+                <textarea
+                  value={catatanAktivitasBaru} onChange={(e) => setCatatanAktivitasBaru(e.target.value)}
+                  placeholder="Contoh: Follow up toko ABC soal pembayaran lewat telepon"
+                  rows={3}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, boxSizing: "border-box", resize: "vertical", marginBottom: 10 }}
+                />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={simpanAktivitas} disabled={savingAktivitas || !catatanAktivitasBaru.trim()} style={{ flex: 1, padding: 10, borderRadius: 9, border: "none", background: "#24272B", color: "#fff", fontSize: 12.5, fontWeight: 700 }}>
+                    {savingAktivitas ? "Menyimpan..." : "Simpan Catatan"}
+                  </button>
+                  <button onClick={() => { setShowTambahAktivitas(false); setCatatanAktivitasBaru(""); }} disabled={savingAktivitas} style={{ padding: "10px 16px", borderRadius: 9, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12.5, fontWeight: 600 }}>
+                    Batal
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!waktuCheckout && (
+              <>
+                <button
+                  onClick={lakukanCheckout}
+                  disabled={savingCheckout || !bisaCheckout}
+                  style={{ width: "100%", padding: "13px 32px", borderRadius: 12, border: "none", background: bisaCheckout ? "#24272B" : "#E4E1DA", color: bisaCheckout ? "#fff" : "#9CA0A6", fontWeight: 700, fontSize: 14.5 }}
+                >
+                  {savingCheckout ? "Memproses..." : bisaCheckout ? "Check-Out Sekarang" : "Check-Out (bisa mulai jam 17:00 WIB)"}
+                </button>
+                {errorCheckout && <p style={{ fontSize: 11.5, color: "#C0392B", margin: "8px 0 0" }}>{errorCheckout}</p>}
+              </>
+            )}
           </>
         ) : (
           <>
@@ -13236,6 +13647,7 @@ function RekapAbsenPage({ token, setPage }) {
   const [viewDate, setViewDate] = useState(new Date());
   const [detailSales, setDetailSales] = useState(null); // { id, nama } - sales yang lagi dilihat detailnya
   const [detailAbsenList, setDetailAbsenList] = useState([]);
+  const [detailTimelineByTanggal, setDetailTimelineByTanggal] = useState({});
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   const now = viewDate;
@@ -13272,13 +13684,32 @@ function RekapAbsenPage({ token, setPage }) {
     setDetailSales(s);
     setLoadingDetail(true);
     try {
-      const rows = await supabaseFetch(
-        token,
-        `absen_sales?select=tanggal,foto_url,nama_toko_manual,alamat_toko_manual,catatan,clients(nama,kode,alamat)&sales_id=eq.${s.id}&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=tanggal.desc`
-      );
+      const [rows, kunjunganRows, aktivitasRows] = await Promise.all([
+        supabaseFetch(
+          token,
+          `absen_sales?select=tanggal,waktu_absen,waktu_checkout,foto_url,nama_toko_manual,alamat_toko_manual,catatan,clients(nama,kode,alamat)&sales_id=eq.${s.id}&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=tanggal.desc`
+        ),
+        supabaseFetch(token, `kunjungan_sales?select=client_id,created_at,clients(nama)&sales_id=eq.${s.id}&created_at=gte.${startBulan}T00:00:00&created_at=lt.${endBulan}T00:00:00&order=created_at.asc`),
+        supabaseFetch(token, `aktivitas_harian_sales?select=tanggal,catatan,created_at&sales_id=eq.${s.id}&tanggal=gte.${startBulan}&tanggal=lt.${endBulan}&order=created_at.asc`),
+      ]);
       setDetailAbsenList(rows);
+      setDetailTimelineByTanggal(() => {
+        const map = {};
+        kunjunganRows.forEach((k) => {
+          const tgl = k.created_at.slice(0, 10);
+          if (!map[tgl]) map[tgl] = [];
+          map[tgl].push({ jenis: "kunjungan", waktu: k.created_at, teks: `Kunjungan ke ${k.clients?.nama || "toko"}` });
+        });
+        aktivitasRows.forEach((a) => {
+          if (!map[a.tanggal]) map[a.tanggal] = [];
+          map[a.tanggal].push({ jenis: "catatan", waktu: a.created_at, teks: a.catatan });
+        });
+        Object.keys(map).forEach((tgl) => map[tgl].sort((a, b) => new Date(a.waktu) - new Date(b.waktu)));
+        return map;
+      });
     } catch (e) {
       setDetailAbsenList([]);
+      setDetailTimelineByTanggal({});
     }
     setLoadingDetail(false);
   }
@@ -13374,29 +13805,50 @@ function RekapAbsenPage({ token, setPage }) {
               <EmptyState text="Belum ada riwayat absen bulan ini." />
             ) : (
               detailAbsenList.map((a, i) => (
-                <div key={i} style={{ display: "flex", gap: 12, padding: "12px 0", borderBottom: i < detailAbsenList.length - 1 ? "1px solid #F0EDE6" : "none" }}>
-                  {a.foto_url && (
-                    <img src={a.foto_url} alt="Bukti absen" style={{ width: 64, height: 64, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
-                  )}
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 4px" }}>
-                      {new Date(a.tanggal).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
-                    </p>
-                    {a.clients ? (
-                      <>
-                        <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{a.clients.nama} ({a.clients.kode})</p>
-                        <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{a.clients.alamat || "-"}</p>
-                      </>
-                    ) : (
-                      <>
-                        <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{a.nama_toko_manual || "Absen Harian"}</p>
-                        {a.alamat_toko_manual && <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{a.alamat_toko_manual}</p>}
-                      </>
+                <div key={i} style={{ padding: "12px 0", borderBottom: i < detailAbsenList.length - 1 ? "1px solid #F0EDE6" : "none" }}>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    {a.foto_url && (
+                      <img src={a.foto_url} alt="Bukti absen" style={{ width: 64, height: 64, borderRadius: 10, objectFit: "cover", flexShrink: 0 }} />
                     )}
-                    {a.catatan && (
-                      <p style={{ fontSize: 12, color: "#8A6A1A", margin: "6px 0 0", fontStyle: "italic" }}>"{a.catatan}"</p>
-                    )}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                        <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 4px" }}>
+                          {new Date(a.tanggal).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+                        </p>
+                        <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0, whiteSpace: "nowrap" }}>
+                          Check-in {new Date(a.waktu_absen).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                          {a.waktu_checkout ? ` - Check-out ${new Date(a.waktu_checkout).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}` : " - belum check-out"}
+                        </p>
+                      </div>
+                      {a.clients ? (
+                        <>
+                          <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{a.clients.nama} ({a.clients.kode})</p>
+                          <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{a.clients.alamat || "-"}</p>
+                        </>
+                      ) : (
+                        <>
+                          <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{a.nama_toko_manual || "Absen Harian"}</p>
+                          {a.alamat_toko_manual && <p style={{ fontSize: 12, color: "#6B6F75", margin: 0 }}>{a.alamat_toko_manual}</p>}
+                        </>
+                      )}
+                      {a.catatan && (
+                        <p style={{ fontSize: 12, color: "#8A6A1A", margin: "6px 0 0", fontStyle: "italic" }}>"{a.catatan}"</p>
+                      )}
+                    </div>
                   </div>
+                  {(detailTimelineByTanggal[a.tanggal] || []).length > 0 && (
+                    <div style={{ marginTop: 10, marginLeft: a.foto_url ? 76 : 0, background: "#F7F5F1", borderRadius: 10, padding: 10 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", margin: "0 0 6px", textTransform: "uppercase" }}>Aktivitas Hari Itu</p>
+                      {detailTimelineByTanggal[a.tanggal].map((item, j) => (
+                        <div key={j} style={{ display: "flex", gap: 8, marginBottom: j === detailTimelineByTanggal[a.tanggal].length - 1 ? 0 : 6, fontSize: 11.5 }}>
+                          <span style={{ color: "#9CA0A6", flexShrink: 0, fontWeight: 600 }}>
+                            {new Date(item.waktu).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                          <span style={{ color: "#24272B" }}>{item.jenis === "kunjungan" ? "📍 " : "📝 "}{item.teks}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))
             )}
