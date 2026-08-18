@@ -13303,11 +13303,14 @@ function AbsenSalesPage({ token, profile }) {
         <PageHeader title="Absen" subtitle={selectedClient ? `Di depan ${selectedClient.nama}` : "Absen harian"} />
         {!selectedClient && handledClients.length > 0 && (
           <button onClick={() => setMode("pilih_toko")} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#8A6A1A", fontSize: 12.5, fontWeight: 600, marginBottom: 14, padding: 0 }}>
-            <MapPin size={14} /> Sedang kunjungan ke toko? Pilih toko di sini (opsional)
+            <MapPin size={14} /> Kunjungan toko terdaftar? Pilih ini.
           </button>
         )}
         {!selectedClient && (
           <div style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 12.5, fontWeight: 700, color: "#8A6A1A", background: "#FFFBF0", padding: "8px 12px", borderRadius: 8, margin: "0 0 12px" }}>
+              Isi form untuk kunjungan toko baru / toko belum terdaftar
+            </p>
             <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Nama Toko</label>
             <input
               value={namaTokoManual} onChange={(e) => setNamaTokoManual(e.target.value)}
