@@ -12827,6 +12827,8 @@ function AbsenSalesPage({ token, profile }) {
   function pilihTokoUntukKunjungan(client) {
     setSelectedClient(client);
     setCatatanAbsen("");
+    setNamaTokoManual("");
+    setAlamatTokoManual("");
     setFotoKunjunganList([]);
     setMode("tambah_kunjungan");
     setLocationError("");
@@ -12987,7 +12989,8 @@ function AbsenSalesPage({ token, profile }) {
   async function handleFotoKunjungan(e) {
     const file = e.target.files[0];
     e.target.value = "";
-    if (!file || !coords || !selectedClient) return;
+    if (!file || !coords) return;
+    if (!selectedClient && !namaTokoManual.trim()) return; // toko manual wajib isi nama dulu
     setUploading(true);
     try {
       const img = await loadImageFromFile(file);
@@ -13048,7 +13051,7 @@ function AbsenSalesPage({ token, profile }) {
       const fontSize = Math.max(14, Math.round(img.width / 40));
       ctx.font = `bold ${fontSize}px sans-serif`;
       const waktu = new Date().toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
-      ctx.fillText(`Kunjungan - ${selectedClient.nama} (${selectedClient.kode})`, textX, img.height - barHeight + fontSize + 10);
+      ctx.fillText(`Kunjungan - ${selectedClient ? `${selectedClient.nama} (${selectedClient.kode})` : namaTokoManual.trim()}`, textX, img.height - barHeight + fontSize + 10);
       ctx.font = `${Math.round(fontSize * 0.82)}px sans-serif`;
       ctx.fillText(`${waktu}`, textX, img.height - barHeight + fontSize * 2 + 14);
       ctx.fillText(`Lat: ${coords.lat.toFixed(6)}, Long: ${coords.lng.toFixed(6)}`, textX, img.height - barHeight + fontSize * 3 + 18);
@@ -13081,7 +13084,9 @@ function AbsenSalesPage({ token, profile }) {
       await supabaseFetch(token, "kunjungan_sales", {
         method: "POST",
         body: JSON.stringify({
-          sales_id: profile.sales_id, client_id: selectedClient.id,
+          sales_id: profile.sales_id, client_id: selectedClient?.id || null,
+          nama_toko_manual: selectedClient ? null : namaTokoManual.trim(),
+          alamat_toko_manual: selectedClient ? null : alamatTokoManual.trim(),
           foto_url: fotoKunjunganList[0], foto_urls: fotoKunjunganList,
           latitude: coords.lat, longitude: coords.lng,
           catatan: catatanAbsen.trim() || null,
@@ -13090,6 +13095,8 @@ function AbsenSalesPage({ token, profile }) {
       await load();
       setMode(null);
       setSelectedClient(null);
+      setNamaTokoManual("");
+      setAlamatTokoManual("");
       setCatatanAbsen("");
       setFotoKunjunganList([]);
     } catch (e) {
@@ -13134,6 +13141,12 @@ function AbsenSalesPage({ token, profile }) {
             </Card>
           ))
         )}
+        <button
+          onClick={() => pilihTokoUntukKunjungan(null)}
+          style={{ width: "100%", marginTop: 10, padding: "12px", borderRadius: 10, border: "1.5px dashed #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12.5, fontWeight: 700 }}
+        >
+          Toko Tidak Terdaftar
+        </button>
       </div>
     );
   }
@@ -13142,10 +13155,26 @@ function AbsenSalesPage({ token, profile }) {
   if (mode === "tambah_kunjungan") {
     return (
       <div>
-        <button onClick={() => { setMode(null); setSelectedClient(null); setCatatanAbsen(""); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
+        <button onClick={() => { setMode(null); setSelectedClient(null); setNamaTokoManual(""); setAlamatTokoManual(""); setCatatanAbsen(""); }} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
           <ChevronLeft size={16} /> Batal
         </button>
-        <PageHeader title="Kunjungan Toko" subtitle={`Di depan ${selectedClient?.nama || ""}`} />
+        <PageHeader title="Kunjungan Toko" subtitle={selectedClient ? `Di depan ${selectedClient.nama}` : "Isi nama toko yang Anda kunjungi"} />
+        {!selectedClient && (
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Nama Toko</label>
+            <input
+              value={namaTokoManual} onChange={(e) => setNamaTokoManual(e.target.value)}
+              placeholder="Isi nama toko tempat Anda kunjungi sekarang"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, marginBottom: 12 }}
+            />
+            <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Alamat</label>
+            <input
+              value={alamatTokoManual} onChange={(e) => setAlamatTokoManual(e.target.value)}
+              placeholder="Isi alamat toko tempat Anda kunjungi sekarang"
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5 }}
+            />
+          </div>
+        )}
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 12, fontWeight: 700, color: "#6B6F75", display: "block", marginBottom: 6 }}>Catatan</label>
           <textarea
@@ -13188,7 +13217,7 @@ function AbsenSalesPage({ token, profile }) {
               )}
 
               {(() => {
-                const disabledAmbilFoto = uploading;
+                const disabledAmbilFoto = uploading || (!selectedClient && !namaTokoManual.trim());
                 return (
                   <label style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "12px 24px", borderRadius: 12, border: "1.5px dashed #E8A426", background: "#FFFBF0", color: "#8A6A1A", fontWeight: 700, fontSize: 13.5, cursor: disabledAmbilFoto ? "not-allowed" : "pointer", opacity: disabledAmbilFoto ? 0.6 : 1 }}>
                     <Camera size={16} /> {uploading ? "Mengupload..." : fotoKunjunganList.length === 0 ? "Ambil Foto" : "Ambil Foto Lagi"}
@@ -13200,7 +13229,7 @@ function AbsenSalesPage({ token, profile }) {
               {fotoKunjunganList.length > 0 && (
                 <>
                   {(() => {
-                    const disabledSimpan = savingKunjunganFinal || uploading || !catatanAbsen.trim();
+                    const disabledSimpan = savingKunjunganFinal || uploading || !catatanAbsen.trim() || (!selectedClient && !namaTokoManual.trim());
                     return (
                       <button
                         onClick={simpanKunjunganFinal}
@@ -13211,7 +13240,10 @@ function AbsenSalesPage({ token, profile }) {
                       </button>
                     );
                   })()}
-                  {!catatanAbsen.trim() && (
+                  {!selectedClient && !namaTokoManual.trim() && (
+                    <p style={{ fontSize: 11.5, color: "#C0392B", margin: "10px 0 0" }}>Isi dulu nama toko di atas.</p>
+                  )}
+                  {(selectedClient || namaTokoManual.trim()) && !catatanAbsen.trim() && (
                     <p style={{ fontSize: 11.5, color: "#C0392B", margin: "10px 0 0" }}>Isi dulu catatan di atas.</p>
                   )}
                 </>
