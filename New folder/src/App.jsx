@@ -879,17 +879,19 @@ function OwnerDashboardInner() {
     if (profRows[0].role === "admin_transaksi") setPage("orders");
 
     // Sales WAJIB terverifikasi (KTP/NPWP/KK) dulu sebelum bisa akses fitur
-    // lain - kalau belum, kunci ke halaman Profil Saya saja. Kalau SUDAH
-    // terverifikasi, arahkan ke "Omzet Saya" - BUKAN dibiarkan di halaman
-    // default (Ringkasan), yang sebenarnya tidak diizinkan untuk role sales
-    // (menu-nya memang disembunyikan di sidebar, tapi tanpa redirect ini
-    // sales tetap bisa "nyangkut" melihat isinya begitu saja).
+    // lain - kalau belum, kunci ke halaman Profil Saya (ATURAN KEAMANAN -
+    // tetap dipaksa walau cuma refresh browser, bukan cuma preferensi UX).
+    // Kalau SUDAH terverifikasi, redirect ke "Omzet Saya" CUMA saat login
+    // manual (baru login) - saat refresh, biarkan tetap di halaman yang
+    // sedang dibuka (dipulihkan dari localStorage), jangan dipaksa lompat
+    // ke Omzet Saya setiap kali refresh.
     if (profRows[0].role === "sales" && profRows[0].sales_id) {
       try {
         const salesRows = await supabaseFetch(accessToken, `sales?select=status_verifikasi&id=eq.${profRows[0].sales_id}`);
         const terverifikasi = salesRows[0]?.status_verifikasi === "terverifikasi";
         setSalesTerverifikasi(terverifikasi);
-        setPage(terverifikasi ? "omzet_sales" : "profil_sales");
+        if (!terverifikasi) setPage("profil_sales");
+        else if (isManualLogin) setPage("omzet_sales");
       } catch (e) {
         setSalesTerverifikasi(false);
         setPage("profil_sales");
