@@ -11061,7 +11061,7 @@ function KunjunganSalesPage({ token, profile }) {
   // ---------- TAMPILAN DAFTAR TOKO ----------
   return (
     <div>
-      <PageHeader title="Laporan Kunjungan" subtitle={`Target: setiap toko dikunjungi ${TARGET_KUNJUNGAN_PER_BULAN}x per bulan`} />
+      <PageHeader title="Laporan Kunjungan" subtitle={`Target: setiap toko terdaftar dikunjungi ${TARGET_KUNJUNGAN_PER_BULAN}x per bulan`} />
       <RingkasanAbsenHariIni token={token} profile={profile} handledClients={handledClients} onDataBerubah={load} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 14 }}>
         {handledClients.map((c) => {
