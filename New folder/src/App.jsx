@@ -1446,7 +1446,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "laporan_kunjungan_owner", label: "Laporan Kunjungan Sales", icon: MapPin, roles: ["owner"] },
     { key: "laporan_periodik_sales", label: "Laporan Mingguan/Bulanan", icon: FileEdit, roles: ["owner"] },
     { key: "laporan_kurir", label: "Laporan Kurir", icon: Truck, roles: ["owner", "admin_transaksi"] },
-    { key: "buat_laporan_kurir", label: "Buat Laporan Kurir", icon: ScanLine, roles: ["owner", "admin_transaksi", "kurir"] },
+    { key: "buat_laporan_kurir", label: "Buat Laporan Kurir", icon: ScanLine, roles: ["owner", "admin_transaksi", "kurir", "staff_gudang"] },
     { key: "banner_promo", label: "Banner Promo", icon: ImageIcon, roles: ["owner"] },
   ];
   const daftarSemuaRole = ["owner", "admin_keuangan", "admin_transaksi", "sales", "kurir", "staff_gudang"];
