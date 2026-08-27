@@ -475,7 +475,15 @@ async function supabaseRefreshToken(refreshToken) {
     body: JSON.stringify({ refresh_token: refreshToken }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error_description || data.msg || "Sesi berakhir, silakan login ulang.");
+  if (!res.ok) {
+    // Server BENAR-BENAR menolak (token sungguh invalid/expired) - beda
+    // dari gangguan jaringan (fetch gagal total tanpa response sama
+    // sekali) - ditandai supaya pemanggil bisa membedakan kapan session
+    // sungguh perlu dihapus vs kapan cuma perlu coba lagi.
+    const err = new Error(data.error_description || data.msg || "Sesi berakhir, silakan login ulang.");
+    err.isAuthError = true;
+    throw err;
+  }
   return data; // { access_token, refresh_token baru, ... }
 }
 
@@ -917,7 +925,26 @@ function OwnerDashboardInner() {
     }
 
     restoreWithRefresh()
-      .catch(() => clearDashboardSession())
+      .catch(async (e) => {
+        // Gangguan jaringan sesaat (fetch gagal total, BUKAN server yang
+        // menolak token) - coba SEKALI LAGI setelah jeda singkat, jangan
+        // langsung hapus session cuma karena koneksi lagi lambat/putus
+        // sebentar. Session cuma dihapus kalau server BENAR-BENAR menolak
+        // token-nya (e.isAuthError === true), bukan gangguan jaringan.
+        if (e?.isAuthError) {
+          clearDashboardSession();
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 2000));
+        try {
+          await restoreWithRefresh();
+        } catch (e2) {
+          if (e2?.isAuthError) clearDashboardSession();
+          // Kalau masih gagal karena jaringan (bukan auth error), biarkan
+          // session tetap tersimpan - user tinggal refresh lagi nanti
+          // saat koneksinya sudah pulih, tidak perlu login ulang dari nol.
+        }
+      })
       .finally(() => setRestoringSession(false));
   }, []);
 
