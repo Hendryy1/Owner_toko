@@ -2567,7 +2567,7 @@ function OrdersPage({ token }) {
       // bukan cuma yang masih di tahap ini. Nanti dipisah jadi 2 bagian:
       // "Menunggu Persetujuan" (aktif) dan "Riwayat" (sudah pernah diproses).
       const [rows, salesRows] = await Promise.all([
-        supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan,nomor_produk))&order=created_at.desc&limit=200"),
+        supabaseFetch(token, "orders?select=*,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan,nomor_produk,harga_jual))&order=created_at.desc&limit=200"),
         supabaseFetch(token, "sales?select=id,nama"),
       ]);
       const salesMap = {};
@@ -4685,7 +4685,7 @@ function RekapTokoPage({ token }) {
   const [orderTerakhir, setOrderTerakhir] = useState({}); // { client_id: tanggal }
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ alamat: "", telp: "", kodeSales: "", catatan: "", namaOwner: "", tanggalLahir: "", jenisUsaha: "", provinsi: "", email: "" });
+  const [editForm, setEditForm] = useState({ alamat: "", telp: "", kodeSales: "", catatan: "", namaOwner: "", tanggalLahir: "", jenisUsaha: "", provinsi: "", email: "", kotaAcuanHarga: "" });
   const [saving, setSaving] = useState(false);
   const [hanyaTidakAktif, setHanyaTidakAktif] = useState(false);
 
@@ -4726,7 +4726,7 @@ function RekapTokoPage({ token }) {
     setEditForm({
       alamat: c.alamat || "", telp: c.telp || "", kodeSales: c.sales?.kode || "", catatan: c.catatan_internal || "",
       namaOwner: c.nama_owner || "", tanggalLahir: c.tanggal_lahir || "", jenisUsaha: c.jenis_usaha || "", provinsi: c.provinsi || "",
-      email: c.email || "",
+      email: c.email || "", kotaAcuanHarga: c.kota_acuan_harga || "",
     });
   }
 
@@ -4769,6 +4769,7 @@ function RekapTokoPage({ token }) {
           tanggal_lahir: editForm.tanggalLahir || null,
           jenis_usaha: editForm.jenisUsaha || null,
           provinsi: editForm.provinsi || null,
+          kota_acuan_harga: editForm.kotaAcuanHarga.trim() || null,
         }),
       });
       setClients((prev) => prev.map((c) => (
@@ -4776,6 +4777,7 @@ function RekapTokoPage({ token }) {
           ? {
               ...c, alamat: editForm.alamat, telp: editForm.telp, catatan_internal: editForm.catatan,
               nama_owner: editForm.namaOwner, tanggal_lahir: editForm.tanggalLahir, jenis_usaha: editForm.jenisUsaha, provinsi: editForm.provinsi,
+              kota_acuan_harga: editForm.kotaAcuanHarga.trim() || null,
               sales: found ? { id: found.id, kode: found.kode, nama: found.nama } : null,
             }
           : c
@@ -4919,6 +4921,14 @@ function RekapTokoPage({ token }) {
                   <label style={labelStyle}>Provinsi</label>
                   <input value={editForm.provinsi} onChange={(e) => setEditForm({ ...editForm, provinsi: e.target.value })} style={fieldStyle} />
                 </div>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>Kota Acuan Harga (opsional)</label>
+                <input value={editForm.kotaAcuanHarga} onChange={(e) => setEditForm({ ...editForm, kotaAcuanHarga: e.target.value })} placeholder="Kosongkan kalau ikut kota alamat asli" style={fieldStyle} />
+                <p style={{ fontSize: 11, color: "#9CA0A6", marginTop: 4 }}>
+                  Isi kalau toko ini mau harganya ikut kota LAIN (bukan kota alamat aslinya) - misal toko di Kuantan Singingi tapi mau ikut harga Pekanbaru. Alamat pengiriman tidak berubah, cuma harga produknya saja yang terpengaruh.
+                </p>
               </div>
 
               <div style={{ marginBottom: 14 }}>
@@ -5367,7 +5377,7 @@ function RekapNotaPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,alasan_dibatalkan,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan,nomor_produk)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
+        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,alasan_dibatalkan,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran),order_items(*,products(kode,nama,satuan,nomor_produk,harga_jual)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
