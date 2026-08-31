@@ -13969,7 +13969,14 @@ function RekapAbsenPage({ token, setPage }) {
   const now = viewDate;
   const isBulanIni = now.getFullYear() === new Date().getFullYear() && now.getMonth() === new Date().getMonth();
   const startBulan = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  const endBulan = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
+  // PENTING: bangun tanggal langsung dari angka (bukan lewat new Date(...).toISOString())
+  // - toISOString() mengonversi ke UTC, jadi kalau jam lokal (WIB) sudah
+  // masuk tanggal baru tapi UTC-nya belum, hasilnya jadi MUNDUR 1 hari dari
+  // yang seharusnya. Ini yang bikin data tanggal terakhir bulan (misal
+  // tanggal 31) kadang tidak ikut kehitung.
+  const nextMonthNum = now.getMonth() + 2 > 12 ? 1 : now.getMonth() + 2;
+  const nextYearNum = now.getMonth() + 2 > 12 ? now.getFullYear() + 1 : now.getFullYear();
+  const endBulan = `${nextYearNum}-${String(nextMonthNum).padStart(2, "0")}-01`;
   const totalHariBulanIni = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
   async function load() {
@@ -14304,7 +14311,14 @@ function CalendarPage({ token }) {
   const now = viewDate;
   const isBulanIni = now.getFullYear() === new Date().getFullYear() && now.getMonth() === new Date().getMonth();
   const startBulan = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-  const endBulan = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
+  // PENTING: bangun tanggal langsung dari angka (bukan lewat new Date(...).toISOString())
+  // - toISOString() mengonversi ke UTC, jadi kalau jam lokal (WIB) sudah
+  // masuk tanggal baru tapi UTC-nya belum, hasilnya jadi MUNDUR 1 hari dari
+  // yang seharusnya. Ini yang bikin data tanggal terakhir bulan (misal
+  // tanggal 31) kadang tidak ikut kehitung.
+  const nextMonthNum = now.getMonth() + 2 > 12 ? 1 : now.getMonth() + 2;
+  const nextYearNum = now.getMonth() + 2 > 12 ? now.getFullYear() + 1 : now.getFullYear();
+  const endBulan = `${nextYearNum}-${String(nextMonthNum).padStart(2, "0")}-01`;
   const totalHariBulanIni = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
 
   async function load() {
