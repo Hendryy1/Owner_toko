@@ -3601,6 +3601,7 @@ function PiutangPage({ token }) {
       const batas3Hari = new Date(sekarang.getTime() + 3 * 86400000);
       const terlambatMap = {}; // { client_id: hari paling lama terlambat }
       const akanJatuhTempoMap = {}; // { client_id: sisa hari paling dekat, cuma yang BELUM lewat & <= 3 hari lagi }
+      const jatuhTempoTerdekatMap = {}; // { client_id: Date jatuh tempo yang paling mendesak (paling awal), buat ditampilkan langsung di samping nama toko }
       (semuaOrderPiutang || []).forEach((o) => {
         const jt = new Date(o.jatuh_tempo);
         if (jt < sekarang) {
@@ -3610,8 +3611,12 @@ function PiutangPage({ token }) {
           const sisaHari = Math.ceil((jt - sekarang) / (1000 * 60 * 60 * 24));
           if (akanJatuhTempoMap[o.client_id] === undefined || sisaHari < akanJatuhTempoMap[o.client_id]) akanJatuhTempoMap[o.client_id] = sisaHari;
         }
+        // Jatuh tempo PALING AWAL (paling mendesak) dari SEMUA order piutang
+        // toko ini - dipakai buat tampilan ringkas di samping nama toko,
+        // tidak perlu expand dulu buat tahu.
+        if (!jatuhTempoTerdekatMap[o.client_id] || jt < jatuhTempoTerdekatMap[o.client_id]) jatuhTempoTerdekatMap[o.client_id] = jt;
       });
-      setRows(data.map((r) => ({ ...r, hariTerlambat: terlambatMap[r.client_id] || null, sisaHariJatuhTempo: akanJatuhTempoMap[r.client_id] ?? null })));
+      setRows(data.map((r) => ({ ...r, hariTerlambat: terlambatMap[r.client_id] || null, sisaHariJatuhTempo: akanJatuhTempoMap[r.client_id] ?? null, jatuhTempoTerdekat: jatuhTempoTerdekatMap[r.client_id] || null })));
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -3689,6 +3694,11 @@ function PiutangPage({ token }) {
                     {expandedId === r.client_id ? <ChevronRight size={14} style={{ transform: "rotate(90deg)", transition: "transform 0.15s" }} /> : <ChevronRight size={14} />}
                     {r.nama}
                   </button>
+                  {r.jatuhTempoTerdekat && (
+                    <p style={{ fontSize: 11, color: r.hariTerlambat !== null ? "#C0392B" : "#9CA0A6", fontWeight: r.hariTerlambat !== null ? 700 : 600, margin: "3px 0 0 20px" }}>
+                      Jatuh Tempo: {r.jatuhTempoTerdekat.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                    </p>
+                  )}
                 </td>
                 <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(r.total_piutang)}</td>
                 <td style={{ padding: "12px 14px" }}>
