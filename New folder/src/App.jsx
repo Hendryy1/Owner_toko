@@ -1010,7 +1010,11 @@ function OwnerDashboardInner() {
         siap_dikirim_baru: ["owner", "admin_transaksi", "kurir", "staff_gudang"],
         proses_kirim: ["owner", "kurir", "staff_gudang"],
         review_stok_kurang: ["owner", "admin_transaksi"],
+        piutang: ["owner", "admin_keuangan", "admin_transaksi"],
       };
+      // batas3HariDariSekarang dihitung ulang tiap kali fungsi ini jalan
+      // (bukan konstanta tetap) - supaya selalu akurat "3 hari dari SEKARANG".
+      const batas3HariDariSekarang = new Date(Date.now() + 3 * 86400000).toISOString();
       const queryPerKategori = {
         orders: "orders?select=id&status=eq.menunggu_persetujuan&limit=1",
         picking_list: "orders?select=id&status=eq.menunggu_pengiriman&picking_selesai_at=is.null&limit=1",
@@ -1018,6 +1022,9 @@ function OwnerDashboardInner() {
         proses_kirim: "orders?select=id&status=eq.proses_dikirim&bukti_barang_sampai_url=is.null&limit=1",
         konfirmasi_bayar: "orders?select=id&status=eq.proses_dikirim&dikonfirmasi_toko_at=not.is.null&limit=1",
         review_stok_kurang: "orders?select=id&stok_kurang_menunggu_admin_at=not.is.null&stok_kurang_disetujui_admin_at=is.null&stok_kurang_ditolak_admin_at=is.null&limit=1",
+        // Sudah terlambat ATAU akan jatuh tempo dalam 3 hari - kedua kondisi
+        // sama-sama perlu diingatkan ke Owner/Admin Keuangan.
+        piutang: `orders?select=id&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&jatuh_tempo=lte.${batas3HariDariSekarang}&jatuh_tempo=not.is.null`,
       };
       const kategoriRelevan = Object.keys(kategoriUntukRole).filter((key) => kategoriUntukRole[key].includes(role));
       const hasil = await Promise.all(kategoriRelevan.map((key) => hitung(queryPerKategori[key])));
@@ -3591,15 +3598,20 @@ function PiutangPage({ token }) {
       // jatuh tempo tanpa perlu klik buka dulu.
       const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,client_id,jatuh_tempo&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&jatuh_tempo=not.is.null");
       const sekarang = new Date();
+      const batas3Hari = new Date(sekarang.getTime() + 3 * 86400000);
       const terlambatMap = {}; // { client_id: hari paling lama terlambat }
+      const akanJatuhTempoMap = {}; // { client_id: sisa hari paling dekat, cuma yang BELUM lewat & <= 3 hari lagi }
       (semuaOrderPiutang || []).forEach((o) => {
         const jt = new Date(o.jatuh_tempo);
         if (jt < sekarang) {
           const hari = Math.floor((sekarang - jt) / (1000 * 60 * 60 * 24));
           if (!terlambatMap[o.client_id] || hari > terlambatMap[o.client_id]) terlambatMap[o.client_id] = hari;
+        } else if (jt <= batas3Hari) {
+          const sisaHari = Math.ceil((jt - sekarang) / (1000 * 60 * 60 * 24));
+          if (akanJatuhTempoMap[o.client_id] === undefined || sisaHari < akanJatuhTempoMap[o.client_id]) akanJatuhTempoMap[o.client_id] = sisaHari;
         }
       });
-      setRows(data.map((r) => ({ ...r, hariTerlambat: terlambatMap[r.client_id] || null })));
+      setRows(data.map((r) => ({ ...r, hariTerlambat: terlambatMap[r.client_id] || null, sisaHariJatuhTempo: akanJatuhTempoMap[r.client_id] ?? null })));
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -3712,6 +3724,11 @@ function PiutangPage({ token }) {
                         Terlambat Bayar {r.hariTerlambat} hari
                       </span>
                     )}
+                    {r.hariTerlambat === null && r.sisaHariJatuhTempo !== null && (
+                      <span style={{ background: "#FBF0D9", color: "#8A6A1A", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                        {r.sisaHariJatuhTempo === 0 ? "Jatuh Tempo Hari Ini" : `Jatuh Tempo ${r.sisaHariJatuhTempo} Hari Lagi`}
+                      </span>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -3740,6 +3757,8 @@ function PiutangPage({ token }) {
                               const nilai = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
                               const jt = o.jatuh_tempo ? new Date(o.jatuh_tempo) : null;
                               const hariTerlambatOrder = jt && jt < new Date() ? Math.floor((new Date() - jt) / (1000 * 60 * 60 * 24)) : null;
+                              const sisaHariOrder = jt && jt >= new Date() ? Math.ceil((jt - new Date()) / (1000 * 60 * 60 * 24)) : null;
+                              const akanJatuhTempoOrder = sisaHariOrder !== null && sisaHariOrder <= 3;
                               return (
                                 <tr key={o.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                                   <td style={{ padding: "6px 10px", fontWeight: 700 }}>{o.no_nota}</td>
@@ -3748,10 +3767,13 @@ function PiutangPage({ token }) {
                                   </td>
                                   <td style={{ padding: "6px 10px" }}>
                                     {jt ? (
-                                      <span style={{ color: hariTerlambatOrder !== null ? "#C0392B" : "#6B6F75", fontWeight: hariTerlambatOrder !== null ? 700 : 400 }}>
+                                      <span style={{ color: hariTerlambatOrder !== null ? "#C0392B" : akanJatuhTempoOrder ? "#8A6A1A" : "#6B6F75", fontWeight: (hariTerlambatOrder !== null || akanJatuhTempoOrder) ? 700 : 400 }}>
                                         {jt.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
                                         {hariTerlambatOrder !== null && (
                                           <span style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#C0392B" }}>Terlambat {hariTerlambatOrder} hari</span>
+                                        )}
+                                        {akanJatuhTempoOrder && (
+                                          <span style={{ display: "block", fontSize: 10, fontWeight: 700, color: "#8A6A1A" }}>{sisaHariOrder === 0 ? "Jatuh tempo hari ini" : `Jatuh tempo ${sisaHariOrder} hari lagi`}</span>
                                         )}
                                       </span>
                                     ) : "-"}
