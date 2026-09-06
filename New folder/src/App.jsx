@@ -2670,6 +2670,19 @@ function OrdersPage({ token }) {
         // "Menunggu Pengiriman".
         statusFinal = "menunggu_pengiriman";
         bodyPatch = { status: statusFinal, disetujui_pada: new Date().toISOString() };
+      } else if (status === "menunggu_pembayaran" && order?.metode_bayar === "tempo") {
+        // Tempo 30 Hari - sama seperti COD, tidak perlu tahap "Menunggu
+        // Pembayaran" (toko tidak perlu bayar/upload bukti di muka sama
+        // sekali) - begitu di-approve langsung lompat ke "Menunggu
+        // Pengiriman". Bedanya dari COD: uangnya BUKAN diterima kurir saat
+        // barang sampai, tapi baru jatuh tempo 30 hari dari sekarang -
+        // status_bayar tetap "belum_lunas" sampai staff catat pelunasan
+        // manual (dicicil/dibayar penuh) sebelum/pas jatuh tempo.
+        statusFinal = "menunggu_pengiriman";
+        bodyPatch = {
+          status: statusFinal, disetujui_pada: new Date().toISOString(),
+          jatuh_tempo: new Date(Date.now() + 30 * 86400000).toISOString(),
+        };
       } else if (status === "menunggu_pembayaran" && order?.metode_bayar === "transfer") {
         // Transfer - cek dulu saldo toko. Kalau CUKUP, otomatis bayar pakai
         // saldo (potong saldo_ledger) dan langsung lompat ke "Menunggu
@@ -2756,6 +2769,9 @@ function OrdersPage({ token }) {
               {o.no_nota}
               {o.metode_bayar === "cod" && (
                 <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+              )}
+              {o.metode_bayar === "tempo" && (
+                <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>Tempo 30 Hari</span>
               )}
             </p>
             <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
@@ -3116,7 +3132,7 @@ function NotaPrintContent({ order, type, settings }) {
           <table style={{ borderCollapse: "collapse", height: "fit-content" }}><tbody>
             <tr>
               <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Jenis Bayar:</td>
-              <td style={{ padding: "2px 0", color: "#1B8A3D", fontWeight: 600 }}>{order.metode_bayar === "cod" ? "COD" : (order.clients?.jenis_pembayaran || "-")}</td>
+              <td style={{ padding: "2px 0", color: "#1B8A3D", fontWeight: 600 }}>{order.metode_bayar === "cod" ? "COD" : order.metode_bayar === "tempo" ? "Tempo 30 Hari" : (order.clients?.jenis_pembayaran || "-")}</td>
             </tr>
             <tr>
               <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Jatuh Tempo:</td>
@@ -3124,8 +3140,8 @@ function NotaPrintContent({ order, type, settings }) {
             </tr>
             <tr>
               <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Status:</td>
-              <td style={{ padding: "2px 0", color: order.metode_bayar === "cod" ? "#8A6A1A" : (isLunas ? "#1B8A3D" : "#C0392B"), fontWeight: 700 }}>
-                {order.metode_bayar === "cod" ? "COD (Bayar di Tempat)" : (isLunas ? "Lunas" : "Belum Lunas")}
+              <td style={{ padding: "2px 0", color: order.metode_bayar === "cod" ? "#8A6A1A" : order.metode_bayar === "tempo" ? "#8A6A1A" : (isLunas ? "#1B8A3D" : "#C0392B"), fontWeight: 700 }}>
+                {order.metode_bayar === "cod" ? "COD (Bayar di Tempat)" : order.metode_bayar === "tempo" ? "Tempo 30 Hari" : (isLunas ? "Lunas" : "Belum Lunas")}
               </td>
             </tr>
           </tbody></table>
@@ -3573,7 +3589,7 @@ function PiutangPage({ token }) {
       // Ambil SEMUA order COD yang jadi piutang sekaligus di awal (bukan
       // pas expand doang) - supaya bisa tahu toko mana yang SUDAH lewat
       // jatuh tempo tanpa perlu klik buka dulu.
-      const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,client_id,jatuh_tempo&metode_bayar=eq.cod&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&jatuh_tempo=not.is.null");
+      const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,client_id,jatuh_tempo&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&jatuh_tempo=not.is.null");
       const sekarang = new Date();
       const terlambatMap = {}; // { client_id: hari paling lama terlambat }
       (semuaOrderPiutang || []).forEach((o) => {
@@ -3600,7 +3616,7 @@ function PiutangPage({ token }) {
       try {
         const orders = await supabaseFetch(
           token,
-          `orders?select=id,no_nota,created_at,jatuh_tempo,order_items(subtotal_setelah_diskon)&client_id=eq.${clientId}&metode_bayar=eq.cod&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc`
+          `orders?select=id,no_nota,created_at,jatuh_tempo,order_items(subtotal_setelah_diskon)&client_id=eq.${clientId}&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc`
         );
         setDetailMap((prev) => ({ ...prev, [clientId]: orders }));
       } catch (e) {
@@ -5629,7 +5645,7 @@ function RekapNotaPage({ token }) {
                     )}
                   </td>
                   <td style={{ padding: "12px 14px" }}>{o.clients?.nama}</td>
-                  <td style={{ padding: "12px 14px" }}>{o.metode_bayar === "cod" ? "COD" : o.clients?.jenis_pembayaran}</td>
+                  <td style={{ padding: "12px 14px" }}>{o.metode_bayar === "cod" ? "COD" : o.metode_bayar === "tempo" ? "Tempo 30 Hari" : o.clients?.jenis_pembayaran}</td>
                   <td style={{ padding: "12px 14px" }}>{o.jatuh_tempo ? new Date(o.jatuh_tempo).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
                   <td style={{ padding: "12px 14px" }}>
                     <span style={{ background: st.bg, color: st.fg, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
@@ -5873,6 +5889,8 @@ function KonfirmasiPembayaranPage({ token }) {
                       {o.no_nota}
                       {o.metode_bayar === "cod" ? (
                         <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                      ) : o.metode_bayar === "tempo" ? (
+                        <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>Tempo 30 Hari</span>
                       ) : (
                         <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#D8E9E6", color: "#28685D", verticalAlign: "middle" }}>Transfer - {isPekanbaru ? "Pekanbaru" : "Luar Kota"}</span>
                       )}
@@ -6595,6 +6613,9 @@ function SiapDikirimPage({ token, role }) {
                         {isCod && (
                           <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
                         )}
+                        {o.metode_bayar === "tempo" && (
+                          <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>Tempo 30 Hari</span>
+                        )}
                         {terlambatDiambil && (
                           <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B", verticalAlign: "middle" }}>Terlambat Diambil Kurir</span>
                         )}
@@ -6646,6 +6667,9 @@ function SiapDikirimPage({ token, role }) {
                     {o.no_nota}
                     {isCod && (
                       <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                    )}
+                    {o.metode_bayar === "tempo" && (
+                      <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>Tempo 30 Hari</span>
                     )}
                   </p>
                   <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
@@ -13276,6 +13300,9 @@ function OutboundPage({ token }) {
             {order.metode_bayar === "cod" && (
               <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A" }}>COD</span>
             )}
+            {order.metode_bayar === "tempo" && (
+              <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A" }}>Tempo 30 Hari</span>
+            )}
           </div>
 
           <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>
@@ -15683,6 +15710,9 @@ function SiapDikirimBaruPage({ token, role }) {
                   {o.no_nota}
                   {o.metode_bayar === "cod" && (
                     <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>COD</span>
+                  )}
+                  {o.metode_bayar === "tempo" && (
+                    <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBF0D9", color: "#8A6A1A", verticalAlign: "middle" }}>Tempo 30 Hari</span>
                   )}
                   {cekTerlambatDiambilKurir(o) && (
                     <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: "#FBEAEA", color: "#C0392B", verticalAlign: "middle" }}>Terlambat Diambil Kurir</span>
