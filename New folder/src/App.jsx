@@ -1024,7 +1024,7 @@ function OwnerDashboardInner() {
         review_stok_kurang: "orders?select=id&stok_kurang_menunggu_admin_at=not.is.null&stok_kurang_disetujui_admin_at=is.null&stok_kurang_ditolak_admin_at=is.null&limit=1",
         // Sudah terlambat ATAU akan jatuh tempo dalam 3 hari - kedua kondisi
         // sama-sama perlu diingatkan ke Owner/Admin Keuangan.
-        piutang: `orders?select=id&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&jatuh_tempo=lte.${batas3HariDariSekarang}&jatuh_tempo=not.is.null`,
+        piutang: `orders?select=id&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&jatuh_tempo=lte.${batas3HariDariSekarang}&jatuh_tempo=not.is.null`,
       };
       const kategoriRelevan = Object.keys(kategoriUntukRole).filter((key) => kategoriUntukRole[key].includes(role));
       const hasil = await Promise.all(kategoriRelevan.map((key) => hitung(queryPerKategori[key])));
@@ -3596,7 +3596,7 @@ function PiutangPage({ token }) {
       // Ambil SEMUA order COD yang jadi piutang sekaligus di awal (bukan
       // pas expand doang) - supaya bisa tahu toko mana yang SUDAH lewat
       // jatuh tempo tanpa perlu klik buka dulu.
-      const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,client_id,jatuh_tempo&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&jatuh_tempo=not.is.null");
+      const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,client_id,jatuh_tempo&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&jatuh_tempo=not.is.null");
       const sekarang = new Date();
       const batas3Hari = new Date(sekarang.getTime() + 3 * 86400000);
       const terlambatMap = {}; // { client_id: hari paling lama terlambat }
@@ -3628,7 +3628,7 @@ function PiutangPage({ token }) {
       try {
         const orders = await supabaseFetch(
           token,
-          `orders?select=id,no_nota,created_at,jatuh_tempo,order_items(subtotal_setelah_diskon)&client_id=eq.${clientId}&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,proses_dikirim)&order=created_at.asc`
+          `orders?select=id,no_nota,created_at,jatuh_tempo,order_items(subtotal_setelah_diskon)&client_id=eq.${clientId}&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&order=created_at.asc`
         );
         setDetailMap((prev) => ({ ...prev, [clientId]: orders }));
       } catch (e) {
