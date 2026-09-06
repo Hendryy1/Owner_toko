@@ -15649,6 +15649,11 @@ function SiapDikirimBaruPage({ token, role }) {
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("semua"); // "semua" | "toko" | "baraka"
   const [scanningOrder, setScanningOrder] = useState(null);
+  const [bulkBarcode, setBulkBarcode] = useState(null); // array order | null - dipakai buat "Cetak Ulang Barcode"
+  const [ukuranLabelBarcode] = useState({ lebar: 100, tinggi: 150, modeFit: false });
+  const [markingPrinted, setMarkingPrinted] = useState(false);
+  const [mencetakBarcode, setMencetakBarcode] = useState(false);
+  const [errorCetakBarcode, setErrorCetakBarcode] = useState("");
 
   async function load() {
     setLoading(true);
@@ -15670,6 +15675,32 @@ function SiapDikirimBaruPage({ token, role }) {
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
+
+  // Cetak ulang barcode untuk 1 order - dipakai kalau barcode lama
+  // bermasalah (misal format lama tanpa nomor box) dan order-nya sudah
+  // lanjut ke tahap ini (sudah tidak muncul lagi di Picking List).
+  async function handleCetakUlangBarcode() {
+    setMencetakBarcode(true);
+    setErrorCetakBarcode("");
+    try {
+      const lebarIn = ukuranLabelBarcode.lebar / 25.4;
+      const tinggiIn = ukuranLabelBarcode.tinggi / 25.4;
+      const entries = hitungEntriesLabelBarcode(bulkBarcode);
+      for (const entry of entries) {
+        await cetakPdfOtomatis(<BarcodeLabelContent order={entry.order} noBox={entry.noBox} totalBox={entry.totalBox} item={entry.item} />, `${lebarIn}in ${tinggiIn}in`, "bawah", true);
+      }
+      setMarkingPrinted(true);
+      const now = new Date().toISOString();
+      const ids = bulkBarcode.map((o) => o.id);
+      await supabaseFetch(token, `orders?id=in.(${ids.join(",")})`, { method: "PATCH", body: JSON.stringify({ barcode_dicetak_at: now }) });
+      setOrders((prev) => prev.map((o) => (ids.includes(o.id) ? { ...o, barcode_dicetak_at: now } : o)));
+      setMarkingPrinted(false);
+      setBulkBarcode(null);
+    } catch (e) {
+      setErrorCetakBarcode("Gagal cetak otomatis: " + e.message + " - pastikan print server jalan.");
+    }
+    setMencetakBarcode(false);
+  }
 
   // Kurir Toko = tujuan Pekanbaru (diantar sendiri), Baraka = luar kota
   // (dikirim lewat jasa kurir eksternal Baraka)
@@ -15752,6 +15783,14 @@ function SiapDikirimBaruPage({ token, role }) {
                 </p>
                 <p style={{ fontSize: 13, color: "#6B6F75", margin: 0 }}>{o.clients?.nama} ({o.clients?.kode})</p>
                 <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0" }}>{o.tujuan_alamat || o.clients?.alamat}</p>
+                {role !== "staff_gudang" && (
+                  <button
+                    onClick={() => setBulkBarcode([o])}
+                    style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 8, padding: "5px 10px", borderRadius: 8, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11, fontWeight: 700 }}
+                  >
+                    <RefreshCw size={12} /> Cetak Ulang Barcode
+                  </button>
+                )}
               </div>
               <button
                 onClick={() => setScanningOrder(o)}
@@ -15777,6 +15816,7 @@ function SiapDikirimBaruPage({ token, role }) {
           onSelesai={() => { setScanningOrder(null); load(); }}
         />
       )}
+      {bulkBarcode && <BulkBarcodeModal orders={bulkBarcode} onClose={() => setBulkBarcode(null)} onSelesaiCetak={handleCetakUlangBarcode} mencetak={mencetakBarcode} error={errorCetakBarcode} ukuranLabel={ukuranLabelBarcode} />}
     </div>
   );
 }
