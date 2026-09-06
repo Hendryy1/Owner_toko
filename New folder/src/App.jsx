@@ -3695,7 +3695,7 @@ function PiutangPage({ token }) {
                     {r.nama}
                   </button>
                   {r.jatuhTempoTerdekat && (
-                    <p style={{ fontSize: 11, color: r.hariTerlambat !== null ? "#C0392B" : "#9CA0A6", fontWeight: r.hariTerlambat !== null ? 700 : 600, margin: "3px 0 0 20px" }}>
+                    <p style={{ fontSize: 11, color: r.hariTerlambat !== null ? "#C0392B" : r.sisaHariJatuhTempo !== null ? "#8A6A1A" : "#9CA0A6", fontWeight: (r.hariTerlambat !== null || r.sisaHariJatuhTempo !== null) ? 700 : 600, margin: "3px 0 0 20px" }}>
                       Jatuh Tempo: {r.jatuhTempoTerdekat.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
                     </p>
                   )}
