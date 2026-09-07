@@ -3139,7 +3139,7 @@ function NotaPrintContent({ order, type, settings }) {
           <table style={{ borderCollapse: "collapse", height: "fit-content" }}><tbody>
             <tr>
               <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Jenis Bayar:</td>
-              <td style={{ padding: "2px 0", color: "#1B8A3D", fontWeight: 600 }}>{order.metode_bayar === "cod" ? "COD" : order.metode_bayar === "tempo" ? "Tempo 30 Hari" : (order.clients?.jenis_pembayaran || "-")}</td>
+              <td style={{ padding: "2px 0", color: "#1B8A3D", fontWeight: 600 }}>{order.metode_bayar === "cod" ? "COD" : order.metode_bayar === "tempo" ? "Kredit" : (order.clients?.jenis_pembayaran || "-")}</td>
             </tr>
             <tr>
               <td style={{ padding: "2px 8px 2px 0", fontWeight: 700, whiteSpace: "nowrap" }}>Jatuh Tempo:</td>
@@ -5665,7 +5665,7 @@ function RekapNotaPage({ token }) {
                     )}
                   </td>
                   <td style={{ padding: "12px 14px" }}>{o.clients?.nama}</td>
-                  <td style={{ padding: "12px 14px" }}>{o.metode_bayar === "cod" ? "COD" : o.metode_bayar === "tempo" ? "Tempo 30 Hari" : o.clients?.jenis_pembayaran}</td>
+                  <td style={{ padding: "12px 14px" }}>{o.metode_bayar === "cod" ? "COD" : o.metode_bayar === "tempo" ? "Kredit" : o.clients?.jenis_pembayaran}</td>
                   <td style={{ padding: "12px 14px" }}>{o.jatuh_tempo ? new Date(o.jatuh_tempo).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
                   <td style={{ padding: "12px 14px" }}>
                     <span style={{ background: st.bg, color: st.fg, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
