@@ -3595,13 +3595,13 @@ function PiutangPage({ token }) {
       // Ambil SEMUA order COD yang jadi piutang sekaligus di awal (bukan
       // pas expand doang) - supaya bisa tahu toko mana yang SUDAH lewat
       // jatuh tempo tanpa perlu klik buka dulu.
-      const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,no_nota,client_id,jatuh_tempo,order_items(subtotal_setelah_diskon)&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&jatuh_tempo=not.is.null");
+      const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,no_nota,client_id,jatuh_tempo,order_items(subtotal_setelah_diskon)&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)");
       setOrderPiutangList((semuaOrderPiutang || []).map((o) => ({
         id: o.id,
         no_nota: o.no_nota,
         client_id: o.client_id,
         sales_id: salesIdMap[o.client_id] || null,
-        jatuh_tempo: new Date(o.jatuh_tempo),
+        jatuh_tempo: o.jatuh_tempo ? new Date(o.jatuh_tempo) : null,
         nilai: (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0),
       })));
       const sekarang = new Date();
@@ -3610,6 +3610,7 @@ function PiutangPage({ token }) {
       const akanJatuhTempoMap = {}; // { client_id: sisa hari paling dekat, cuma yang BELUM lewat & <= 3 hari lagi }
       const jatuhTempoTerdekatMap = {}; // { client_id: Date jatuh tempo yang paling mendesak (paling awal), buat ditampilkan langsung di samping nama toko }
       (semuaOrderPiutang || []).forEach((o) => {
+        if (!o.jatuh_tempo) return; // pesanan tanpa jatuh tempo tidak ikut hitungan terlambat/akan jatuh tempo
         const jt = new Date(o.jatuh_tempo);
         if (jt < sekarang) {
           const hari = Math.floor((sekarang - jt) / (1000 * 60 * 60 * 24));
@@ -3707,6 +3708,7 @@ function PiutangPage({ token }) {
     });
 
     function statusOrder(jt) {
+      if (!jt) return { teks: "Tanpa Jatuh Tempo", warna: "#9CA0A6" };
       if (jt < sekarang) {
         const hari = Math.floor((sekarang - jt) / (1000 * 60 * 60 * 24));
         return { teks: `Terlambat ${hari} hari`, warna: "#C0392B" };
@@ -3730,7 +3732,11 @@ function PiutangPage({ token }) {
       const sales = key === "tanpa" ? null : salesList.find((s) => s.id === key);
       const judulGrup = sales ? `${sales.nama} (${sales.kode})` : "Tanpa Sales";
       const ordersGrup = grupPerSales[key].sort((a, b) => {
-        if (urutan === "jatuh_tempo") return a.jatuh_tempo - b.jatuh_tempo;
+        if (urutan === "jatuh_tempo") {
+          const nilaiA = a.jatuh_tempo ? a.jatuh_tempo.getTime() : Infinity;
+          const nilaiB = b.jatuh_tempo ? b.jatuh_tempo.getTime() : Infinity;
+          return nilaiA - nilaiB;
+        }
         return b.nilai - a.nilai;
       });
       let totalGrup = 0;
@@ -3741,7 +3747,7 @@ function PiutangPage({ token }) {
           <tr>
             <td>${namaTokoMap[o.client_id] || "-"}</td>
             <td>${o.no_nota}</td>
-            <td>${o.jatuh_tempo.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
+            <td>${o.jatuh_tempo ? o.jatuh_tempo.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
             <td style="text-align:right">${rupiah(o.nilai)}</td>
             <td style="color:${st.warna};font-weight:700">${st.teks}</td>
           </tr>`;
