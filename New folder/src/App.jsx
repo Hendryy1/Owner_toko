@@ -3568,6 +3568,7 @@ function KeuanganPage({ token }) {
 function PiutangPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
+  const [salesList, setSalesList] = useState([]);
   const [error, setError] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
@@ -3575,12 +3576,21 @@ function PiutangPage({ token }) {
   const [expandedId, setExpandedId] = useState(null); // client_id yang lagi dibuka
   const [detailMap, setDetailMap] = useState({}); // { client_id: [order,...] }
   const [loadingDetail, setLoadingDetail] = useState(null);
+  const [filterSales, setFilterSales] = useState("");
+  const [urutan, setUrutan] = useState("jatuh_tempo"); // jatuh_tempo | total_piutang
 
   async function load() {
     setLoading(true);
     setError("");
     try {
-      const data = await supabaseFetch(token, "v_piutang_client?select=*&total_piutang=gt.0&order=total_piutang.desc");
+      const [data, clientRows, salesRows] = await Promise.all([
+        supabaseFetch(token, "v_piutang_client?select=*&total_piutang=gt.0&order=total_piutang.desc"),
+        supabaseFetch(token, "clients?select=id,sales_id"),
+        supabaseFetch(token, "sales?select=id,kode,nama&order=kode.asc"),
+      ]);
+      setSalesList(salesRows);
+      const salesIdMap = {}; // { client_id: sales_id }
+      (clientRows || []).forEach((c) => { salesIdMap[c.id] = c.sales_id || null; });
       // Ambil SEMUA order COD yang jadi piutang sekaligus di awal (bukan
       // pas expand doang) - supaya bisa tahu toko mana yang SUDAH lewat
       // jatuh tempo tanpa perlu klik buka dulu.
@@ -3604,11 +3614,28 @@ function PiutangPage({ token }) {
         // tidak perlu expand dulu buat tahu.
         if (!jatuhTempoTerdekatMap[o.client_id] || jt < jatuhTempoTerdekatMap[o.client_id]) jatuhTempoTerdekatMap[o.client_id] = jt;
       });
-      setRows(data.map((r) => ({ ...r, hariTerlambat: terlambatMap[r.client_id] || null, sisaHariJatuhTempo: akanJatuhTempoMap[r.client_id] ?? null, jatuhTempoTerdekat: jatuhTempoTerdekatMap[r.client_id] || null })));
+      setRows(data.map((r) => ({
+        ...r,
+        sales_id: salesIdMap[r.client_id] || null,
+        hariTerlambat: terlambatMap[r.client_id] || null,
+        sisaHariJatuhTempo: akanJatuhTempoMap[r.client_id] ?? null,
+        jatuhTempoTerdekat: jatuhTempoTerdekatMap[r.client_id] || null,
+      })));
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
+
+  const rowsTampil = rows
+    .filter((r) => !filterSales || r.sales_id === filterSales)
+    .sort((a, b) => {
+      if (urutan === "jatuh_tempo") {
+        const nilaiA = a.jatuhTempoTerdekat ? a.jatuhTempoTerdekat.getTime() : Infinity;
+        const nilaiB = b.jatuhTempoTerdekat ? b.jatuhTempoTerdekat.getTime() : Infinity;
+        return nilaiA - nilaiB;
+      }
+      return b.total_piutang - a.total_piutang;
+    });
 
   async function toggleExpand(clientId) {
     if (expandedId === clientId) {
@@ -3660,7 +3687,29 @@ function PiutangPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Piutang per Toko" subtitle="Toko dengan tagihan belum lunas - klik Limit Kredit untuk ubah" />
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
+        <PageHeader title="Piutang per Toko" subtitle="Toko dengan tagihan belum lunas - klik Limit Kredit untuk ubah" />
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginTop: 4 }}>
+          <select
+            value={filterSales}
+            onChange={(e) => setFilterSales(e.target.value)}
+            style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5, fontWeight: 600, color: "#24272B", background: "#fff" }}
+          >
+            <option value="">Semua Sales</option>
+            {salesList.map((s) => (
+              <option key={s.id} value={s.id}>{s.nama} ({s.kode})</option>
+            ))}
+          </select>
+          <select
+            value={urutan}
+            onChange={(e) => setUrutan(e.target.value)}
+            style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5, fontWeight: 600, color: "#24272B", background: "#fff" }}
+          >
+            <option value="jatuh_tempo">Urutkan: Jatuh Tempo Terdekat</option>
+            <option value="total_piutang">Urutkan: Total Piutang Terbesar</option>
+          </select>
+        </div>
+      </div>
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
@@ -3671,7 +3720,7 @@ function PiutangPage({ token }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r) => (
+            {rowsTampil.map((r) => (
               <React.Fragment key={r.client_id}>
               <tr style={{ borderTop: "1px solid #EDEAE3" }}>
                 <td style={{ padding: "12px 14px", fontWeight: 600 }}>
@@ -3791,7 +3840,7 @@ function PiutangPage({ token }) {
             ))}
           </tbody>
         </table>
-        {rows.length === 0 && <EmptyState text="Tidak ada piutang berjalan saat ini." />}
+        {rowsTampil.length === 0 && <EmptyState text="Tidak ada piutang berjalan saat ini." />}
       </Card>
     </div>
   );
