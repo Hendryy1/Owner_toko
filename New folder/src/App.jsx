@@ -3578,6 +3578,7 @@ function PiutangPage({ token }) {
   const [loadingDetail, setLoadingDetail] = useState(null);
   const [filterSales, setFilterSales] = useState("");
   const [urutan, setUrutan] = useState("jatuh_tempo"); // jatuh_tempo | total_piutang
+  const [orderPiutangList, setOrderPiutangList] = useState([]); // per-order, buat cetak (1 order = 1 baris)
 
   async function load() {
     setLoading(true);
@@ -3594,7 +3595,15 @@ function PiutangPage({ token }) {
       // Ambil SEMUA order COD yang jadi piutang sekaligus di awal (bukan
       // pas expand doang) - supaya bisa tahu toko mana yang SUDAH lewat
       // jatuh tempo tanpa perlu klik buka dulu.
-      const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,client_id,jatuh_tempo&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&jatuh_tempo=not.is.null");
+      const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,no_nota,client_id,jatuh_tempo,order_items(subtotal_setelah_diskon)&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&jatuh_tempo=not.is.null");
+      setOrderPiutangList((semuaOrderPiutang || []).map((o) => ({
+        id: o.id,
+        no_nota: o.no_nota,
+        client_id: o.client_id,
+        sales_id: salesIdMap[o.client_id] || null,
+        jatuh_tempo: new Date(o.jatuh_tempo),
+        nilai: (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0),
+      })));
       const sekarang = new Date();
       const batas3Hari = new Date(sekarang.getTime() + 3 * 86400000);
       const terlambatMap = {}; // { client_id: hari paling lama terlambat }
@@ -3684,47 +3693,87 @@ function PiutangPage({ token }) {
 
   function cetakPiutang() {
     const tanggalCetak = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
-    const namaSalesTerpilih = filterSales ? (salesList.find((s) => s.id === filterSales)?.nama || "") : "";
-    const baris = rowsTampil.map((r) => {
-      const sales = salesList.find((s) => s.id === r.sales_id);
-      let statusTeks = "Aman";
-      let statusWarna = "#28685D";
-      if (r.hariTerlambat !== null) {
-        statusTeks = `Terlambat ${r.hariTerlambat} hari`;
-        statusWarna = "#C0392B";
-      } else if (r.sisaHariJatuhTempo !== null) {
-        statusTeks = r.sisaHariJatuhTempo === 0 ? "Jatuh tempo hari ini" : `Jatuh tempo ${r.sisaHariJatuhTempo} hari lagi`;
-        statusWarna = "#8A6A1A";
+    const sekarang = new Date();
+    const namaTokoMap = {}; // { client_id: nama }
+    rows.forEach((r) => { namaTokoMap[r.client_id] = r.nama; });
+
+    // Filter per-order sesuai filter Sales yang aktif, lalu kelompokkan per sales
+    const orderTerfilter = orderPiutangList.filter((o) => !filterSales || o.sales_id === filterSales);
+    const grupPerSales = {}; // { sales_id_or_"tanpa": [order,...] }
+    orderTerfilter.forEach((o) => {
+      const key = o.sales_id || "tanpa";
+      if (!grupPerSales[key]) grupPerSales[key] = [];
+      grupPerSales[key].push(o);
+    });
+
+    function statusOrder(jt) {
+      if (jt < sekarang) {
+        const hari = Math.floor((sekarang - jt) / (1000 * 60 * 60 * 24));
+        return { teks: `Terlambat ${hari} hari`, warna: "#C0392B" };
       }
-      if (r.melebihi_limit) statusTeks += " (Melebihi Limit)";
+      const sisaHari = Math.ceil((jt - sekarang) / (1000 * 60 * 60 * 24));
+      if (sisaHari <= 3) return { teks: sisaHari === 0 ? "Jatuh tempo hari ini" : `Jatuh tempo ${sisaHari} hari lagi`, warna: "#8A6A1A" };
+      return { teks: "Aman", warna: "#28685D" };
+    }
+
+    // Urutkan kelompok sales berdasarkan nama (yang tanpa sales taruh paling akhir)
+    const kunciGrup = Object.keys(grupPerSales).sort((a, b) => {
+      if (a === "tanpa") return 1;
+      if (b === "tanpa") return -1;
+      const namaA = salesList.find((s) => s.id === a)?.nama || "";
+      const namaB = salesList.find((s) => s.id === b)?.nama || "";
+      return namaA.localeCompare(namaB);
+    });
+
+    let totalSemua = 0;
+    const blokSales = kunciGrup.map((key) => {
+      const sales = key === "tanpa" ? null : salesList.find((s) => s.id === key);
+      const judulGrup = sales ? `${sales.nama} (${sales.kode})` : "Tanpa Sales";
+      const ordersGrup = grupPerSales[key].sort((a, b) => {
+        if (urutan === "jatuh_tempo") return a.jatuh_tempo - b.jatuh_tempo;
+        return b.nilai - a.nilai;
+      });
+      let totalGrup = 0;
+      const baris = ordersGrup.map((o) => {
+        const st = statusOrder(o.jatuh_tempo);
+        totalGrup += o.nilai;
+        return `
+          <tr>
+            <td>${namaTokoMap[o.client_id] || "-"}</td>
+            <td>${o.no_nota}</td>
+            <td>${o.jatuh_tempo.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
+            <td style="text-align:right">${rupiah(o.nilai)}</td>
+            <td style="color:${st.warna};font-weight:700">${st.teks}</td>
+          </tr>`;
+      }).join("");
+      totalSemua += totalGrup;
       return `
-        <tr>
-          <td>${r.nama}</td>
-          <td>${sales ? `${sales.nama} (${sales.kode})` : "-"}</td>
-          <td>${r.jatuhTempoTerdekat ? r.jatuhTempoTerdekat.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
-          <td style="text-align:right">${rupiah(r.total_piutang)}</td>
-          <td style="color:${statusWarna};font-weight:700">${statusTeks}</td>
-        </tr>`;
+        <h2>${judulGrup}</h2>
+        <table>
+          <thead><tr><th>Toko</th><th>No. Pesanan</th><th>Jatuh Tempo</th><th>Nilai</th><th>Status</th></tr></thead>
+          <tbody>${baris}</tbody>
+          <tfoot><tr><td colspan="3">Subtotal ${judulGrup}</td><td style="text-align:right">${rupiah(totalGrup)}</td><td></td></tr></tfoot>
+        </table>`;
     }).join("");
-    const totalSemua = rowsTampil.reduce((sum, r) => sum + Number(r.total_piutang || 0), 0);
+
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rekap Piutang</title>
       <style>
         body { font-family: Arial, sans-serif; padding: 24px; color: #24272B; }
         h1 { font-size: 18px; margin: 0 0 2px; }
-        p.sub { font-size: 12px; color: #6B6F75; margin: 0 0 18px; }
+        h2 { font-size: 14px; margin: 22px 0 8px; padding: 6px 10px; background: #F7F5F1; border-left: 4px solid #E8A426; }
+        h2:first-of-type { margin-top: 14px; }
+        p.sub { font-size: 12px; color: #6B6F75; margin: 0 0 6px; }
+        p.total-akhir { font-size: 14px; font-weight: 700; margin: 20px 0 0; text-align: right; }
         table { width: 100%; border-collapse: collapse; font-size: 12px; }
         th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
         th { background: #F7F5F1; }
-        tfoot td { font-weight: 700; background: #F7F5F1; }
-        @media print { body { padding: 0; } }
+        tfoot td { font-weight: 700; background: #FAFAF8; }
+        @media print { body { padding: 0; } h2 { break-after: avoid; } table { break-inside: avoid; } }
       </style></head><body>
       <h1>Rekap Piutang per Toko</h1>
-      <p class="sub">Dicetak ${tanggalCetak}${namaSalesTerpilih ? ` - Sales: ${namaSalesTerpilih}` : ""} - Diurutkan: ${urutan === "jatuh_tempo" ? "Jatuh Tempo Terdekat" : "Total Piutang Terbesar"}</p>
-      <table>
-        <thead><tr><th>Toko</th><th>Sales</th><th>Jatuh Tempo</th><th>Total Piutang</th><th>Status</th></tr></thead>
-        <tbody>${baris}</tbody>
-        <tfoot><tr><td colspan="3">Total</td><td style="text-align:right">${rupiah(totalSemua)}</td><td></td></tr></tfoot>
-      </table>
+      <p class="sub">Dicetak ${tanggalCetak} - Diurutkan: ${urutan === "jatuh_tempo" ? "Jatuh Tempo Terdekat" : "Nilai Terbesar"}</p>
+      ${blokSales || "<p>Tidak ada data piutang.</p>"}
+      <p class="total-akhir">Total Keseluruhan: ${rupiah(totalSemua)}</p>
       </body></html>`;
     const w = window.open("", "_blank");
     w.document.write(html);
