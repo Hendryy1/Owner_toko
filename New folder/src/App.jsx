@@ -3696,7 +3696,13 @@ function PiutangPage({ token }) {
     const tanggalCetak = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
     const sekarang = new Date();
     const namaTokoMap = {}; // { client_id: nama }
-    rows.forEach((r) => { namaTokoMap[r.client_id] = r.nama; });
+    const jatuhTempoTerdekatPerClient = {}; // { client_id: Date jatuh tempo terdekat toko itu, atau null }
+    const totalPiutangPerClient = {}; // { client_id: total_piutang toko itu }
+    rows.forEach((r) => {
+      namaTokoMap[r.client_id] = r.nama;
+      jatuhTempoTerdekatPerClient[r.client_id] = r.jatuhTempoTerdekat;
+      totalPiutangPerClient[r.client_id] = r.total_piutang;
+    });
 
     // Filter per-order sesuai filter Sales yang aktif, lalu kelompokkan per sales
     const orderTerfilter = orderPiutangList.filter((o) => !filterSales || o.sales_id === filterSales);
@@ -3732,12 +3738,24 @@ function PiutangPage({ token }) {
       const sales = key === "tanpa" ? null : salesList.find((s) => s.id === key);
       const judulGrup = sales ? `${sales.nama} (${sales.kode})` : "Tanpa Sales";
       const ordersGrup = grupPerSales[key].sort((a, b) => {
-        // Toko yang sama dikelompokkan bersebelahan dulu, baru di dalamnya
-        // diurutkan sesuai pilihan urutan (jatuh tempo/nilai) - toko lain
-        // tidak menyelip di antara pesanan-pesanan toko yang sama.
-        const namaTokoA = namaTokoMap[a.client_id] || "";
-        const namaTokoB = namaTokoMap[b.client_id] || "";
-        if (namaTokoA !== namaTokoB) return namaTokoA.localeCompare(namaTokoB);
+        // Pesanan dari akun toko (client_id) yang sama selalu dikelompokkan
+        // bersebelahan. Antar akun toko yang BEDA, urutan kelompoknya
+        // ditentukan oleh jatuh tempo terdekat/total piutang TOKO itu -
+        // bukan tanggal per-pesanan - supaya toko lain tidak menyelip di
+        // antara pesanan-pesanan satu toko yang sama.
+        if (a.client_id !== b.client_id) {
+          if (urutan === "jatuh_tempo") {
+            const nilaiA = jatuhTempoTerdekatPerClient[a.client_id] ? jatuhTempoTerdekatPerClient[a.client_id].getTime() : Infinity;
+            const nilaiB = jatuhTempoTerdekatPerClient[b.client_id] ? jatuhTempoTerdekatPerClient[b.client_id].getTime() : Infinity;
+            if (nilaiA !== nilaiB) return nilaiA - nilaiB;
+          } else {
+            const totalA = totalPiutangPerClient[a.client_id] || 0;
+            const totalB = totalPiutangPerClient[b.client_id] || 0;
+            if (totalA !== totalB) return totalB - totalA;
+          }
+          return (namaTokoMap[a.client_id] || "").localeCompare(namaTokoMap[b.client_id] || "");
+        }
+        // Di dalam toko yang sama, urutkan tiap pesanannya sendiri
         if (urutan === "jatuh_tempo") {
           const nilaiA = a.jatuh_tempo ? a.jatuh_tempo.getTime() : Infinity;
           const nilaiB = b.jatuh_tempo ? b.jatuh_tempo.getTime() : Infinity;
