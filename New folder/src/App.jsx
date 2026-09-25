@@ -4751,6 +4751,8 @@ function RekapTokoPage({ token }) {
   const [editForm, setEditForm] = useState({ alamat: "", telp: "", kodeSales: "", catatan: "", namaOwner: "", tanggalLahir: "", jenisUsaha: "", provinsi: "", email: "", kotaAcuanHarga: "" });
   const [saving, setSaving] = useState(false);
   const [hanyaTidakAktif, setHanyaTidakAktif] = useState(false);
+  const [filterSales, setFilterSales] = useState("");
+  const [urutan, setUrutan] = useState("nama"); // nama | terlama | terbaru
 
   const BATAS_HARI_TIDAK_AKTIF = 30;
 
@@ -4857,12 +4859,33 @@ function RekapTokoPage({ token }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
         <PageHeader title="Rekap Toko" subtitle="Klik ikon edit untuk ubah Alamat, No HP, Kode Sales, atau Catatan" />
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 600, color: "#24272B", cursor: "pointer", flexShrink: 0, marginTop: 4 }}>
-          <input type="checkbox" checked={hanyaTidakAktif} onChange={(e) => setHanyaTidakAktif(e.target.checked)} />
-          Tampilkan yang tidak aktif saja ({">"}{BATAS_HARI_TIDAK_AKTIF} hari)
-        </label>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginTop: 4 }}>
+          <select
+            value={filterSales}
+            onChange={(e) => setFilterSales(e.target.value)}
+            style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5, fontWeight: 600, color: "#24272B", background: "#fff" }}
+          >
+            <option value="">Semua Sales</option>
+            {salesList.map((s) => (
+              <option key={s.id} value={s.id}>{s.nama} ({s.kode})</option>
+            ))}
+          </select>
+          <select
+            value={urutan}
+            onChange={(e) => setUrutan(e.target.value)}
+            style={{ padding: "7px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5, fontWeight: 600, color: "#24272B", background: "#fff" }}
+          >
+            <option value="nama">Urutkan: Nama Toko (A-Z)</option>
+            <option value="terlama">Urutkan: Terakhir Order (paling lama)</option>
+            <option value="terbaru">Urutkan: Terakhir Order (paling baru)</option>
+          </select>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 600, color: "#24272B", cursor: "pointer", flexShrink: 0 }}>
+            <input type="checkbox" checked={hanyaTidakAktif} onChange={(e) => setHanyaTidakAktif(e.target.checked)} />
+            Tampilkan yang tidak aktif saja ({">"}{BATAS_HARI_TIDAK_AKTIF} hari)
+          </label>
+        </div>
       </div>
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
@@ -4877,11 +4900,24 @@ function RekapTokoPage({ token }) {
           <tbody>
             {clients
               .filter((c) => {
-                if (!hanyaTidakAktif) return true;
-                const hari = hariSejakOrder(c.id);
-                return hari === null || hari > BATAS_HARI_TIDAK_AKTIF;
+                if (hanyaTidakAktif) {
+                  const hari = hariSejakOrder(c.id);
+                  if (!(hari === null || hari > BATAS_HARI_TIDAK_AKTIF)) return false;
+                }
+                if (filterSales && c.sales_id !== filterSales) return false;
+                return true;
               })
-              .sort((a, b) => (a.kode || "").localeCompare(b.kode || ""))
+              .sort((a, b) => {
+                if (urutan === "terlama" || urutan === "terbaru") {
+                  const hariA = hariSejakOrder(a.id);
+                  const hariB = hariSejakOrder(b.id);
+                  // Belum pernah order dianggap paling lama (paling "tua")
+                  const nilaiA = hariA === null ? Infinity : hariA;
+                  const nilaiB = hariB === null ? Infinity : hariB;
+                  return urutan === "terlama" ? nilaiB - nilaiA : nilaiA - nilaiB;
+                }
+                return (a.nama || "").localeCompare(b.nama || "");
+              })
               .map((c) => {
               const hari = hariSejakOrder(c.id);
               const tidakAktif = hari === null || hari > BATAS_HARI_TIDAK_AKTIF;
