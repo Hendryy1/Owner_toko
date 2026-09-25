@@ -3732,6 +3732,12 @@ function PiutangPage({ token }) {
       const sales = key === "tanpa" ? null : salesList.find((s) => s.id === key);
       const judulGrup = sales ? `${sales.nama} (${sales.kode})` : "Tanpa Sales";
       const ordersGrup = grupPerSales[key].sort((a, b) => {
+        // Toko yang sama dikelompokkan bersebelahan dulu, baru di dalamnya
+        // diurutkan sesuai pilihan urutan (jatuh tempo/nilai) - toko lain
+        // tidak menyelip di antara pesanan-pesanan toko yang sama.
+        const namaTokoA = namaTokoMap[a.client_id] || "";
+        const namaTokoB = namaTokoMap[b.client_id] || "";
+        if (namaTokoA !== namaTokoB) return namaTokoA.localeCompare(namaTokoB);
         if (urutan === "jatuh_tempo") {
           const nilaiA = a.jatuh_tempo ? a.jatuh_tempo.getTime() : Infinity;
           const nilaiB = b.jatuh_tempo ? b.jatuh_tempo.getTime() : Infinity;
