@@ -3682,6 +3682,56 @@ function PiutangPage({ token }) {
     setSaving(false);
   }
 
+  function cetakPiutang() {
+    const tanggalCetak = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
+    const namaSalesTerpilih = filterSales ? (salesList.find((s) => s.id === filterSales)?.nama || "") : "";
+    const baris = rowsTampil.map((r) => {
+      const sales = salesList.find((s) => s.id === r.sales_id);
+      let statusTeks = "Aman";
+      let statusWarna = "#28685D";
+      if (r.hariTerlambat !== null) {
+        statusTeks = `Terlambat ${r.hariTerlambat} hari`;
+        statusWarna = "#C0392B";
+      } else if (r.sisaHariJatuhTempo !== null) {
+        statusTeks = r.sisaHariJatuhTempo === 0 ? "Jatuh tempo hari ini" : `Jatuh tempo ${r.sisaHariJatuhTempo} hari lagi`;
+        statusWarna = "#8A6A1A";
+      }
+      if (r.melebihi_limit) statusTeks += " (Melebihi Limit)";
+      return `
+        <tr>
+          <td>${r.nama}</td>
+          <td>${sales ? `${sales.nama} (${sales.kode})` : "-"}</td>
+          <td>${r.jatuhTempoTerdekat ? r.jatuhTempoTerdekat.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
+          <td style="text-align:right">${rupiah(r.total_piutang)}</td>
+          <td style="color:${statusWarna};font-weight:700">${statusTeks}</td>
+        </tr>`;
+    }).join("");
+    const totalSemua = rowsTampil.reduce((sum, r) => sum + Number(r.total_piutang || 0), 0);
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rekap Piutang</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 24px; color: #24272B; }
+        h1 { font-size: 18px; margin: 0 0 2px; }
+        p.sub { font-size: 12px; color: #6B6F75; margin: 0 0 18px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+        th { background: #F7F5F1; }
+        tfoot td { font-weight: 700; background: #F7F5F1; }
+        @media print { body { padding: 0; } }
+      </style></head><body>
+      <h1>Rekap Piutang per Toko</h1>
+      <p class="sub">Dicetak ${tanggalCetak}${namaSalesTerpilih ? ` - Sales: ${namaSalesTerpilih}` : ""} - Diurutkan: ${urutan === "jatuh_tempo" ? "Jatuh Tempo Terdekat" : "Total Piutang Terbesar"}</p>
+      <table>
+        <thead><tr><th>Toko</th><th>Sales</th><th>Jatuh Tempo</th><th>Total Piutang</th><th>Status</th></tr></thead>
+        <tbody>${baris}</tbody>
+        <tfoot><tr><td colspan="3">Total</td><td style="text-align:right">${rupiah(totalSemua)}</td><td></td></tr></tfoot>
+      </table>
+      </body></html>`;
+    const w = window.open("", "_blank");
+    w.document.write(html);
+    w.document.close();
+    w.onload = () => w.print();
+  }
+
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
@@ -3690,6 +3740,12 @@ function PiutangPage({ token }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
         <PageHeader title="Piutang per Toko" subtitle="Toko dengan tagihan belum lunas - klik Limit Kredit untuk ubah" />
         <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginTop: 4 }}>
+          <button
+            onClick={cetakPiutang}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 8, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}
+          >
+            <Printer size={14} /> Cetak
+          </button>
           <select
             value={filterSales}
             onChange={(e) => setFilterSales(e.target.value)}
