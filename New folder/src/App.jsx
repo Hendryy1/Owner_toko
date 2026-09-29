@@ -5652,6 +5652,9 @@ function RekapNotaPage({ token }) {
   const [editingBayarId, setEditingBayarId] = useState(null);
   const [editBayarValue, setEditBayarValue] = useState("");
   const [savingBayar, setSavingBayar] = useState(false);
+  const [editingCashbackId, setEditingCashbackId] = useState(null);
+  const [editCashbackValue, setEditCashbackValue] = useState("");
+  const [savingCashback, setSavingCashback] = useState(false);
 
   useEffect(() => {
     supabaseFetch(token, "nota_settings?select=*&limit=1")
@@ -5665,7 +5668,7 @@ function RekapNotaPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,jumlah_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,alasan_dibatalkan,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran,sales!clients_sales_id_fkey(kode,nama)),order_items(*,products(kode,nama,satuan,nomor_produk,harga_jual)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
+        "orders?select=id,client_id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,jumlah_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,alasan_dibatalkan,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran,sales!clients_sales_id_fkey(kode,nama)),order_items(*,products(kode,nama,satuan,nomor_produk,harga_jual)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -5874,6 +5877,44 @@ function RekapNotaPage({ token }) {
     setSavingBayar(false);
   }
 
+  function startEditCashback(o) {
+    setEditingCashbackId(o.id);
+    const cb = o.cashback_ledger?.[0];
+    setEditCashbackValue(cb ? String(cb.nilai_cashback) : "");
+  }
+
+  async function saveCashback(o) {
+    const nilai = editCashbackValue === "" ? 0 : Number(editCashbackValue);
+    if (isNaN(nilai) || nilai < 0) {
+      alert("Cashback harus angka dan tidak boleh negatif.");
+      return;
+    }
+    setSavingCashback(true);
+    try {
+      const cb = o.cashback_ledger?.[0];
+      if (cb) {
+        // Sudah ada entri cashback - update nilainya saja (status tidak diubah)
+        await supabaseFetch(token, `cashback_ledger?id=eq.${cb.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ nilai_cashback: nilai }),
+        });
+        setOrders((prev) => prev.map((ord) => (
+          ord.id === o.id ? { ...ord, cashback_ledger: ord.cashback_ledger.map((c) => (c.id === cb.id ? { ...c, nilai_cashback: nilai } : c)) } : ord
+        )));
+      } else {
+        // Belum ada entri cashback untuk nota ini - buat baru manual
+        const inserted = await supabaseFetch(token, "cashback_ledger", {
+          method: "POST",
+          headers: { Prefer: "return=representation" },
+          body: JSON.stringify({ order_id: o.id, client_id: o.client_id, nilai_cashback: nilai, status: "belum_dibayar" }),
+        });
+        setOrders((prev) => prev.map((ord) => (ord.id === o.id ? { ...ord, cashback_ledger: [inserted[0]] } : ord)));
+      }
+      setEditingCashbackId(null);
+    } catch (e) { alert("Gagal simpan cashback: " + e.message); }
+    setSavingCashback(false);
+  }
+
   const [activeTab, setActiveTab] = useState("nota"); // "nota" | "cashback"
 
   if (loading) return <LoadingState />;
@@ -6037,11 +6078,31 @@ function RekapNotaPage({ token }) {
                     {rupiah(Math.max(0, orderTotal(o) - Number(o.jumlah_bayar || 0)))}
                   </td>
                   <td style={{ padding: "12px 14px" }}>
-                    {cb ? (
-                      <span style={{ background: cb.status === "sudah_dibayar" ? "#D8E9E6" : "#FBF0D9", color: cb.status === "sudah_dibayar" ? "#28685D" : "#8A6A1A", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
-                        {rupiah(cb.nilai_cashback)} {cb.status === "sudah_dibayar" ? "(Dibayar)" : "(Belum)"}
-                      </span>
-                    ) : "-"}
+                    {editingCashbackId === o.id ? (
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input
+                          type="number" value={editCashbackValue} onChange={(e) => setEditCashbackValue(e.target.value)}
+                          autoFocus
+                          style={{ width: 110, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }}
+                        />
+                        <button onClick={() => saveCashback(o)} disabled={savingCashback} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11.5, fontWeight: 700 }}>
+                          Simpan
+                        </button>
+                        <button onClick={() => setEditingCashbackId(null)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11.5 }}>
+                          Batal
+                        </button>
+                      </div>
+                    ) : cb ? (
+                      <button onClick={() => startEditCashback(o)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>
+                        <span style={{ background: cb.status === "sudah_dibayar" ? "#D8E9E6" : "#FBF0D9", color: cb.status === "sudah_dibayar" ? "#28685D" : "#8A6A1A", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
+                          {rupiah(cb.nilai_cashback)} {cb.status === "sudah_dibayar" ? "(Dibayar)" : "(Belum)"}
+                        </span>
+                      </button>
+                    ) : (
+                      <button onClick={() => startEditCashback(o)} style={{ background: "none", border: "none", padding: 0, color: "#24272B", fontSize: 12.5, cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted" }}>
+                        Isi Cashback
+                      </button>
+                    )}
                   </td>
                   <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>
                     <div style={{ display: "flex", gap: 6 }}>
