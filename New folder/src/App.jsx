@@ -5746,7 +5746,7 @@ function RekapNotaPage({ token }) {
     if (filterMonth !== 0 && d.getMonth() + 1 !== Number(filterMonth)) return false;
     if (filterStatus !== "semua" && o.status !== filterStatus) return false;
     return true;
-  }); // urutan mengikuti query asli (created_at.desc) - pesanan terbaru duluan
+  }).sort((a, b) => (b.no_nota || "").localeCompare(a.no_nota || "")); // diurutkan sesuai No. Nota (terbesar/terbaru duluan)
 
   const totalCashbackBelumDibayar = filtered.reduce((s, o) => {
     const cb = o.cashback_ledger?.[0];
@@ -7334,8 +7334,8 @@ function ProsesPengirimanPage({ token, role }) {
   const ordersUrut = [...orders].sort((a, b) => {
     const aReview = isMenungguReviewOwner(a);
     const bReview = isMenungguReviewOwner(b);
-    if (aReview === bReview) return 0;
-    return aReview ? 1 : -1;
+    if (aReview !== bReview) return aReview ? 1 : -1;
+    return (a.no_nota || "").localeCompare(b.no_nota || "");
   });
 
   return (
