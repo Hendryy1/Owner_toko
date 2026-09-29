@@ -5649,6 +5649,9 @@ function RekapNotaPage({ token }) {
   const [printingOrder, setPrintingOrder] = useState(null);
   const [printingType, setPrintingType] = useState("nota");
   const [notaSettings, setNotaSettings] = useState(null);
+  const [editingBayarId, setEditingBayarId] = useState(null);
+  const [editBayarValue, setEditBayarValue] = useState("");
+  const [savingBayar, setSavingBayar] = useState(false);
 
   useEffect(() => {
     supabaseFetch(token, "nota_settings?select=*&limit=1")
@@ -5662,7 +5665,7 @@ function RekapNotaPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,alasan_dibatalkan,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran,sales!clients_sales_id_fkey(kode,nama)),order_items(*,products(kode,nama,satuan,nomor_produk,harga_jual)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
+        "orders?select=id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,jumlah_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,alasan_dibatalkan,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran,sales!clients_sales_id_fkey(kode,nama)),order_items(*,products(kode,nama,satuan,nomor_produk,harga_jual)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -5698,9 +5701,10 @@ function RekapNotaPage({ token }) {
 
   // Status perjalanan pesanan - satu label yang mewakili semua tahap
   function exportCSV() {
-    const header = ["No Nota", "Tanggal", "Kode Toko", "Nama Toko", "Status", "Metode Bayar", "Status Bayar", "Total"];
+    const header = ["No Nota", "Tanggal", "Kode Toko", "Nama Toko", "Status", "Metode Bayar", "Status Bayar", "Total", "Jumlah Bayar", "Sisa Bayar"];
     const rows = filtered.map((o) => {
       const total = (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0);
+      const jumlahBayar = Number(o.jumlah_bayar || 0);
       return [
         o.no_nota,
         new Date(o.created_at).toLocaleDateString("id-ID"),
@@ -5710,6 +5714,8 @@ function RekapNotaPage({ token }) {
         o.metode_bayar || "",
         o.status_bayar || "",
         total,
+        jumlahBayar,
+        Math.max(0, total - jumlahBayar),
       ];
     });
     const csvContent = [header, ...rows]
@@ -5730,9 +5736,15 @@ function RekapNotaPage({ token }) {
       ? `Periode: ${tanggalMulai ? new Date(tanggalMulai).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "awal"} s/d ${tanggalAkhir ? new Date(tanggalAkhir).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "sekarang"}`
       : `Periode: ${BULAN[filterMonth]} ${filterYear}`;
     let totalSemua = 0;
+    let totalBayarSemua = 0;
+    let totalSisaSemua = 0;
     const baris = filtered.map((o) => {
       const total = orderTotal(o);
+      const jumlahBayar = Number(o.jumlah_bayar || 0);
+      const sisaBayar = Math.max(0, total - jumlahBayar);
       totalSemua += o.status !== "ditolak" ? total : 0;
+      totalBayarSemua += o.status !== "ditolak" ? jumlahBayar : 0;
+      totalSisaSemua += o.status !== "ditolak" ? sisaBayar : 0;
       const st = statusPerjalanan(o);
       return `
         <tr>
@@ -5743,6 +5755,8 @@ function RekapNotaPage({ token }) {
           <td>${o.status_bayar || "-"}</td>
           <td>${st.label}</td>
           <td style="text-align:right">${rupiah(total)}</td>
+          <td style="text-align:right">${rupiah(jumlahBayar)}</td>
+          <td style="text-align:right;${sisaBayar > 0 ? "color:#C0392B;font-weight:700" : ""}">${rupiah(sisaBayar)}</td>
         </tr>`;
     }).join("");
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rekap Nota</title>
@@ -5759,9 +5773,11 @@ function RekapNotaPage({ token }) {
       <h1>Rekap Nota</h1>
       <p class="sub">Dicetak ${tanggalCetak} - ${keteranganPeriode}${filterStatus !== "semua" ? ` - Status: ${filterStatus}` : ""} - Total ${filtered.length} nota</p>
       <table>
-        <thead><tr><th>No. Nota</th><th>Tanggal</th><th>Toko</th><th>Metode Bayar</th><th>Status Bayar</th><th>Status</th><th>Total</th></tr></thead>
+        <thead><tr><th>No. Nota</th><th>Tanggal</th><th>Toko</th><th>Metode Bayar</th><th>Status Bayar</th><th>Status</th><th>Total</th><th>Jumlah Bayar</th><th>Sisa Bayar</th></tr></thead>
         <tbody>${baris}</tbody>
-        <tfoot><tr><td colspan="6">Total Omzet (tidak termasuk yang ditolak)</td><td style="text-align:right">${rupiah(totalSemua)}</td></tr></tfoot>
+        <tfoot>
+          <tr><td colspan="6">Total Omzet (tidak termasuk yang ditolak)</td><td style="text-align:right">${rupiah(totalSemua)}</td><td style="text-align:right">${rupiah(totalBayarSemua)}</td><td style="text-align:right">${rupiah(totalSisaSemua)}</td></tr>
+        </tfoot>
       </table>
       </body></html>`;
     const w = window.open("", "_blank");
@@ -5833,6 +5849,29 @@ function RekapNotaPage({ token }) {
       )));
     } catch (e) { alert("Gagal update: " + e.message); }
     setProcessingId(null);
+  }
+
+  function startEditBayar(o) {
+    setEditingBayarId(o.id);
+    setEditBayarValue(o.jumlah_bayar ? String(o.jumlah_bayar) : "");
+  }
+
+  async function saveJumlahBayar(orderId) {
+    const nilai = editBayarValue === "" ? 0 : Number(editBayarValue);
+    if (isNaN(nilai) || nilai < 0) {
+      alert("Jumlah bayar harus angka dan tidak boleh negatif.");
+      return;
+    }
+    setSavingBayar(true);
+    try {
+      await supabaseFetch(token, `orders?id=eq.${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ jumlah_bayar: nilai }),
+      });
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, jumlah_bayar: nilai } : o)));
+      setEditingBayarId(null);
+    } catch (e) { alert("Gagal simpan jumlah bayar: " + e.message); }
+    setSavingBayar(false);
   }
 
   const [activeTab, setActiveTab] = useState("nota"); // "nota" | "cashback"
@@ -5947,7 +5986,7 @@ function RekapNotaPage({ token }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 720 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
-              {["No Nota", "Toko", "Jenis Bayar", "Jatuh Tempo", "Status", "Total", "Cashback", ""].map((h) => (
+              {["No Nota", "Toko", "Jenis Bayar", "Jatuh Tempo", "Status", "Total", "Jumlah Bayar", "Sisa Bayar", "Cashback", ""].map((h) => (
                 <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
               ))}
             </tr>
@@ -5973,6 +6012,30 @@ function RekapNotaPage({ token }) {
                     </span>
                   </td>
                   <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(orderTotal(o))}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    {editingBayarId === o.id ? (
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        <input
+                          type="number" value={editBayarValue} onChange={(e) => setEditBayarValue(e.target.value)}
+                          autoFocus
+                          style={{ width: 110, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }}
+                        />
+                        <button onClick={() => saveJumlahBayar(o.id)} disabled={savingBayar} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11.5, fontWeight: 700 }}>
+                          Simpan
+                        </button>
+                        <button onClick={() => setEditingBayarId(null)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11.5 }}>
+                          Batal
+                        </button>
+                      </div>
+                    ) : (
+                      <button onClick={() => startEditBayar(o)} style={{ background: "none", border: "none", padding: 0, color: "#24272B", fontSize: 12.5, cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted" }}>
+                        {o.jumlah_bayar ? rupiah(o.jumlah_bayar) : "Isi Jumlah Bayar"}
+                      </button>
+                    )}
+                  </td>
+                  <td style={{ padding: "12px 14px", fontWeight: 700, color: (orderTotal(o) - Number(o.jumlah_bayar || 0)) > 0 ? "#C0392B" : "#28685D" }}>
+                    {rupiah(Math.max(0, orderTotal(o) - Number(o.jumlah_bayar || 0)))}
+                  </td>
                   <td style={{ padding: "12px 14px" }}>
                     {cb ? (
                       <span style={{ background: cb.status === "sudah_dibayar" ? "#D8E9E6" : "#FBF0D9", color: cb.status === "sudah_dibayar" ? "#28685D" : "#8A6A1A", padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
