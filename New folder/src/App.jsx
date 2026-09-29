@@ -5643,6 +5643,8 @@ function RekapNotaPage({ token }) {
   const [filterYear, setFilterYear] = useState(now.getFullYear());
   const [filterMonth, setFilterMonth] = useState(0); // 0 = semua bulan
   const [filterStatus, setFilterStatus] = useState("semua");
+  const [tanggalMulai, setTanggalMulai] = useState(""); // filter tanggal spesifik (opsional, lebih presisi dari Tahun/Bulan)
+  const [tanggalAkhir, setTanggalAkhir] = useState("");
   const [processingId, setProcessingId] = useState(null);
   const [printingOrder, setPrintingOrder] = useState(null);
   const [printingType, setPrintingType] = useState("nota");
@@ -5722,6 +5724,52 @@ function RekapNotaPage({ token }) {
     URL.revokeObjectURL(url);
   }
 
+  function cetakRekapNota() {
+    const tanggalCetak = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
+    const keteranganPeriode = (tanggalMulai || tanggalAkhir)
+      ? `Periode: ${tanggalMulai ? new Date(tanggalMulai).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "awal"} s/d ${tanggalAkhir ? new Date(tanggalAkhir).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "sekarang"}`
+      : `Periode: ${BULAN[filterMonth]} ${filterYear}`;
+    let totalSemua = 0;
+    const baris = filtered.map((o) => {
+      const total = orderTotal(o);
+      totalSemua += o.status !== "ditolak" ? total : 0;
+      const st = statusPerjalanan(o);
+      return `
+        <tr>
+          <td>${o.no_nota}</td>
+          <td>${new Date(o.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
+          <td>${o.clients?.nama || "-"} (${o.clients?.kode || "-"})</td>
+          <td>${o.metode_bayar || "-"}</td>
+          <td>${o.status_bayar || "-"}</td>
+          <td>${st.label}</td>
+          <td style="text-align:right">${rupiah(total)}</td>
+        </tr>`;
+    }).join("");
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rekap Nota</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 24px; color: #24272B; }
+        h1 { font-size: 18px; margin: 0 0 2px; }
+        p.sub { font-size: 12px; color: #6B6F75; margin: 0 0 18px; }
+        table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+        th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
+        th { background: #F7F5F1; }
+        tfoot td { font-weight: 700; background: #FAFAF8; }
+        @media print { body { padding: 0; } }
+      </style></head><body>
+      <h1>Rekap Nota</h1>
+      <p class="sub">Dicetak ${tanggalCetak} - ${keteranganPeriode}${filterStatus !== "semua" ? ` - Status: ${filterStatus}` : ""} - Total ${filtered.length} nota</p>
+      <table>
+        <thead><tr><th>No. Nota</th><th>Tanggal</th><th>Toko</th><th>Metode Bayar</th><th>Status Bayar</th><th>Status</th><th>Total</th></tr></thead>
+        <tbody>${baris}</tbody>
+        <tfoot><tr><td colspan="6">Total Omzet (tidak termasuk yang ditolak)</td><td style="text-align:right">${rupiah(totalSemua)}</td></tr></tfoot>
+      </table>
+      </body></html>`;
+    const w = window.open("", "_blank");
+    w.document.write(html);
+    w.document.close();
+    w.onload = () => w.print();
+  }
+
   function statusPerjalanan(o) {
     if (o.status === "ditolak") return o.alasan_dibatalkan ? { label: "Dibatalkan Toko", bg: "#FBEAEA", fg: "#C0392B" } : { label: "Ditolak Admin", bg: "#FBEAEA", fg: "#C0392B" };
     if (o.status === "menunggu_persetujuan") return { label: "Menunggu Persetujuan", bg: "#F7F5F1", fg: "#6B6F75" };
@@ -5742,8 +5790,15 @@ function RekapNotaPage({ token }) {
 
   const filtered = orders.filter((o) => {
     const d = new Date(o.created_at);
-    if (d.getFullYear() !== Number(filterYear)) return false;
-    if (filterMonth !== 0 && d.getMonth() + 1 !== Number(filterMonth)) return false;
+    // Kalau filter tanggal spesifik diisi, pakai itu (lebih presisi) -
+    // Tahun/Bulan diabaikan supaya tidak tabrakan.
+    if (tanggalMulai || tanggalAkhir) {
+      if (tanggalMulai && d < new Date(tanggalMulai + "T00:00:00")) return false;
+      if (tanggalAkhir && d > new Date(tanggalAkhir + "T23:59:59")) return false;
+    } else {
+      if (d.getFullYear() !== Number(filterYear)) return false;
+      if (filterMonth !== 0 && d.getMonth() + 1 !== Number(filterMonth)) return false;
+    }
     if (filterStatus !== "semua" && o.status !== filterStatus) return false;
     return true;
   }).sort((a, b) => {
@@ -5807,13 +5862,22 @@ function RekapNotaPage({ token }) {
         <StatCard label="Cashback Terbayarkan" value={rupiah(totalCashbackTerbayarkan)} color="#28685D" bg="#D8E9E6" small />
       </div>
 
-      <div style={{ display: "flex", gap: 10, marginBottom: 18 }}>
-        <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+      <div style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={filterYear} onChange={(e) => { setFilterYear(Number(e.target.value)); setTanggalMulai(""); setTanggalAkhir(""); }} disabled={!!(tanggalMulai || tanggalAkhir)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff", opacity: (tanggalMulai || tanggalAkhir) ? 0.5 : 1 }}>
           {yearsAvailable.map((y) => <option key={y} value={y}>{y}</option>)}
         </select>
-        <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+        <select value={filterMonth} onChange={(e) => { setFilterMonth(Number(e.target.value)); setTanggalMulai(""); setTanggalAkhir(""); }} disabled={!!(tanggalMulai || tanggalAkhir)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff", opacity: (tanggalMulai || tanggalAkhir) ? 0.5 : 1 }}>
           {BULAN.map((b, i) => <option key={i} value={i}>{b}</option>)}
         </select>
+        <span style={{ fontSize: 12, color: "#9CA0A6" }}>atau tanggal:</span>
+        <input type="date" value={tanggalMulai} onChange={(e) => setTanggalMulai(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }} />
+        <span style={{ fontSize: 12, color: "#9CA0A6" }}>s/d</span>
+        <input type="date" value={tanggalAkhir} onChange={(e) => setTanggalAkhir(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }} />
+        {(tanggalMulai || tanggalAkhir) && (
+          <button onClick={() => { setTanggalMulai(""); setTanggalAkhir(""); }} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 12.5, fontWeight: 600 }}>
+            Hapus Filter Tanggal
+          </button>
+        )}
         {activeTab === "nota" && (
           <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
             <option value="semua">Semua Status</option>
@@ -5828,6 +5892,15 @@ function RekapNotaPage({ token }) {
           </select>
         )}
         <div style={{ flex: 1 }} />
+        {activeTab === "nota" && (
+          <button
+            onClick={cetakRekapNota}
+            disabled={filtered.length === 0}
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}
+          >
+            <Printer size={14} /> Cetak
+          </button>
+        )}
         {activeTab === "nota" && (
           <button
             onClick={exportCSV}
