@@ -5747,12 +5747,11 @@ function RekapNotaPage({ token }) {
     if (filterStatus !== "semua" && o.status !== filterStatus) return false;
     return true;
   }).sort((a, b) => {
-    // No. Nota formatnya NT<kode><tanggal><nomor urut> - urut string biasa
-    // salah karena <kode> di depan beda-beda per toko (jadi ke-grup per
-    // kode, bukan urut kejadiannya). Ambil angka URUT di ujung saja (nomor
-    // pesanan globalnya) supaya urutannya benar-benar sesuai urutan pesanan.
-    const nomorA = Number((a.no_nota || "").match(/(\d+)$/)?.[1] || 0);
-    const nomorB = Number((b.no_nota || "").match(/(\d+)$/)?.[1] || 0);
+    // No. Nota formatnya NT + <kode 3digit> + <tanggal 8digit YYYYMMDD> +
+    // <nomor urut> - semuanya digit tanpa pemisah. Lewati "NT" + 11 digit
+    // (kode+tanggal), sisanya itu baru nomor urut asli globalnya.
+    const nomorA = Number((a.no_nota || "").slice(2 + 11) || 0);
+    const nomorB = Number((b.no_nota || "").slice(2 + 11) || 0);
     return nomorA - nomorB;
   }); // diurutkan sesuai nomor urut pesanan (terkecil ke terbesar)
 
