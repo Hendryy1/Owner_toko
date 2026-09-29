@@ -5746,7 +5746,15 @@ function RekapNotaPage({ token }) {
     if (filterMonth !== 0 && d.getMonth() + 1 !== Number(filterMonth)) return false;
     if (filterStatus !== "semua" && o.status !== filterStatus) return false;
     return true;
-  }).sort((a, b) => (a.no_nota || "").localeCompare(b.no_nota || "")); // diurutkan sesuai No. Nota (terkecil ke terbesar)
+  }).sort((a, b) => {
+    // No. Nota formatnya NT<kode><tanggal><nomor urut> - urut string biasa
+    // salah karena <kode> di depan beda-beda per toko (jadi ke-grup per
+    // kode, bukan urut kejadiannya). Ambil angka URUT di ujung saja (nomor
+    // pesanan globalnya) supaya urutannya benar-benar sesuai urutan pesanan.
+    const nomorA = Number((a.no_nota || "").match(/(\d+)$/)?.[1] || 0);
+    const nomorB = Number((b.no_nota || "").match(/(\d+)$/)?.[1] || 0);
+    return nomorA - nomorB;
+  }); // diurutkan sesuai nomor urut pesanan (terkecil ke terbesar)
 
   const totalCashbackBelumDibayar = filtered.reduce((s, o) => {
     const cb = o.cashback_ledger?.[0];
