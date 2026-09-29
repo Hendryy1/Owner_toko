@@ -5909,7 +5909,7 @@ function RekapNotaPage({ token }) {
         const inserted = await supabaseFetch(token, "cashback_ledger", {
           method: "POST",
           headers: { Prefer: "return=representation" },
-          body: JSON.stringify({ order_id: o.id, client_id: o.client_id, nilai_cashback: nilai, status: "belum_dibayar" }),
+          body: JSON.stringify({ order_id: o.id, client_id: o.client_id, nilai_cashback: nilai, status: "belum_dibayar", jumlah_koli: 0 }),
         });
         setOrders((prev) => prev.map((ord) => (ord.id === o.id ? { ...ord, cashback_ledger: [inserted[0]] } : ord)));
       }
