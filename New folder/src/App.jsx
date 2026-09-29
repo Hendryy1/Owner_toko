@@ -5668,7 +5668,7 @@ function RekapNotaPage({ token }) {
     try {
       const rows = await supabaseFetch(
         token,
-        "orders?select=id,client_id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,jumlah_bayar,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,alasan_dibatalkan,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran,sales!clients_sales_id_fkey(kode,nama)),order_items(*,products(kode,nama,satuan,nomor_produk,harga_jual)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
+        "orders?select=id,client_id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,jumlah_bayar,cara_bayar_aktual,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,alasan_dibatalkan,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran,sales!clients_sales_id_fkey(kode,nama)),order_items(*,products(kode,nama,satuan,nomor_produk,harga_jual)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
       );
       setOrders(rows);
     } catch (e) { setError(e.message); }
@@ -5748,18 +5748,21 @@ function RekapNotaPage({ token }) {
       totalSemua += o.status !== "ditolak" ? total : 0;
       totalBayarSemua += o.status !== "ditolak" ? jumlahBayar : 0;
       totalSisaSemua += o.status !== "ditolak" ? sisaBayar : 0;
-      const st = statusPerjalanan(o);
+      const metodeBayarLabel = o.metode_bayar === "tempo" ? "30 Hari" : o.metode_bayar === "cod" ? "COD" : (o.metode_bayar || "-");
+      const jenisPembayaranLabel = o.cara_bayar_aktual === "tunai" ? "Tunai" : o.cara_bayar_aktual === "transfer" ? "Transfer" : "-";
+      const cb = o.cashback_ledger?.[0];
+      const cashbackLabel = cb ? `${rupiah(cb.nilai_cashback)} (${cb.status === "sudah_dibayar" ? "Dibayar" : "Belum"})` : "-";
       return `
         <tr>
           <td>${o.no_nota}</td>
           <td>${new Date(o.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
           <td>${o.clients?.nama || "-"} (${o.clients?.kode || "-"})</td>
-          <td>${o.metode_bayar || "-"}</td>
-          <td>${o.status_bayar || "-"}</td>
-          <td>${st.label}</td>
+          <td>${metodeBayarLabel}</td>
+          <td>${jenisPembayaranLabel}</td>
           <td style="text-align:right">${rupiah(total)}</td>
           <td style="text-align:right">${rupiah(jumlahBayar)}</td>
           <td style="text-align:right;${sisaBayar > 0 ? "color:#C0392B;font-weight:700" : ""}">${rupiah(sisaBayar)}</td>
+          <td>${cashbackLabel}</td>
         </tr>`;
     }).join("");
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rekap Nota</title>
@@ -5776,10 +5779,10 @@ function RekapNotaPage({ token }) {
       <h1>Rekap Nota</h1>
       <p class="sub">Dicetak ${tanggalCetak} - ${keteranganPeriode}${filterStatus !== "semua" ? ` - Status: ${filterStatus}` : ""} - Total ${filtered.length} nota</p>
       <table>
-        <thead><tr><th>No. Nota</th><th>Tanggal</th><th>Toko</th><th>Metode Bayar</th><th>Status Bayar</th><th>Status</th><th>Total</th><th>Jumlah Bayar</th><th>Sisa Bayar</th></tr></thead>
+        <thead><tr><th>No. Nota</th><th>Tanggal</th><th>Toko</th><th>Metode Bayar</th><th>Jenis Pembayaran</th><th>Total</th><th>Jumlah Bayar</th><th>Sisa Bayar</th><th>Cashback</th></tr></thead>
         <tbody>${baris}</tbody>
         <tfoot>
-          <tr><td colspan="6">Total Omzet (tidak termasuk yang ditolak)</td><td style="text-align:right">${rupiah(totalSemua)}</td><td style="text-align:right">${rupiah(totalBayarSemua)}</td><td style="text-align:right">${rupiah(totalSisaSemua)}</td></tr>
+          <tr><td colspan="5">Total Omzet (tidak termasuk yang ditolak)</td><td style="text-align:right">${rupiah(totalSemua)}</td><td style="text-align:right">${rupiah(totalBayarSemua)}</td><td style="text-align:right">${rupiah(totalSisaSemua)}</td><td></td></tr>
         </tfoot>
       </table>
       </body></html>`;
@@ -5915,6 +5918,16 @@ function RekapNotaPage({ token }) {
     setSavingCashback(false);
   }
 
+  async function saveCaraBayarAktual(orderId, nilai) {
+    try {
+      await supabaseFetch(token, `orders?id=eq.${orderId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ cara_bayar_aktual: nilai || null }),
+      });
+      setOrders((prev) => prev.map((o) => (o.id === orderId ? { ...o, cara_bayar_aktual: nilai || null } : o)));
+    } catch (e) { alert("Gagal simpan cara bayar: " + e.message); }
+  }
+
   const [activeTab, setActiveTab] = useState("nota"); // "nota" | "cashback"
 
   if (loading) return <LoadingState />;
@@ -6027,7 +6040,7 @@ function RekapNotaPage({ token }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 720 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
-              {["No Nota", "Toko", "Jenis Bayar", "Jatuh Tempo", "Status", "Total", "Jumlah Bayar", "Sisa Bayar", "Cashback", ""].map((h) => (
+              {["No Nota", "Toko", "Jenis Bayar", "Tunai/Transfer", "Jatuh Tempo", "Status", "Total", "Jumlah Bayar", "Sisa Bayar", "Cashback", ""].map((h) => (
                 <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
               ))}
             </tr>
@@ -6046,6 +6059,17 @@ function RekapNotaPage({ token }) {
                   </td>
                   <td style={{ padding: "12px 14px" }}>{o.clients?.nama}</td>
                   <td style={{ padding: "12px 14px" }}>{o.metode_bayar === "cod" ? "COD" : o.metode_bayar === "tempo" ? "Kredit" : o.clients?.jenis_pembayaran}</td>
+                  <td style={{ padding: "12px 14px" }}>
+                    <select
+                      value={o.cara_bayar_aktual || ""}
+                      onChange={(e) => saveCaraBayarAktual(o.id, e.target.value)}
+                      style={{ padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12, background: "#fff" }}
+                    >
+                      <option value="">-</option>
+                      <option value="tunai">Tunai</option>
+                      <option value="transfer">Transfer</option>
+                    </select>
+                  </td>
                   <td style={{ padding: "12px 14px" }}>{o.jatuh_tempo ? new Date(o.jatuh_tempo).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
                   <td style={{ padding: "12px 14px" }}>
                     <span style={{ background: st.bg, color: st.fg, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
