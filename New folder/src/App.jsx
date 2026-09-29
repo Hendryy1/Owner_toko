@@ -5738,21 +5738,17 @@ function RekapNotaPage({ token }) {
     const keteranganPeriode = (tanggalMulai || tanggalAkhir)
       ? `Periode: ${tanggalMulai ? new Date(tanggalMulai).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "awal"} s/d ${tanggalAkhir ? new Date(tanggalAkhir).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "sekarang"}`
       : `Periode: ${BULAN[filterMonth]} ${filterYear}`;
-    let totalSemua = 0;
-    let totalBayarSemua = 0;
-    let totalSisaSemua = 0;
-    const baris = filtered.map((o) => {
+    function baris1Order(o) {
       const total = orderTotal(o);
       const jumlahBayar = Number(o.jumlah_bayar || 0);
       const sisaBayar = Math.max(0, total - jumlahBayar);
-      totalSemua += o.status !== "ditolak" ? total : 0;
-      totalBayarSemua += o.status !== "ditolak" ? jumlahBayar : 0;
-      totalSisaSemua += o.status !== "ditolak" ? sisaBayar : 0;
       const metodeBayarLabel = o.metode_bayar === "tempo" ? "30 Hari" : o.metode_bayar === "cod" ? "COD" : (o.metode_bayar || "-");
       const jenisPembayaranLabel = o.cara_bayar_aktual === "tunai" ? "Tunai" : o.cara_bayar_aktual === "transfer" ? "Transfer" : "-";
       const cb = o.cashback_ledger?.[0];
       const cashbackLabel = cb ? `${rupiah(cb.nilai_cashback)} (${cb.status === "sudah_dibayar" ? "Dibayar" : "Belum"})` : "-";
-      return `
+      return {
+        total, jumlahBayar, sisaBayar,
+        html: `
         <tr>
           <td>${o.clients?.nama || "-"} (${o.clients?.kode || "-"})</td>
           <td>${o.no_nota}</td>
@@ -5763,28 +5759,75 @@ function RekapNotaPage({ token }) {
           <td style="text-align:right">${rupiah(jumlahBayar)}</td>
           <td style="text-align:right;${sisaBayar > 0 ? "color:#C0392B;font-weight:700" : ""}">${rupiah(sisaBayar)}</td>
           <td>${cashbackLabel}</td>
-        </tr>`;
+        </tr>`,
+      };
+    }
+
+    // Kelompokkan per Sales (mengikuti urutan filtered yang sudah ada -
+    // Toko, No. Nota, Tanggal - di dalam tiap kelompoknya), sama seperti
+    // cetak di menu Piutang.
+    const grupPerSales = {}; // { kode_sales_or_"tanpa": [order,...] }
+    filtered.forEach((o) => {
+      const key = o.clients?.sales?.kode || "tanpa";
+      if (!grupPerSales[key]) grupPerSales[key] = [];
+      grupPerSales[key].push(o);
+    });
+    const kunciGrup = Object.keys(grupPerSales).sort((a, b) => {
+      if (a === "tanpa") return 1;
+      if (b === "tanpa") return -1;
+      const namaA = grupPerSales[a][0]?.clients?.sales?.nama || "";
+      const namaB = grupPerSales[b][0]?.clients?.sales?.nama || "";
+      return namaA.localeCompare(namaB);
+    });
+
+    let totalSemua = 0;
+    let totalBayarSemua = 0;
+    let totalSisaSemua = 0;
+    const blokSales = kunciGrup.map((key) => {
+      const sales = grupPerSales[key][0]?.clients?.sales;
+      const judulGrup = sales ? `${sales.nama} (${sales.kode})` : "Tanpa Sales";
+      let totalGrup = 0, bayarGrup = 0, sisaGrup = 0;
+      const baris = grupPerSales[key].map((o) => {
+        const b = baris1Order(o);
+        if (o.status !== "ditolak") {
+          totalGrup += b.total;
+          bayarGrup += b.jumlahBayar;
+          sisaGrup += b.sisaBayar;
+        }
+        return b.html;
+      }).join("");
+      totalSemua += totalGrup;
+      totalBayarSemua += bayarGrup;
+      totalSisaSemua += sisaGrup;
+      return `
+        <h3 class="grup">${judulGrup}</h3>
+        <table>
+          <thead><tr><th>Toko</th><th>No. Nota</th><th>Tanggal</th><th>Metode Bayar</th><th>Jenis Pembayaran</th><th>Total</th><th>Jumlah Bayar</th><th>Sisa Bayar</th><th>Cashback</th></tr></thead>
+          <tbody>${baris}</tbody>
+          <tfoot><tr><td colspan="5">Subtotal ${judulGrup}</td><td style="text-align:right">${rupiah(totalGrup)}</td><td style="text-align:right">${rupiah(bayarGrup)}</td><td style="text-align:right">${rupiah(sisaGrup)}</td><td></td></tr></tfoot>
+        </table>`;
     }).join("");
+
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rekap Nota</title>
       <style>
         body { font-family: Arial, sans-serif; padding: 24px; color: #24272B; }
         h1 { font-size: 18px; margin: 0 0 2px; }
+        h2.judul { font-size: 13px; font-weight: 700; color: #6B6F75; margin: 0 0 10px; text-transform: uppercase; }
+        h3.grup { font-size: 14px; margin: 22px 0 8px; padding: 6px 10px; background: #F7F5F1; border-left: 4px solid #E8A426; }
+        h3.grup:first-of-type { margin-top: 14px; }
         p.sub { font-size: 12px; color: #6B6F75; margin: 0 0 18px; }
+        p.total-akhir { font-size: 14px; font-weight: 700; margin: 20px 0 0; text-align: right; }
         table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
         th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
         th { background: #F7F5F1; }
         tfoot td { font-weight: 700; background: #FAFAF8; }
-        @media print { body { padding: 0; } }
+        @media print { body { padding: 0; } h3.grup { break-after: avoid; } table { break-inside: avoid; } }
       </style></head><body>
-      <h1>Rekap Nota</h1>
+      <h1>PT INDO GARUDA ABADI</h1>
+      <h2 class="judul">Rekap Nota</h2>
       <p class="sub">Dicetak ${tanggalCetak} - ${keteranganPeriode}${filterStatus !== "semua" ? ` - Status: ${filterStatus}` : ""} - Total ${filtered.length} nota</p>
-      <table>
-        <thead><tr><th>Toko</th><th>No. Nota</th><th>Tanggal</th><th>Metode Bayar</th><th>Jenis Pembayaran</th><th>Total</th><th>Jumlah Bayar</th><th>Sisa Bayar</th><th>Cashback</th></tr></thead>
-        <tbody>${baris}</tbody>
-        <tfoot>
-          <tr><td colspan="5">Total Omzet (tidak termasuk yang ditolak)</td><td style="text-align:right">${rupiah(totalSemua)}</td><td style="text-align:right">${rupiah(totalBayarSemua)}</td><td style="text-align:right">${rupiah(totalSisaSemua)}</td><td></td></tr>
-        </tfoot>
-      </table>
+      ${blokSales || "<p>Tidak ada data nota.</p>"}
+      <p class="total-akhir">Total Omzet (tidak termasuk yang ditolak): ${rupiah(totalSemua)} - Jumlah Bayar: ${rupiah(totalBayarSemua)} - Sisa Bayar: ${rupiah(totalSisaSemua)}</p>
       </body></html>`;
     const w = window.open("", "_blank");
     w.document.write(html);
@@ -6046,7 +6089,7 @@ function RekapNotaPage({ token }) {
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 720 }}>
           <thead>
             <tr style={{ background: "#F7F5F1" }}>
-              {["No Nota", "Toko", "Jenis Bayar", "Tunai/Transfer", "Jatuh Tempo", "Status", "Total", "Jumlah Bayar", "Sisa Bayar", "Cashback", ""].map((h) => (
+              {["Toko", "No Nota", "Tanggal", "Jenis Bayar", "Tunai/Transfer", "Jatuh Tempo", "Status", "Total", "Jumlah Bayar", "Sisa Bayar", "Cashback", ""].map((h) => (
                 <th key={h} style={{ padding: "12px 14px", textAlign: "left", color: "#6B6F75", fontWeight: 700, fontSize: 11 }}>{h}</th>
               ))}
             </tr>
@@ -6057,13 +6100,14 @@ function RekapNotaPage({ token }) {
               const st = statusPerjalanan(o);
               return (
                 <tr key={o.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                  <td style={{ padding: "12px 14px" }}>{o.clients?.nama}</td>
                   <td style={{ padding: "12px 14px", fontWeight: 700 }}>
                     {o.no_nota}
                     {Number(o.diskon_tambahan_nilai || 0) > 0 && (
                       <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#8A6A1A" }}>Pakai Poin: {rupiah(Number(o.diskon_tambahan_nilai))}</span>
                     )}
                   </td>
-                  <td style={{ padding: "12px 14px" }}>{o.clients?.nama}</td>
+                  <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>{new Date(o.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
                   <td style={{ padding: "12px 14px" }}>{o.metode_bayar === "cod" ? "COD" : o.metode_bayar === "tempo" ? "Kredit" : o.clients?.jenis_pembayaran}</td>
                   <td style={{ padding: "12px 14px" }}>
                     <select
