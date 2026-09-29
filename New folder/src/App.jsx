@@ -5746,7 +5746,7 @@ function RekapNotaPage({ token }) {
     if (filterMonth !== 0 && d.getMonth() + 1 !== Number(filterMonth)) return false;
     if (filterStatus !== "semua" && o.status !== filterStatus) return false;
     return true;
-  }).sort((a, b) => (b.no_nota || "").localeCompare(a.no_nota || "")); // diurutkan sesuai No. Nota (terbesar/terbaru duluan)
+  }).sort((a, b) => (a.no_nota || "").localeCompare(b.no_nota || "")); // diurutkan sesuai No. Nota (terkecil ke terbesar)
 
   const totalCashbackBelumDibayar = filtered.reduce((s, o) => {
     const cb = o.cashback_ledger?.[0];
