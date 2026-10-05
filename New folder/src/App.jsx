@@ -11874,6 +11874,48 @@ function BiayaOperasionalPage({ token, role }) {
   const labaBersih = labaKotorBulanIni - totalBiayaBulanIni;
   const yearsAvailable = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
 
+  function cetakBiayaOperasional() {
+    const tanggalCetak = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
+    const urut = [...biayaList].sort((a, b) => new Date(a.tanggal) - new Date(b.tanggal));
+    const barisHtml = urut.map((b, i) => `<tr>
+      <td>${i + 1}</td>
+      <td>${new Date(b.tanggal).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
+      <td>${b.kategori || "-"}${b.berulang ? " (Berulang)" : ""}</td>
+      <td>${b.keterangan || "-"}</td>
+      <td style="text-align:right">${rupiah(b.jumlah)}</td>
+    </tr>`).join("");
+    const ringkasanLaba = role !== "admin_transaksi"
+      ? `<p class="ringkas">Laba Kotor: ${rupiah(labaKotorBulanIni)} - Total Biaya: ${rupiah(totalBiayaBulanIni)} - <b>Laba Bersih: ${rupiah(labaBersih)}</b></p>`
+      : "";
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Biaya Operasional</title>
+      <style>
+        body{font-family:Arial,sans-serif;font-size:12px;color:#24272B;padding:24px}
+        h1{font-size:18px;margin:0 0 2px}
+        h2{font-size:14px;margin:0 0 4px;font-weight:600}
+        .sub{color:#6B6F75;margin:0 0 16px;font-size:11px}
+        table{width:100%;border-collapse:collapse}
+        th,td{border:1px solid #CFCBC2;padding:6px 8px;text-align:left}
+        th{background:#F0EDE6}
+        .total{font-weight:700;background:#F7F5F1}
+        .ringkas{margin-top:14px;font-size:12px}
+      </style></head><body>
+      <h1>PT INDO GARUDA ABADI</h1>
+      <h2>Biaya Operasional - ${BULAN[filterMonth]} ${filterYear}</h2>
+      <p class="sub">Dicetak ${tanggalCetak}</p>
+      <table>
+        <thead><tr><th>No</th><th>Tanggal</th><th>Kategori</th><th>Keterangan</th><th style="text-align:right">Jumlah</th></tr></thead>
+        <tbody>${barisHtml || '<tr><td colspan="5">Belum ada biaya operasional bulan ini.</td></tr>'}
+        <tr class="total"><td colspan="4" style="text-align:right">Total Biaya Operasional</td><td style="text-align:right">${rupiah(totalBiayaBulanIni)}</td></tr></tbody>
+      </table>
+      ${ringkasanLaba}
+      </body></html>`;
+    const w = window.open("", "_blank");
+    if (!w) { alert("Pop-up diblokir browser. Izinkan pop-up untuk mencetak."); return; }
+    w.document.write(html);
+    w.document.close();
+    w.onload = () => w.print();
+  }
+
   const fieldStyle = { width: "100%", padding: "10px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none" };
   const labelStyle = { fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", marginBottom: 6, display: "block" };
 
@@ -11895,6 +11937,9 @@ function BiayaOperasionalPage({ token, role }) {
         <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
           {BULAN.slice(1).map((b, i) => <option key={i + 1} value={i + 1}>{b}</option>)}
         </select>
+        <button onClick={cetakBiayaOperasional} style={{ display: "flex", alignItems: "center", gap: 6, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 13, fontWeight: 600 }}>
+          <Printer size={14} /> Cetak
+        </button>
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: role === "admin_transaksi" ? "1fr" : "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
