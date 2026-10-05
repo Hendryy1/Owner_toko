@@ -3586,12 +3586,16 @@ function PiutangPage({ token }) {
     try {
       const [data, clientRows, salesRows] = await Promise.all([
         supabaseFetch(token, "v_piutang_client?select=*&total_piutang=gt.0&order=total_piutang.desc"),
-        supabaseFetch(token, "clients?select=id,sales_id"),
+        supabaseFetch(token, "clients?select=id,sales_id,telp,alamat,kota"),
         supabaseFetch(token, "sales?select=id,kode,nama&order=kode.asc"),
       ]);
       setSalesList(salesRows);
       const salesIdMap = {}; // { client_id: sales_id }
-      (clientRows || []).forEach((c) => { salesIdMap[c.id] = c.sales_id || null; });
+      const kontakMap = {}; // { client_id: { telp, alamat, kota } }
+      (clientRows || []).forEach((c) => {
+        salesIdMap[c.id] = c.sales_id || null;
+        kontakMap[c.id] = { telp: c.telp || "", alamat: c.alamat || "", kota: c.kota || "" };
+      });
       // Ambil SEMUA order COD yang jadi piutang sekaligus di awal (bukan
       // pas expand doang) - supaya bisa tahu toko mana yang SUDAH lewat
       // jatuh tempo tanpa perlu klik buka dulu.
@@ -3627,6 +3631,9 @@ function PiutangPage({ token }) {
       setRows(data.map((r) => ({
         ...r,
         sales_id: salesIdMap[r.client_id] || null,
+        telp: kontakMap[r.client_id]?.telp || "",
+        alamat: kontakMap[r.client_id]?.alamat || "",
+        kota: kontakMap[r.client_id]?.kota || "",
         hariTerlambat: terlambatMap[r.client_id] || null,
         sisaHariJatuhTempo: akanJatuhTempoMap[r.client_id] ?? null,
         jatuhTempoTerdekat: jatuhTempoTerdekatMap[r.client_id] || null,
@@ -3918,6 +3925,16 @@ function PiutangPage({ token }) {
                 <tr>
                   <td colSpan={4} style={{ padding: 0, background: "#FAFAF8" }}>
                     <div style={{ padding: "14px 14px 14px 34px" }}>
+                      <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 14, fontSize: 12.5, color: "#24272B" }}>
+                        <div>
+                          <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 3px" }}>No. HP</p>
+                          <p style={{ margin: 0, fontWeight: 600 }}>{r.telp || "-"}</p>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 200 }}>
+                          <p style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 3px" }}>Alamat Toko</p>
+                          <p style={{ margin: 0, fontWeight: 600 }}>{[r.alamat, r.kota].filter(Boolean).join(", ") || "-"}</p>
+                        </div>
+                      </div>
                       <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 10px" }}>
                         Pesanan COD yang termasuk piutang ini
                       </p>
