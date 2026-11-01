@@ -4158,7 +4158,7 @@ function SalesPage({ token }) {
     try {
       const [rekapData, salesData] = await Promise.all([
         supabaseFetch(token, "v_rekap_sales_bulanan?select=*&order=bulan.desc&limit=300"),
-        supabaseFetch(token, "sales?select=id,kode,nama,target_omzet_bulanan&status_verifikasi=eq.terverifikasi&order=kode.asc"),
+        supabaseFetch(token, "sales?select=id,kode,nama,aktif,target_omzet_bulanan&status_verifikasi=eq.terverifikasi&order=kode.asc"),
       ]);
       setRows(rekapData);
       setAllSales(salesData);
@@ -4175,6 +4175,8 @@ function SalesPage({ token }) {
   // Gabungkan SEMUA sales dengan data omzet bulan yang difilter - supaya sales
   // yang belum ada order sama sekali di bulan itu tetap muncul (omzet 0),
   // bukan hilang begitu saja karena tidak ada baris di view untuk bulan itu.
+  // Sales yang sudah dinonaktifkan (akun dihapus) disembunyikan, KECUALI
+  // kalau di bulan yang dipilih dia masih punya omzet (riwayat tetap terlihat).
   const filtered = allSales.map((s) => {
     const match = rows.find((r) => {
       if (!r.bulan || r.sales_id !== s.id) return false;
@@ -4186,8 +4188,9 @@ function SalesPage({ token }) {
       target_omzet_bulanan: s.target_omzet_bulanan || 0,
       jumlah_toko: match?.jumlah_toko || 0,
       omzet_bulan: match?.omzet_bulan || 0,
+      aktif: s.aktif !== false,
     };
-  });
+  }).filter((r) => r.aktif || Number(r.omzet_bulan) > 0);
 
   function startEdit(r) {
     setEditingId(r.sales_id);
