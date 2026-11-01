@@ -5574,18 +5574,20 @@ function StockItemPage({ token, role }) {
 
 // ============================================================
 // PRICELIST (Owner) - harga jual semua item, bisa beda per provinsi.
-// Default = harga di menu Product. Harga provinsi = override di tabel
-// pricelist_provinsi (kosong = ikut default). Diskon koli & cashback
-// per koli juga bisa di-override per provinsi.
+// Memakai tabel yang SUDAH dipakai aplikasi toko: harga_produk_provinsi
+// (product_id, provinsi, harga). Kosong = ikut harga default produk.
+// Catatan: harga_produk_kota (kalau ada) tetap lebih diutamakan oleh
+// aplikasi toko daripada harga provinsi.
+// Diskon = selisih Harga Asli (coret) ke Harga Jual.
 // ============================================================
 function PricelistPage({ token }) {
   const fieldStyle = { padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13, outline: "none", background: "#fff" };
   const [produk, setProduk] = useState([]);
   const [provList, setProvList] = useState([]);
   const [pilih, setPilih] = useState(""); // "" = default
-  const [existing, setExisting] = useState({}); // product_id -> row pricelist_provinsi
-  const [draft, setDraft] = useState({}); // product_id -> {harga, diskon, cashback} (string)
-  const [awal, setAwal] = useState({});
+  const [existing, setExisting] = useState({}); // product_id -> row harga_produk_provinsi
+  const [draft, setDraft] = useState({}); // product_id -> harga (string)
+  const [kotaAda, setKotaAda] = useState({}); // product_id -> jumlah harga kota
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -5593,26 +5595,30 @@ function PricelistPage({ token }) {
   const [catatRiwayat, setCatatRiwayat] = useState(true);
   const [persen, setPersen] = useState("");
   const [cari, setCari] = useState("");
-  const [riwayat, setRiwayat] = useState(null); // null = tertutup
+  const [riwayat, setRiwayat] = useState(null);
   const [provBaru, setProvBaru] = useState("");
 
   const str = (v) => (v === null || v === undefined ? "" : String(v));
+  const norm = (t) => String(t ?? "").trim().toLowerCase();
 
   async function loadAwal() {
     setLoading(true); setError("");
     try {
-      const [prods, cl] = await Promise.all([
-        supabaseFetch(token, "products?select=id,kode,nama,brand,satuan,harga_jual,harga_modal,isi_per_koli,diskon_koli_pct,cashback_per_koli&aktif=eq.true&order=kode.asc"),
+      const [prods, cl, hp] = await Promise.all([
+        supabaseFetch(token, "products?select=id,kode,nama,brand,satuan,harga_jual,harga_asli,harga_modal,isi_per_koli&aktif=eq.true&order=kode.asc"),
         supabaseFetch(token, "clients?select=provinsi&limit=10000"),
+        supabaseFetch(token, "harga_produk_provinsi?select=provinsi&limit=20000"),
       ]);
       setProduk(prods || []);
-      const set = new Set();
-      (cl || []).forEach((c) => { const v = (c.provinsi || "").trim(); if (v) set.add(v); });
+      const peta = new Map();
+      [...(cl || []), ...(hp || [])].forEach((c) => { const v = (c.provinsi || "").trim(); if (v && !peta.has(norm(v))) peta.set(norm(v), v); });
+      setProvList([...peta.values()].sort((a, b) => a.localeCompare(b)));
       try {
-        const pl = await supabaseFetch(token, "pricelist_provinsi?select=provinsi&limit=20000");
-        (pl || []).forEach((c) => { const v = (c.provinsi || "").trim(); if (v) set.add(v); });
-      } catch (e) { setError("Tabel pricelist belum ada. Jalankan dulu buat_tabel_pricelist_provinsi.sql di Supabase. (" + e.message + ")"); }
-      setProvList([...set].sort((a, b) => a.localeCompare(b)));
+        const kt = await supabaseFetch(token, "harga_produk_kota?select=product_id&limit=20000");
+        const m = {};
+        (kt || []).forEach((r) => { m[r.product_id] = (m[r.product_id] || 0) + 1; });
+        setKotaAda(m);
+      } catch (e) { setKotaAda({}); }
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -5620,43 +5626,31 @@ function PricelistPage({ token }) {
 
   async function loadProv(prov) {
     setInfo("");
-    if (!prov) { setExisting({}); setDraft({}); setAwal({}); return; }
+    if (!prov) { setExisting({}); setDraft({}); return; }
     try {
-      const rows = await supabaseFetch(token, `pricelist_provinsi?select=*&provinsi=eq.${encodeURIComponent(prov)}&limit=5000`);
+      const rows = await supabaseFetch(token, `harga_produk_provinsi?select=id,product_id,provinsi,harga&provinsi=ilike.${encodeURIComponent(prov.trim())}&limit=5000`);
       const ex = {}, dr = {};
-      (rows || []).forEach((r) => { ex[r.product_id] = r; dr[r.product_id] = { harga: str(r.harga_jual), diskon: str(r.diskon_koli_pct), cashback: str(r.cashback_per_koli) }; });
-      setExisting(ex); setDraft(dr); setAwal(JSON.parse(JSON.stringify(dr)));
+      (rows || []).forEach((r) => { ex[r.product_id] = r; dr[r.product_id] = str(r.harga); });
+      setExisting(ex); setDraft(dr);
     } catch (e) { setError(e.message); }
   }
   useEffect(() => { loadProv(pilih); }, [pilih]);
 
-  const kosong = { harga: "", diskon: "", cashback: "" };
-  const dr = (id) => draft[id] || kosong;
-  const setField = (id, f, v) => setDraft((prev) => ({ ...prev, [id]: { ...(prev[id] || kosong), [f]: v } }));
-  const adaBerubah = (id) => { const a = awal[id] || kosong, b = dr(id); return a.harga !== b.harga || a.diskon !== b.diskon || a.cashback !== b.cashback; };
+  const hargaDraft = (id) => draft[id] ?? "";
+  const awalStr = (id) => (existing[id] ? str(existing[id].harga) : "");
+  const adaBerubah = (id) => hargaDraft(id) !== awalStr(id);
   const jumlahBerubah = produk.filter((p) => adaBerubah(p.id)).length;
-
-  // nilai efektif (khusus provinsi kalau ada, kalau tidak default)
-  function efektif(p) {
-    const d = dr(p.id);
-    return {
-      harga: d.harga !== "" ? Number(d.harga) : Number(p.harga_jual || 0),
-      diskon: d.diskon !== "" ? Number(d.diskon) : Number(p.diskon_koli_pct || 0),
-      cashback: d.cashback !== "" ? Number(d.cashback) : Number(p.cashback_per_koli || 0),
-    };
-  }
-  const hargaKoli = (p, e) => (Number(p.isi_per_koli) > 0 ? e.harga * Number(p.isi_per_koli) * (1 - e.diskon / 100) : null);
+  const hargaEfektif = (p) => (pilih && hargaDraft(p.id) !== "" ? Number(hargaDraft(p.id)) : Number(p.harga_jual || 0));
+  const diskonDari = (p, harga) => (Number(p.harga_asli) > 0 ? Math.round((1 - harga / Number(p.harga_asli)) * 1000) / 10 : null);
 
   function terapkanPersen() {
     const x = Number(persen);
     if (!pilih) { alert("Pilih provinsi dulu."); return; }
-    if (isNaN(x) || persen === "") { alert("Isi persen (boleh negatif untuk turun)."); return; }
-    setDraft((prev) => {
-      const baru = { ...prev };
-      produk.forEach((p) => { baru[p.id] = { ...(baru[p.id] || kosong), harga: String(Math.max(0, Math.round(Number(p.harga_jual || 0) * (1 + x / 100)))) }; });
-      return baru;
-    });
-    setInfo(`Harga semua produk di ${pilih} diisi default ${x >= 0 ? "+" : ""}${x}%. Periksa lalu klik Simpan.`);
+    if (persen === "" || isNaN(x)) { alert("Isi persen (boleh negatif untuk turun)."); return; }
+    const baru = {};
+    produk.forEach((p) => { baru[p.id] = String(Math.max(0, Math.round(Number(p.harga_jual || 0) * (1 + x / 100)))); });
+    setDraft(baru);
+    setInfo(`Harga semua produk di ${pilih} diisi harga default ${x >= 0 ? "+" : ""}${x}%. Periksa lalu klik Simpan.`);
   }
   function kosongkanSemua() {
     if (!confirm(`Kosongkan semua harga khusus ${pilih}? (kembali ke harga default setelah Simpan)`)) return;
@@ -5667,30 +5661,26 @@ function PricelistPage({ token }) {
     if (!pilih) return;
     setSaving(true); setError(""); setInfo("");
     try {
-      const upserts = [], hapusId = [], log = [];
+      const baru = [], ubah = [], hapus = [], log = [];
+      const provTersimpan = Object.values(existing)[0]?.provinsi || pilih.trim();
       produk.forEach((p) => {
         if (!adaBerubah(p.id)) return;
-        const d = dr(p.id), ex = existing[p.id];
-        const adaIsi = d.harga !== "" || d.diskon !== "" || d.cashback !== "";
-        const lamaHarga = ex ? Number(ex.harga_jual) : null;
-        if (!adaIsi) {
-          if (ex) { hapusId.push(p.id); log.push({ provinsi: pilih, product_id: p.id, harga_lama: lamaHarga, harga_baru: null, diskon_lama: ex.diskon_koli_pct, diskon_baru: null, cashback_lama: ex.cashback_per_koli, cashback_baru: null }); }
-          return;
-        }
-        const hargaBaru = d.harga !== "" ? Number(d.harga) : Number(p.harga_jual || 0);
-        if (isNaN(hargaBaru) || hargaBaru < 0) throw new Error(`Harga ${p.kode} tidak valid.`);
-        if (d.diskon !== "" && (Number(d.diskon) < 0 || Number(d.diskon) > 100)) throw new Error(`Diskon ${p.kode} harus 0-100.`);
-        upserts.push({ provinsi: pilih, product_id: p.id, harga_jual: hargaBaru, diskon_koli_pct: d.diskon !== "" ? Number(d.diskon) : null, cashback_per_koli: d.cashback !== "" ? Number(d.cashback) : null, updated_at: new Date().toISOString() });
-        log.push({ provinsi: pilih, product_id: p.id, harga_lama: lamaHarga, harga_baru: hargaBaru, diskon_lama: ex ? ex.diskon_koli_pct : null, diskon_baru: d.diskon !== "" ? Number(d.diskon) : null, cashback_lama: ex ? ex.cashback_per_koli : null, cashback_baru: d.cashback !== "" ? Number(d.cashback) : null });
+        const ex = existing[p.id], d = hargaDraft(p.id);
+        if (d === "") { if (ex) { hapus.push(ex); log.push({ provinsi: pilih, product_id: p.id, harga_lama: Number(ex.harga), harga_baru: null }); } return; }
+        const h = Number(d);
+        if (isNaN(h) || h < 0) throw new Error(`Harga ${p.kode} tidak valid.`);
+        if (ex) ubah.push({ ex, h }); else baru.push({ product_id: p.id, provinsi: provTersimpan, harga: h });
+        log.push({ provinsi: pilih, product_id: p.id, harga_lama: ex ? Number(ex.harga) : null, harga_baru: h });
       });
-      if (upserts.length) await supabaseFetch(token, "pricelist_provinsi?on_conflict=provinsi,product_id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: JSON.stringify(upserts) });
-      for (const pid of hapusId) await supabaseFetch(token, `pricelist_provinsi?provinsi=eq.${encodeURIComponent(pilih)}&product_id=eq.${pid}`, { method: "DELETE", prefer: "return=minimal" });
+      if (baru.length) await supabaseFetch(token, "harga_produk_provinsi?on_conflict=product_id,provinsi", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: JSON.stringify(baru) });
+      for (const u of ubah) await supabaseFetch(token, `harga_produk_provinsi?id=eq.${u.ex.id}`, { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ harga: u.h, updated_at: new Date().toISOString() }) });
+      for (const h of hapus) await supabaseFetch(token, `harga_produk_provinsi?id=eq.${h.id}`, { method: "DELETE", prefer: "return=minimal" });
       if (catatRiwayat && log.length) {
         try { await supabaseFetch(token, "pricelist_riwayat", { method: "POST", prefer: "return=minimal", body: JSON.stringify(log) }); }
-        catch (e) { setError("Harga tersimpan, tetapi riwayat gagal dicatat: " + e.message); }
+        catch (e) { setError("Harga tersimpan, tetapi riwayat gagal dicatat (sudah jalankan buat_tabel_pricelist_riwayat.sql?): " + e.message); }
       }
       await loadProv(pilih);
-      setInfo(`Tersimpan: ${upserts.length} harga diubah, ${hapusId.length} dikembalikan ke default.`);
+      setInfo(`Tersimpan: ${baru.length} harga baru, ${ubah.length} diubah, ${hapus.length} dikembalikan ke default.`);
     } catch (e) { setError(e.message); }
     setSaving(false);
   }
@@ -5698,16 +5688,17 @@ function PricelistPage({ token }) {
   async function bukaRiwayat() {
     if (!pilih) return;
     try {
-      const rows = await supabaseFetch(token, `pricelist_riwayat?select=*&provinsi=eq.${encodeURIComponent(pilih)}&order=berubah_at.desc&limit=200`);
+      const rows = await supabaseFetch(token, `pricelist_riwayat?select=*&provinsi=ilike.${encodeURIComponent(pilih.trim())}&order=berubah_at.desc&limit=200`);
       setRiwayat(rows || []);
-    } catch (e) { setError(e.message); }
+    } catch (e) { setError("Riwayat belum bisa dibuka (sudah jalankan buat_tabel_pricelist_riwayat.sql?): " + e.message); }
   }
 
   function tambahProvinsi() {
     const v = provBaru.trim();
     if (!v) return;
-    if (!provList.some((x) => x.toLowerCase() === v.toLowerCase())) setProvList((l) => [...l, v].sort((a, b) => a.localeCompare(b)));
-    setPilih(provList.find((x) => x.toLowerCase() === v.toLowerCase()) || v);
+    const ada = provList.find((x) => norm(x) === norm(v));
+    if (!ada) setProvList((l) => [...l, v].sort((a, b) => a.localeCompare(b)));
+    setPilih(ada || v);
     setProvBaru("");
   }
 
@@ -5715,32 +5706,27 @@ function PricelistPage({ token }) {
   const tampil = produk.filter((p) => !q || `${p.kode} ${p.nama} ${p.brand || ""}`.toLowerCase().includes(q));
   const judul = pilih ? `Pricelist ${pilih}` : "Pricelist Default";
 
-  function barisData() {
-    return tampil.map((p) => {
-      const e = pilih ? efektif(p) : { harga: Number(p.harga_jual || 0), diskon: Number(p.diskon_koli_pct || 0), cashback: Number(p.cashback_per_koli || 0) };
-      return { p, e, koli: hargaKoli(p, e) };
-    });
-  }
   function cetak() {
     const w = window.open("", "_blank");
     if (!w) { alert("Pop-up diblokir browser. Izinkan pop-up untuk mencetak."); return; }
     const tgl = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Jakarta" });
-    const tr = barisData().map(({ p, e, koli }) => `<tr><td>${p.kode}</td><td>${p.nama}</td><td>${p.brand || "-"}</td><td>${p.satuan || ""}</td><td style="text-align:right">${p.isi_per_koli || "-"}</td><td style="text-align:right">${rupiah(e.harga)}</td><td style="text-align:right">${e.diskon ? e.diskon + "%" : "-"}</td><td style="text-align:right">${koli !== null ? rupiah(koli) : "-"}</td></tr>`).join("");
+    const tr = tampil.map((p) => {
+      const h = hargaEfektif(p), dk = diskonDari(p, h);
+      return `<tr><td>${p.kode}</td><td>${p.nama}</td><td>${p.brand || "-"}</td><td>${p.satuan || ""}</td><td style="text-align:right">${p.isi_per_koli || "-"}</td><td style="text-align:right">${Number(p.harga_asli) > 0 ? rupiah(p.harga_asli) : "-"}</td><td style="text-align:right">${dk !== null && dk > 0 ? dk + "%" : "-"}</td><td style="text-align:right"><b>${rupiah(h)}</b></td></tr>`;
+    }).join("");
     w.document.write(`<html><head><title>${judul}</title><style>body{font-family:Arial,sans-serif;font-size:11px;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:4px 6px;text-align:left}th{background:#eee}h2{margin:4px 0}@page{margin:12mm}</style></head><body>
       <h2>PT INDO GARUDA ABADI</h2><h2>${judul}</h2><p>Berlaku per ${tgl}</p>
-      <table><thead><tr><th>Kode</th><th>Nama Barang</th><th>Brand</th><th>Satuan</th><th>Isi/Koli</th><th>Harga Satuan</th><th>Diskon Koli</th><th>Harga/Koli</th></tr></thead><tbody>${tr}</tbody></table>
+      <table><thead><tr><th>Kode</th><th>Nama Barang</th><th>Brand</th><th>Satuan</th><th>Isi/Koli</th><th>Harga Asli</th><th>Diskon</th><th>Harga Jual</th></tr></thead><tbody>${tr}</tbody></table>
       <script>window.onload=function(){window.print()}<\/script></body></html>`);
     w.document.close();
   }
   function salinTeks() {
-    const baris = barisData().map(({ p, e, koli }) => `${p.kode} ${p.nama}: ${rupiah(e.harga)}/${p.satuan || "pcs"}${koli !== null && e.diskon ? ` | koli (isi ${p.isi_per_koli}, disc ${e.diskon}%): ${rupiah(koli)}` : ""}`).join("\n");
-    const teks = `*${judul}* - PT Indo Garuda Abadi\n\n${baris}`;
-    navigator.clipboard?.writeText(teks).then(() => setInfo("Teks pricelist disalin, tinggal tempel di WhatsApp.")).catch(() => alert("Gagal menyalin."));
+    const baris = tampil.map((p) => {
+      const h = hargaEfektif(p), dk = diskonDari(p, h);
+      return `${p.kode} ${p.nama}: ${rupiah(h)}/${p.satuan || "pcs"}${dk !== null && dk > 0 ? ` (diskon ${dk}%)` : ""}`;
+    }).join("\n");
+    navigator.clipboard?.writeText(`*${judul}* - PT Indo Garuda Abadi\n\n${baris}`).then(() => setInfo("Teks pricelist disalin, tinggal tempel di WhatsApp.")).catch(() => alert("Gagal menyalin."));
   }
-
-  const inp = (id, f, ph) => (
-    <input type="number" min="0" value={dr(id)[f]} onChange={(e) => setField(id, f, e.target.value)} placeholder={ph} style={{ ...fieldStyle, width: 96, borderColor: adaBerubah(id) ? "#E8A426" : "#E4E1DA" }} />
-  );
 
   return (
     <div>
@@ -5779,37 +5765,40 @@ function PricelistPage({ token }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: "#F7F5F1" }}>
-                  {["Kode", "Nama Barang", "Brand", "Satuan", "Isi/Koli", "Harga Default", ...(pilih ? ["Harga " + pilih, "Diskon Koli %", "Cashback/Koli"] : ["Diskon Koli %", "Cashback/Koli"]), "Harga/Koli"].map((h) => (
+                  {["Kode", "Nama Barang", "Brand", "Satuan", "Harga Asli", "Harga Default", ...(pilih ? ["Harga " + pilih, "Diskon %"] : ["Diskon %"])].map((h) => (
                     <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, color: "#6B6F75", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {tampil.map((p) => {
-                  const e = pilih ? efektif(p) : { harga: Number(p.harga_jual || 0), diskon: Number(p.diskon_koli_pct || 0), cashback: Number(p.cashback_per_koli || 0) };
-                  const koli = hargaKoli(p, e);
-                  const rugi = p.harga_modal && e.harga < Number(p.harga_modal);
+                  const h = hargaEfektif(p), dk = diskonDari(p, h);
+                  const rugi = p.harga_modal && h < Number(p.harga_modal);
                   return (
                     <tr key={p.id} style={{ borderTop: "1px solid #EDEAE3", background: rugi ? "#FBEAEA" : "transparent" }}>
                       <td style={{ padding: "8px 12px", fontWeight: 700 }}>{p.kode}</td>
-                      <td style={{ padding: "8px 12px" }}>{p.nama}</td>
+                      <td style={{ padding: "8px 12px" }}>{p.nama}{kotaAda[p.id] ? <span title="Ada harga per kota yang lebih diutamakan aplikasi toko" style={{ marginLeft: 6, fontSize: 10, color: "#8A6A1A", background: "#EFE1BE", padding: "1px 6px", borderRadius: 999 }}>ada harga kota</span> : null}</td>
                       <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.brand || "-"}</td>
                       <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.satuan}</td>
-                      <td style={{ padding: "8px 12px" }}>{p.isi_per_koli || "-"}</td>
+                      <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{Number(p.harga_asli) > 0 ? rupiah(p.harga_asli) : "-"}</td>
                       <td style={{ padding: "8px 12px", fontWeight: 600 }}>{rupiah(p.harga_jual)}</td>
                       {pilih ? (
                         <>
-                          <td style={{ padding: "6px 12px" }}>{inp(p.id, "harga", String(p.harga_jual || ""))}</td>
-                          <td style={{ padding: "6px 12px" }}>{inp(p.id, "diskon", String(p.diskon_koli_pct ?? 0))}</td>
-                          <td style={{ padding: "6px 12px" }}>{inp(p.id, "cashback", String(p.cashback_per_koli ?? 0))}</td>
+                          <td style={{ padding: "6px 12px" }}>
+                            <input type="number" min="0" value={hargaDraft(p.id)} onChange={(e) => setDraft((prev) => ({ ...prev, [p.id]: e.target.value }))} placeholder={String(p.harga_jual || "")} style={{ ...fieldStyle, width: 110, borderColor: adaBerubah(p.id) ? "#E8A426" : "#E4E1DA" }} />
+                            {rugi && <span style={{ marginLeft: 6, fontSize: 10, color: "#C0392B", fontWeight: 800 }}>DI BAWAH MODAL</span>}
+                          </td>
+                          <td style={{ padding: "6px 12px" }}>
+                            {Number(p.harga_asli) > 0 ? (
+                              <input key={p.id + "_" + h} type="number" step="0.1" defaultValue={dk} title="Ubah diskon lalu tekan Tab/Enter: harga provinsi dihitung dari Harga Asli"
+                                onBlur={(e) => { const v = e.target.value; if (v === "" || Number(v) === dk) return; setDraft((prev) => ({ ...prev, [p.id]: String(Math.max(0, Math.round(Number(p.harga_asli) * (1 - Number(v) / 100)))) })); }}
+                                style={{ ...fieldStyle, width: 80 }} />
+                            ) : "-"}
+                          </td>
                         </>
                       ) : (
-                        <>
-                          <td style={{ padding: "8px 12px" }}>{p.diskon_koli_pct ? p.diskon_koli_pct + "%" : "-"}</td>
-                          <td style={{ padding: "8px 12px" }}>{p.cashback_per_koli ? rupiah(p.cashback_per_koli) : "-"}</td>
-                        </>
+                        <td style={{ padding: "8px 12px" }}>{dk !== null && dk > 0 ? dk + "%" : "-"}{rugi && <span style={{ marginLeft: 6, fontSize: 10, color: "#C0392B", fontWeight: 800 }}>DI BAWAH MODAL</span>}</td>
                       )}
-                      <td style={{ padding: "8px 12px", fontWeight: 700 }}>{koli !== null ? rupiah(koli) : "-"}{rugi && <span style={{ marginLeft: 6, fontSize: 10, color: "#C0392B", fontWeight: 800 }}>DI BAWAH MODAL</span>}</td>
                     </tr>
                   );
                 })}
@@ -5817,27 +5806,25 @@ function PricelistPage({ token }) {
             </table>
             {tampil.length === 0 && <EmptyState text="Tidak ada produk." />}
           </Card>
-          <p style={{ fontSize: 11.5, color: "#9CA0A6", marginTop: 8 }}>Kolom kuning = belum disimpan. Kolom input kosong = ikut default. Harga/Koli = harga satuan x isi per koli x (1 - diskon koli).{!pilih && " Harga default diubah di menu Product."}</p>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", marginTop: 8 }}>Kotak kuning = belum disimpan. Kosong = ikut harga default. Diskon = selisih Harga Asli ke Harga Jual; ubah diskon untuk menghitung harga otomatis.{!pilih && " Harga default dan harga asli diubah di menu Product."} Aplikasi toko memakai harga kota lebih dulu kalau ada.</p>
         </>
       )}
       {riwayat && (
         <div onClick={() => setRiwayat(null)} style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 18, width: "100%", maxWidth: 760, maxHeight: "80vh", overflow: "auto" }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 18, width: "100%", maxWidth: 700, maxHeight: "80vh", overflow: "auto" }}>
             <h3 className="disp" style={{ margin: "0 0 10px" }}>Riwayat harga {pilih}</h3>
             {riwayat.length === 0 ? <EmptyState text="Belum ada riwayat." /> : (
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-                <thead><tr style={{ background: "#F7F5F1" }}>{["Tanggal", "Produk", "Harga", "Diskon Koli", "Cashback"].map((h) => <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, color: "#6B6F75" }}>{h}</th>)}</tr></thead>
+                <thead><tr style={{ background: "#F7F5F1" }}>{["Tanggal", "Produk", "Harga Lama", "Harga Baru"].map((h) => <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, color: "#6B6F75" }}>{h}</th>)}</tr></thead>
                 <tbody>
                   {riwayat.map((r) => {
                     const pr = produk.find((x) => x.id === r.product_id);
-                    const ub = (a, b, f) => `${a === null || a === undefined ? "default" : f(a)} → ${b === null || b === undefined ? "default" : f(b)}`;
                     return (
                       <tr key={r.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                         <td style={{ padding: "7px 10px" }}>{fmtTglAngka(r.berubah_at)}</td>
-                        <td style={{ padding: "7px 10px", fontWeight: 600 }}>{pr ? pr.kode : "-"}</td>
-                        <td style={{ padding: "7px 10px" }}>{ub(r.harga_lama, r.harga_baru, rupiah)}</td>
-                        <td style={{ padding: "7px 10px" }}>{ub(r.diskon_lama, r.diskon_baru, (v) => v + "%")}</td>
-                        <td style={{ padding: "7px 10px" }}>{ub(r.cashback_lama, r.cashback_baru, rupiah)}</td>
+                        <td style={{ padding: "7px 10px", fontWeight: 600 }}>{pr ? `${pr.kode} ${pr.nama}` : "-"}</td>
+                        <td style={{ padding: "7px 10px" }}>{r.harga_lama === null ? "default" : rupiah(r.harga_lama)}</td>
+                        <td style={{ padding: "7px 10px", fontWeight: 700 }}>{r.harga_baru === null ? "default" : rupiah(r.harga_baru)}</td>
                       </tr>
                     );
                   })}
