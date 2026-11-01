@@ -2177,10 +2177,10 @@ function OverviewPage({ token, setPage }) {
         supabaseFetch(token, "chat_cases?select=id,no_case,client_id,updated_at,clients(nama)&status=eq.open"),
         supabaseFetch(token, "orders?select=client_id,tanggal&status=neq.ditolak&order=tanggal.desc"),
         // Piutang yang belum lunas dari nota yang dibuat di bulan terpilih (definisi sama dengan menu Piutang)
-        supabaseFetch(token, `orders?select=id,order_items(subtotal_setelah_diskon)&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&created_at=gte.${startBulan}&created_at=lt.${endBulan}`),
+        supabaseFetch(token, `orders?select=id,jumlah_bayar,order_items(subtotal_setelah_diskon)&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&created_at=gte.${startBulan}&created_at=lt.${endBulan}`),
       ]);
       const piutangBulanDipilih = (orderPiutangBulan || []).reduce(
-        (sum, o) => sum + (o.order_items || []).reduce((s, it) => s + Number(it.subtotal_setelah_diskon || 0), 0), 0
+        (sum, o) => sum + Math.max(0, (o.order_items || []).reduce((s, it) => s + Number(it.subtotal_setelah_diskon || 0), 0) - Number(o.jumlah_bayar || 0)), 0
       );
       const jumlahNotaPiutangBulan = (orderPiutangBulan || []).length;
       const totalPiutang = piutang.reduce((a, b) => a + Number(b.total_piutang || 0), 0);
@@ -3647,7 +3647,11 @@ function PiutangPage({ token }) {
       // Ambil SEMUA order COD yang jadi piutang sekaligus di awal (bukan
       // pas expand doang) - supaya bisa tahu toko mana yang SUDAH lewat
       // jatuh tempo tanpa perlu klik buka dulu.
-      const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,no_nota,client_id,jatuh_tempo,order_items(subtotal_setelah_diskon)&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)");
+      const semuaOrderPiutang = await supabaseFetch(token, "orders?select=id,no_nota,client_id,jatuh_tempo,jumlah_bayar,order_items(subtotal_setelah_diskon)&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)");
+      const dibayarPerClient = {}; // { client_id: total jumlah_bayar (cicilan) dari order piutang toko itu }
+      (semuaOrderPiutang || []).forEach((o) => {
+        dibayarPerClient[o.client_id] = (dibayarPerClient[o.client_id] || 0) + Number(o.jumlah_bayar || 0);
+      });
       setOrderPiutangList((semuaOrderPiutang || []).map((o) => ({
         id: o.id,
         no_nota: o.no_nota,
@@ -3655,6 +3659,8 @@ function PiutangPage({ token }) {
         sales_id: salesIdMap[o.client_id] || null,
         jatuh_tempo: o.jatuh_tempo ? new Date(o.jatuh_tempo) : null,
         nilai: (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0),
+        dibayar: Number(o.jumlah_bayar || 0),
+        sisa: Math.max(0, (o.order_items || []).reduce((sum, it) => sum + Number(it.subtotal_setelah_diskon || 0), 0) - Number(o.jumlah_bayar || 0)),
       })));
       const sekarang = new Date();
       const batas3Hari = new Date(sekarang.getTime() + 3 * 86400000);
@@ -3676,8 +3682,18 @@ function PiutangPage({ token }) {
         // tidak perlu expand dulu buat tahu.
         if (!jatuhTempoTerdekatMap[o.client_id] || jt < jatuhTempoTerdekatMap[o.client_id]) jatuhTempoTerdekatMap[o.client_id] = jt;
       });
-      setRows(data.map((r) => ({
+      setRows(data.map((r) => {
+        // Total piutang dari view dikurangi pembayaran sebagian (jumlah_bayar
+        // yang diisi di Rekap Nota) - jadi yang tampil adalah SISA piutangnya.
+        const dibayarToko = dibayarPerClient[r.client_id] || 0;
+        const totalAsli = Number(r.total_piutang || 0);
+        const sisaToko = Math.max(0, totalAsli - dibayarToko);
+        return {
         ...r,
+        total_piutang_asli: totalAsli,
+        dibayar_sebagian: Math.min(dibayarToko, totalAsli),
+        total_piutang: sisaToko,
+        melebihi_limit: r.limit_kredit != null ? sisaToko > Number(r.limit_kredit) : r.melebihi_limit,
         sales_id: salesIdMap[r.client_id] || null,
         telp: kontakMap[r.client_id]?.telp || "",
         alamat: kontakMap[r.client_id]?.alamat || "",
@@ -3685,7 +3701,8 @@ function PiutangPage({ token }) {
         hariTerlambat: terlambatMap[r.client_id] || null,
         sisaHariJatuhTempo: akanJatuhTempoMap[r.client_id] ?? null,
         jatuhTempoTerdekat: jatuhTempoTerdekatMap[r.client_id] || null,
-      })));
+        };
+      }));
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -3713,7 +3730,7 @@ function PiutangPage({ token }) {
       try {
         const orders = await supabaseFetch(
           token,
-          `orders?select=id,no_nota,created_at,jatuh_tempo,order_items(subtotal_setelah_diskon)&client_id=eq.${clientId}&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&order=created_at.asc`
+          `orders?select=id,no_nota,created_at,jatuh_tempo,jumlah_bayar,order_items(subtotal_setelah_diskon)&client_id=eq.${clientId}&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&order=created_at.asc`
         );
         setDetailMap((prev) => ({ ...prev, [clientId]: orders }));
       } catch (e) {
@@ -3816,18 +3833,24 @@ function PiutangPage({ token }) {
           const nilaiB = b.jatuh_tempo ? b.jatuh_tempo.getTime() : Infinity;
           return nilaiA - nilaiB;
         }
-        return b.nilai - a.nilai;
+        return b.sisa - a.sisa;
       });
       let totalGrup = 0;
+      let totalNilaiGrup = 0;
+      let totalDibayarGrup = 0;
       const baris = ordersGrup.map((o) => {
         const st = statusOrder(o.jatuh_tempo);
-        totalGrup += o.nilai;
+        totalGrup += o.sisa;
+        totalNilaiGrup += o.nilai;
+        totalDibayarGrup += o.dibayar;
         return `
           <tr>
             <td>${namaTokoMap[o.client_id] || "-"}</td>
             <td>${o.no_nota}</td>
             <td>${o.jatuh_tempo ? o.jatuh_tempo.toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
             <td style="text-align:right">${rupiah(o.nilai)}</td>
+            <td style="text-align:right">${o.dibayar > 0 ? rupiah(o.dibayar) : "-"}</td>
+            <td style="text-align:right;font-weight:700">${rupiah(o.sisa)}</td>
             <td style="color:${st.warna};font-weight:700">${st.teks}</td>
           </tr>`;
       }).join("");
@@ -3835,9 +3858,9 @@ function PiutangPage({ token }) {
       return `
         <h2>${judulGrup}</h2>
         <table>
-          <thead><tr><th>Toko</th><th>No. Pesanan</th><th>Jatuh Tempo</th><th>Nilai</th><th>Status</th></tr></thead>
+          <thead><tr><th>Toko</th><th>No. Pesanan</th><th>Jatuh Tempo</th><th>Nilai</th><th>Dibayar</th><th>Sisa Piutang</th><th>Status</th></tr></thead>
           <tbody>${baris}</tbody>
-          <tfoot><tr><td colspan="3">Subtotal ${judulGrup}</td><td style="text-align:right">${rupiah(totalGrup)}</td><td></td></tr></tfoot>
+          <tfoot><tr><td colspan="3">Subtotal ${judulGrup}</td><td style="text-align:right">${rupiah(totalNilaiGrup)}</td><td style="text-align:right">${rupiah(totalDibayarGrup)}</td><td style="text-align:right">${rupiah(totalGrup)}</td><td></td></tr></tfoot>
         </table>`;
     }).join("");
 
@@ -3858,7 +3881,7 @@ function PiutangPage({ token }) {
       <h1>Rekap Piutang per Toko</h1>
       <p class="sub">Dicetak ${tanggalCetak} - Diurutkan: ${urutan === "jatuh_tempo" ? "Jatuh Tempo Terdekat" : "Nilai Terbesar"}</p>
       ${blokSales || "<p>Tidak ada data piutang.</p>"}
-      <p class="total-akhir">Total Keseluruhan: ${rupiah(totalSemua)}</p>
+      <p class="total-akhir">Total Sisa Piutang Keseluruhan: ${rupiah(totalSemua)}</p>
       </body></html>`;
     const w = window.open("", "_blank");
     w.document.write(html);
@@ -3927,7 +3950,14 @@ function PiutangPage({ token }) {
                     </p>
                   )}
                 </td>
-                <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(r.total_piutang)}</td>
+                <td style={{ padding: "12px 14px", fontWeight: 700 }}>
+                  {rupiah(r.total_piutang)}
+                  {r.dibayar_sebagian > 0 && (
+                    <span style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "#28685D", marginTop: 3 }}>
+                      Sisa • sudah dibayar {rupiah(r.dibayar_sebagian)} dari {rupiah(r.total_piutang_asli)}
+                    </span>
+                  )}
+                </td>
                 <td style={{ padding: "12px 14px" }}>
                   {editingId === r.client_id ? (
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -3994,7 +4024,7 @@ function PiutangPage({ token }) {
                         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                           <thead>
                             <tr>
-                              {["No. Nota", "Tanggal Dibuat", "Jatuh Tempo", "Nilai"].map((h) => (
+                              {["No. Nota", "Tanggal Dibuat", "Jatuh Tempo", "Nilai", "Dibayar", "Sisa"].map((h) => (
                                 <th key={h} style={{ padding: "6px 10px", textAlign: "left", color: "#9CA0A6", fontWeight: 700, fontSize: 10.5 }}>{h}</th>
                               ))}
                             </tr>
@@ -4026,6 +4056,8 @@ function PiutangPage({ token }) {
                                     ) : "-"}
                                   </td>
                                   <td style={{ padding: "6px 10px", fontWeight: 600 }}>{rupiah(nilai)}</td>
+                                  <td style={{ padding: "6px 10px", color: Number(o.jumlah_bayar || 0) > 0 ? "#28685D" : "#9CA0A6" }}>{rupiah(Number(o.jumlah_bayar || 0))}</td>
+                                  <td style={{ padding: "6px 10px", fontWeight: 700, color: "#C0392B" }}>{rupiah(Math.max(0, nilai - Number(o.jumlah_bayar || 0)))}</td>
                                 </tr>
                               );
                             })}
