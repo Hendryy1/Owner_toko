@@ -15598,11 +15598,20 @@ function LaporanKunjunganOwnerPage({ token }) {
     setLoading(true);
     setError("");
     try {
-      const [rows, sales] = await Promise.all([
+      const [rows, sales, absenRows] = await Promise.all([
         supabaseFetch(token, "kunjungan_sales?select=*,sales(nama,kode),clients(nama,kode)&order=created_at.desc&limit=300"),
         supabaseFetch(token, "sales?select=id,nama,kode&order=nama.asc"),
+        supabaseFetch(token, "absen_sales?select=id,sales_id,tanggal,waktu_absen,foto_url,nama_toko_manual,alamat_toko_manual,catatan,sales(nama,kode),clients(nama,kode)&order=waktu_absen.desc&limit=300"),
       ]);
-      setKunjungan(rows);
+      // Absen masuk (check-in) harian digabung ke daftar yang sama dengan
+      // kunjungan, supaya absen pertama sales di hari itu juga kelihatan di sini.
+      const absenSebagaiKartu = (absenRows || []).map((a) => ({
+        id: `absen-${a.id}`, jenis: "absen", sales_id: a.sales_id, sales: a.sales, clients: a.clients,
+        created_at: a.waktu_absen, foto_url: a.foto_url, catatan: a.catatan,
+        nama_toko_manual: a.nama_toko_manual, alamat_toko_manual: a.alamat_toko_manual,
+      }));
+      const gabungan = [...rows, ...absenSebagaiKartu].sort((x, y) => new Date(y.created_at) - new Date(x.created_at));
+      setKunjungan(gabungan);
       setSalesList(sales);
     } catch (e) { setError(e.message); }
     setLoading(false);
@@ -15624,7 +15633,7 @@ function LaporanKunjunganOwnerPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Laporan Kunjungan Sales" subtitle={`${filtered.length} kunjungan`} />
+      <PageHeader title="Laporan Kunjungan Sales" subtitle={`${filtered.length} laporan (kunjungan + absen masuk)`} />
 
       <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap" }}>
         <select value={filterSales} onChange={(e) => setFilterSales(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13 }}>
@@ -15660,8 +15669,11 @@ function LaporanKunjunganOwnerPage({ token }) {
                   style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 10, marginBottom: 12, cursor: "pointer" }}
                 />
               )}
+              <p style={{ fontSize: 10.5, fontWeight: 700, color: k.jenis === "absen" ? "#28685D" : "#6B6F75", margin: "0 0 4px", textTransform: "uppercase" }}>
+                {k.jenis === "absen" ? "✅ Absen Masuk" : "📍 Kunjungan"}
+              </p>
               <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
-                {k.clients?.nama || k.nama_toko_manual || "Toko tanpa nama"}
+                {k.clients?.nama || k.nama_toko_manual || (k.jenis === "absen" ? "Absen Harian" : "Toko tanpa nama")}
                 {!k.clients && k.nama_toko_manual && (
                   <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "#8A6A1A", background: "#FBF0D9", padding: "2px 7px", borderRadius: 999 }}>Toko belum terdaftar</span>
                 )}
