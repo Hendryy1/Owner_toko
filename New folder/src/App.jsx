@@ -5706,6 +5706,15 @@ function PricelistPage({ token }) {
   const tampil = produk.filter((p) => !q || `${p.kode} ${p.nama} ${p.brand || ""}`.toLowerCase().includes(q));
   const judul = pilih ? `Pricelist ${pilih}` : "Pricelist Default";
 
+  // Harga/Lusin: satuan Lusin -> harga per pcs x 12 (angka saja).
+  // Satuan lain (pcs dll) -> harga per pcs x min order, ditulis "total/min+satuan".
+  function hargaLusinTeks(harga, satuan, minOrder) {
+    const sat = String(satuan || "").trim();
+    if (sat.toLowerCase() === "lusin") return rupiah(harga * 12);
+    const m = Number(minOrder) || 1;
+    return `${rupiah(harga * m)}/${m}${sat.toLowerCase()}`;
+  }
+
   function cetak() {
     const w = window.open("", "_blank");
     if (!w) { alert("Pop-up diblokir browser. Izinkan pop-up untuk mencetak."); return; }
@@ -5715,11 +5724,11 @@ function PricelistPage({ token }) {
     const tr = tampil.map((p) => {
       const h = hargaEfektif(p);
       const o = TAMPIL_CETAK[String(p.kode || "").toUpperCase()] || {};
-      return `<tr><td>${p.kode}</td><td>${p.nama}</td><td>${o.isi ?? (p.isi_per_koli || "-")}</td><td>${o.min ?? (p.minimal_order || 1)}</td><td>${o.satuan ?? (p.satuan || "")}</td><td><b>${rupiah(h)}</b></td></tr>`;
+      return `<tr><td>${p.kode}</td><td>${p.nama}</td><td>${o.isi ?? (p.isi_per_koli || "-")}</td><td>${o.min ?? (p.minimal_order || 1)}</td><td>${o.satuan ?? (p.satuan || "")}</td><td>${hargaLusinTeks(h, o.satuan ?? p.satuan, o.min ?? p.minimal_order)}</td><td><b>${rupiah(h)}</b></td></tr>`;
     }).join("");
     w.document.write(`<html><head><title>${judul}</title><style>body{font-family:Arial,sans-serif;font-size:11px;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:4px 6px;text-align:center;vertical-align:middle}th{background:#eee}h2{margin:4px 0}@page{margin:12mm}</style></head><body>
       <h2>PT INDO GARUDA ABADI</h2><h2>${judul}</h2><p>Berlaku per ${tgl}</p>
-      <table><thead><tr><th>Kode</th><th>Nama Barang</th><th>Isi/Koli</th><th>Min Order</th><th>Satuan</th><th>Harga Jual/pcs</th></tr></thead><tbody>${tr}</tbody></table>
+      <table><thead><tr><th>Kode</th><th>Nama Barang</th><th>Isi/Koli</th><th>Min Order</th><th>Satuan</th><th>Harga/Lusin</th><th>Harga Jual/pcs</th></tr></thead><tbody>${tr}</tbody></table>
       <script>window.onload=function(){window.print()}<\/script></body></html>`);
     w.document.close();
   }
@@ -5768,7 +5777,7 @@ function PricelistPage({ token }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: "#F7F5F1" }}>
-                  {["Kode", "Nama Barang", "Isi/Koli", "Min Order", "Satuan", "Harga Asli/pcs", "Harga Jual/pcs (Default)", ...(pilih ? ["Harga Jual/pcs " + pilih, "Diskon %"] : ["Diskon %"])].map((h) => (
+                  {["Kode", "Nama Barang", "Isi/Koli", "Min Order", "Satuan", "Harga/Lusin", "Harga Asli/pcs", "Harga Jual/pcs (Default)", ...(pilih ? ["Harga Jual/pcs " + pilih, "Diskon %"] : ["Diskon %"])].map((h) => (
                     <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, color: "#6B6F75", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -5784,6 +5793,7 @@ function PricelistPage({ token }) {
                       <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.isi_per_koli || "-"}</td>
                       <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.minimal_order || 1}</td>
                       <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.satuan}</td>
+                      <td style={{ padding: "8px 12px", fontWeight: 600 }}>{hargaLusinTeks(h, p.satuan, p.minimal_order)}</td>
                       <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{Number(p.harga_asli) > 0 ? rupiah(p.harga_asli) : "-"}</td>
                       <td style={{ padding: "8px 12px", fontWeight: 600 }}>{rupiah(p.harga_jual)}</td>
                       {pilih ? (
