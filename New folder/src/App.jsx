@@ -1255,6 +1255,7 @@ function OwnerDashboardInner() {
         {page === "saldo_va" && <SaldoVaPage token={token} />}
         {page === "barang" && <BarangTerlarisPage token={token} />}
         {page === "produk" && <ProductPage token={token} />}
+        {page === "pricelist" && <PricelistPage token={token} />}
         {page === "stock" && <StockItemPage token={token} role={profile?.role} />}
         {page === "inbound" && <InboundPage token={token} />}
         {page === "penyesuaian_stok" && <PenyesuaianStokPage token={token} />}
@@ -1482,6 +1483,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "saldo_va", label: "Saldo & VA Toko", icon: Wallet, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
     { key: "barang", label: "Barang Terlaris", icon: Package, roles: ["owner", "admin_keuangan"] },
     { key: "produk", label: "Product", icon: Package, roles: ["owner"] },
+    { key: "pricelist", label: "Pricelist", icon: Table2, roles: ["owner"] },
     { key: "stock", label: "Stock Item", icon: Boxes, roles: ["owner", "admin_transaksi"] },
     { key: "inbound", label: "Inbound", icon: PackagePlus, roles: ["owner"] },
     { key: "penyesuaian_stok", label: "Penyesuaian Stok", icon: Boxes, roles: ["owner"] },
@@ -5565,6 +5567,287 @@ function StockItemPage({ token, role }) {
         </table>
         {rows.length === 0 && <EmptyState text="Belum ada data barang." />}
       </Card>
+    </div>
+  );
+}
+
+
+// ============================================================
+// PRICELIST (Owner) - harga jual semua item, bisa beda per provinsi.
+// Default = harga di menu Product. Harga provinsi = override di tabel
+// pricelist_provinsi (kosong = ikut default). Diskon koli & cashback
+// per koli juga bisa di-override per provinsi.
+// ============================================================
+function PricelistPage({ token }) {
+  const fieldStyle = { padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13, outline: "none", background: "#fff" };
+  const [produk, setProduk] = useState([]);
+  const [provList, setProvList] = useState([]);
+  const [pilih, setPilih] = useState(""); // "" = default
+  const [existing, setExisting] = useState({}); // product_id -> row pricelist_provinsi
+  const [draft, setDraft] = useState({}); // product_id -> {harga, diskon, cashback} (string)
+  const [awal, setAwal] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+  const [catatRiwayat, setCatatRiwayat] = useState(true);
+  const [persen, setPersen] = useState("");
+  const [cari, setCari] = useState("");
+  const [riwayat, setRiwayat] = useState(null); // null = tertutup
+  const [provBaru, setProvBaru] = useState("");
+
+  const str = (v) => (v === null || v === undefined ? "" : String(v));
+
+  async function loadAwal() {
+    setLoading(true); setError("");
+    try {
+      const [prods, cl] = await Promise.all([
+        supabaseFetch(token, "products?select=id,kode,nama,brand,satuan,harga_jual,harga_modal,isi_per_koli,diskon_koli_pct,cashback_per_koli&aktif=eq.true&order=kode.asc"),
+        supabaseFetch(token, "clients?select=provinsi&limit=10000"),
+      ]);
+      setProduk(prods || []);
+      const set = new Set();
+      (cl || []).forEach((c) => { const v = (c.provinsi || "").trim(); if (v) set.add(v); });
+      try {
+        const pl = await supabaseFetch(token, "pricelist_provinsi?select=provinsi&limit=20000");
+        (pl || []).forEach((c) => { const v = (c.provinsi || "").trim(); if (v) set.add(v); });
+      } catch (e) { setError("Tabel pricelist belum ada. Jalankan dulu buat_tabel_pricelist_provinsi.sql di Supabase. (" + e.message + ")"); }
+      setProvList([...set].sort((a, b) => a.localeCompare(b)));
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { loadAwal(); }, []);
+
+  async function loadProv(prov) {
+    setInfo("");
+    if (!prov) { setExisting({}); setDraft({}); setAwal({}); return; }
+    try {
+      const rows = await supabaseFetch(token, `pricelist_provinsi?select=*&provinsi=eq.${encodeURIComponent(prov)}&limit=5000`);
+      const ex = {}, dr = {};
+      (rows || []).forEach((r) => { ex[r.product_id] = r; dr[r.product_id] = { harga: str(r.harga_jual), diskon: str(r.diskon_koli_pct), cashback: str(r.cashback_per_koli) }; });
+      setExisting(ex); setDraft(dr); setAwal(JSON.parse(JSON.stringify(dr)));
+    } catch (e) { setError(e.message); }
+  }
+  useEffect(() => { loadProv(pilih); }, [pilih]);
+
+  const kosong = { harga: "", diskon: "", cashback: "" };
+  const dr = (id) => draft[id] || kosong;
+  const setField = (id, f, v) => setDraft((prev) => ({ ...prev, [id]: { ...(prev[id] || kosong), [f]: v } }));
+  const adaBerubah = (id) => { const a = awal[id] || kosong, b = dr(id); return a.harga !== b.harga || a.diskon !== b.diskon || a.cashback !== b.cashback; };
+  const jumlahBerubah = produk.filter((p) => adaBerubah(p.id)).length;
+
+  // nilai efektif (khusus provinsi kalau ada, kalau tidak default)
+  function efektif(p) {
+    const d = dr(p.id);
+    return {
+      harga: d.harga !== "" ? Number(d.harga) : Number(p.harga_jual || 0),
+      diskon: d.diskon !== "" ? Number(d.diskon) : Number(p.diskon_koli_pct || 0),
+      cashback: d.cashback !== "" ? Number(d.cashback) : Number(p.cashback_per_koli || 0),
+    };
+  }
+  const hargaKoli = (p, e) => (Number(p.isi_per_koli) > 0 ? e.harga * Number(p.isi_per_koli) * (1 - e.diskon / 100) : null);
+
+  function terapkanPersen() {
+    const x = Number(persen);
+    if (!pilih) { alert("Pilih provinsi dulu."); return; }
+    if (isNaN(x) || persen === "") { alert("Isi persen (boleh negatif untuk turun)."); return; }
+    setDraft((prev) => {
+      const baru = { ...prev };
+      produk.forEach((p) => { baru[p.id] = { ...(baru[p.id] || kosong), harga: String(Math.max(0, Math.round(Number(p.harga_jual || 0) * (1 + x / 100)))) }; });
+      return baru;
+    });
+    setInfo(`Harga semua produk di ${pilih} diisi default ${x >= 0 ? "+" : ""}${x}%. Periksa lalu klik Simpan.`);
+  }
+  function kosongkanSemua() {
+    if (!confirm(`Kosongkan semua harga khusus ${pilih}? (kembali ke harga default setelah Simpan)`)) return;
+    setDraft({});
+  }
+
+  async function simpan() {
+    if (!pilih) return;
+    setSaving(true); setError(""); setInfo("");
+    try {
+      const upserts = [], hapusId = [], log = [];
+      produk.forEach((p) => {
+        if (!adaBerubah(p.id)) return;
+        const d = dr(p.id), ex = existing[p.id];
+        const adaIsi = d.harga !== "" || d.diskon !== "" || d.cashback !== "";
+        const lamaHarga = ex ? Number(ex.harga_jual) : null;
+        if (!adaIsi) {
+          if (ex) { hapusId.push(p.id); log.push({ provinsi: pilih, product_id: p.id, harga_lama: lamaHarga, harga_baru: null, diskon_lama: ex.diskon_koli_pct, diskon_baru: null, cashback_lama: ex.cashback_per_koli, cashback_baru: null }); }
+          return;
+        }
+        const hargaBaru = d.harga !== "" ? Number(d.harga) : Number(p.harga_jual || 0);
+        if (isNaN(hargaBaru) || hargaBaru < 0) throw new Error(`Harga ${p.kode} tidak valid.`);
+        if (d.diskon !== "" && (Number(d.diskon) < 0 || Number(d.diskon) > 100)) throw new Error(`Diskon ${p.kode} harus 0-100.`);
+        upserts.push({ provinsi: pilih, product_id: p.id, harga_jual: hargaBaru, diskon_koli_pct: d.diskon !== "" ? Number(d.diskon) : null, cashback_per_koli: d.cashback !== "" ? Number(d.cashback) : null, updated_at: new Date().toISOString() });
+        log.push({ provinsi: pilih, product_id: p.id, harga_lama: lamaHarga, harga_baru: hargaBaru, diskon_lama: ex ? ex.diskon_koli_pct : null, diskon_baru: d.diskon !== "" ? Number(d.diskon) : null, cashback_lama: ex ? ex.cashback_per_koli : null, cashback_baru: d.cashback !== "" ? Number(d.cashback) : null });
+      });
+      if (upserts.length) await supabaseFetch(token, "pricelist_provinsi?on_conflict=provinsi,product_id", { method: "POST", prefer: "resolution=merge-duplicates,return=minimal", body: JSON.stringify(upserts) });
+      for (const pid of hapusId) await supabaseFetch(token, `pricelist_provinsi?provinsi=eq.${encodeURIComponent(pilih)}&product_id=eq.${pid}`, { method: "DELETE", prefer: "return=minimal" });
+      if (catatRiwayat && log.length) {
+        try { await supabaseFetch(token, "pricelist_riwayat", { method: "POST", prefer: "return=minimal", body: JSON.stringify(log) }); }
+        catch (e) { setError("Harga tersimpan, tetapi riwayat gagal dicatat: " + e.message); }
+      }
+      await loadProv(pilih);
+      setInfo(`Tersimpan: ${upserts.length} harga diubah, ${hapusId.length} dikembalikan ke default.`);
+    } catch (e) { setError(e.message); }
+    setSaving(false);
+  }
+
+  async function bukaRiwayat() {
+    if (!pilih) return;
+    try {
+      const rows = await supabaseFetch(token, `pricelist_riwayat?select=*&provinsi=eq.${encodeURIComponent(pilih)}&order=berubah_at.desc&limit=200`);
+      setRiwayat(rows || []);
+    } catch (e) { setError(e.message); }
+  }
+
+  function tambahProvinsi() {
+    const v = provBaru.trim();
+    if (!v) return;
+    if (!provList.some((x) => x.toLowerCase() === v.toLowerCase())) setProvList((l) => [...l, v].sort((a, b) => a.localeCompare(b)));
+    setPilih(provList.find((x) => x.toLowerCase() === v.toLowerCase()) || v);
+    setProvBaru("");
+  }
+
+  const q = cari.trim().toLowerCase();
+  const tampil = produk.filter((p) => !q || `${p.kode} ${p.nama} ${p.brand || ""}`.toLowerCase().includes(q));
+  const judul = pilih ? `Pricelist ${pilih}` : "Pricelist Default";
+
+  function barisData() {
+    return tampil.map((p) => {
+      const e = pilih ? efektif(p) : { harga: Number(p.harga_jual || 0), diskon: Number(p.diskon_koli_pct || 0), cashback: Number(p.cashback_per_koli || 0) };
+      return { p, e, koli: hargaKoli(p, e) };
+    });
+  }
+  function cetak() {
+    const w = window.open("", "_blank");
+    if (!w) { alert("Pop-up diblokir browser. Izinkan pop-up untuk mencetak."); return; }
+    const tgl = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Jakarta" });
+    const tr = barisData().map(({ p, e, koli }) => `<tr><td>${p.kode}</td><td>${p.nama}</td><td>${p.brand || "-"}</td><td>${p.satuan || ""}</td><td style="text-align:right">${p.isi_per_koli || "-"}</td><td style="text-align:right">${rupiah(e.harga)}</td><td style="text-align:right">${e.diskon ? e.diskon + "%" : "-"}</td><td style="text-align:right">${koli !== null ? rupiah(koli) : "-"}</td></tr>`).join("");
+    w.document.write(`<html><head><title>${judul}</title><style>body{font-family:Arial,sans-serif;font-size:11px;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:4px 6px;text-align:left}th{background:#eee}h2{margin:4px 0}@page{margin:12mm}</style></head><body>
+      <h2>PT INDO GARUDA ABADI</h2><h2>${judul}</h2><p>Berlaku per ${tgl}</p>
+      <table><thead><tr><th>Kode</th><th>Nama Barang</th><th>Brand</th><th>Satuan</th><th>Isi/Koli</th><th>Harga Satuan</th><th>Diskon Koli</th><th>Harga/Koli</th></tr></thead><tbody>${tr}</tbody></table>
+      <script>window.onload=function(){window.print()}<\/script></body></html>`);
+    w.document.close();
+  }
+  function salinTeks() {
+    const baris = barisData().map(({ p, e, koli }) => `${p.kode} ${p.nama}: ${rupiah(e.harga)}/${p.satuan || "pcs"}${koli !== null && e.diskon ? ` | koli (isi ${p.isi_per_koli}, disc ${e.diskon}%): ${rupiah(koli)}` : ""}`).join("\n");
+    const teks = `*${judul}* - PT Indo Garuda Abadi\n\n${baris}`;
+    navigator.clipboard?.writeText(teks).then(() => setInfo("Teks pricelist disalin, tinggal tempel di WhatsApp.")).catch(() => alert("Gagal menyalin."));
+  }
+
+  const inp = (id, f, ph) => (
+    <input type="number" min="0" value={dr(id)[f]} onChange={(e) => setField(id, f, e.target.value)} placeholder={ph} style={{ ...fieldStyle, width: 96, borderColor: adaBerubah(id) ? "#E8A426" : "#E4E1DA" }} />
+  );
+
+  return (
+    <div>
+      <PageHeader title="Pricelist" subtitle="Harga jual semua item. Pilih provinsi untuk mengatur harga khusus; yang dikosongkan ikut harga default (menu Product)." onRefresh={loadAwal} refreshing={loading} />
+      {error && <div style={{ color: "#C0392B", marginBottom: 10, fontSize: 13 }}>{error}</div>}
+      {info && <div style={{ color: "#28685D", background: "#D8E9E6", padding: "8px 12px", borderRadius: 9, marginBottom: 10, fontSize: 13 }}>{info}</div>}
+      {loading ? <LoadingState /> : (
+        <>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+            <select value={pilih} onChange={(e) => setPilih(e.target.value)} style={fieldStyle}>
+              <option value="">Default (semua wilayah)</option>
+              {provList.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+            <input value={provBaru} onChange={(e) => setProvBaru(e.target.value)} placeholder="Tambah provinsi baru" style={{ ...fieldStyle, width: 170 }} />
+            <button onClick={tambahProvinsi} style={{ ...fieldStyle, cursor: "pointer", fontWeight: 700 }}>+ Tambah</button>
+            <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari kode / nama / brand" style={{ ...fieldStyle, width: 190 }} />
+            <button onClick={cetak} style={{ ...fieldStyle, cursor: "pointer", fontWeight: 700 }}>Cetak</button>
+            <button onClick={salinTeks} style={{ ...fieldStyle, cursor: "pointer", fontWeight: 700 }}>Salin untuk WhatsApp</button>
+          </div>
+          {pilih && (
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12, padding: 10, background: "#F7F5F1", borderRadius: 10 }}>
+              <span style={{ fontSize: 12.5, fontWeight: 700 }}>Atur cepat:</span>
+              <input type="number" value={persen} onChange={(e) => setPersen(e.target.value)} placeholder="% dari default" style={{ ...fieldStyle, width: 130 }} />
+              <button onClick={terapkanPersen} style={{ ...fieldStyle, cursor: "pointer", fontWeight: 700 }}>Isi semua harga</button>
+              <button onClick={kosongkanSemua} style={{ ...fieldStyle, cursor: "pointer" }}>Kosongkan semua</button>
+              <label style={{ fontSize: 12.5, display: "flex", gap: 6, alignItems: "center", marginLeft: "auto" }}>
+                <input type="checkbox" checked={catatRiwayat} onChange={(e) => setCatatRiwayat(e.target.checked)} /> Catat riwayat perubahan
+              </label>
+              <button onClick={bukaRiwayat} style={{ ...fieldStyle, cursor: "pointer" }}>Lihat riwayat</button>
+              <button onClick={simpan} disabled={saving || jumlahBerubah === 0} style={{ padding: "9px 18px", borderRadius: 9, border: "none", background: jumlahBerubah === 0 ? "#D9D5CB" : "#E8A426", color: "#24272B", fontWeight: 800, cursor: jumlahBerubah === 0 ? "default" : "pointer" }}>
+                {saving ? "Menyimpan..." : `Simpan (${jumlahBerubah} berubah)`}
+              </button>
+            </div>
+          )}
+          <Card style={{ padding: 0, overflow: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+              <thead>
+                <tr style={{ background: "#F7F5F1" }}>
+                  {["Kode", "Nama Barang", "Brand", "Satuan", "Isi/Koli", "Harga Default", ...(pilih ? ["Harga " + pilih, "Diskon Koli %", "Cashback/Koli"] : ["Diskon Koli %", "Cashback/Koli"]), "Harga/Koli"].map((h) => (
+                    <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, color: "#6B6F75", whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tampil.map((p) => {
+                  const e = pilih ? efektif(p) : { harga: Number(p.harga_jual || 0), diskon: Number(p.diskon_koli_pct || 0), cashback: Number(p.cashback_per_koli || 0) };
+                  const koli = hargaKoli(p, e);
+                  const rugi = p.harga_modal && e.harga < Number(p.harga_modal);
+                  return (
+                    <tr key={p.id} style={{ borderTop: "1px solid #EDEAE3", background: rugi ? "#FBEAEA" : "transparent" }}>
+                      <td style={{ padding: "8px 12px", fontWeight: 700 }}>{p.kode}</td>
+                      <td style={{ padding: "8px 12px" }}>{p.nama}</td>
+                      <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.brand || "-"}</td>
+                      <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.satuan}</td>
+                      <td style={{ padding: "8px 12px" }}>{p.isi_per_koli || "-"}</td>
+                      <td style={{ padding: "8px 12px", fontWeight: 600 }}>{rupiah(p.harga_jual)}</td>
+                      {pilih ? (
+                        <>
+                          <td style={{ padding: "6px 12px" }}>{inp(p.id, "harga", String(p.harga_jual || ""))}</td>
+                          <td style={{ padding: "6px 12px" }}>{inp(p.id, "diskon", String(p.diskon_koli_pct ?? 0))}</td>
+                          <td style={{ padding: "6px 12px" }}>{inp(p.id, "cashback", String(p.cashback_per_koli ?? 0))}</td>
+                        </>
+                      ) : (
+                        <>
+                          <td style={{ padding: "8px 12px" }}>{p.diskon_koli_pct ? p.diskon_koli_pct + "%" : "-"}</td>
+                          <td style={{ padding: "8px 12px" }}>{p.cashback_per_koli ? rupiah(p.cashback_per_koli) : "-"}</td>
+                        </>
+                      )}
+                      <td style={{ padding: "8px 12px", fontWeight: 700 }}>{koli !== null ? rupiah(koli) : "-"}{rugi && <span style={{ marginLeft: 6, fontSize: 10, color: "#C0392B", fontWeight: 800 }}>DI BAWAH MODAL</span>}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {tampil.length === 0 && <EmptyState text="Tidak ada produk." />}
+          </Card>
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", marginTop: 8 }}>Kolom kuning = belum disimpan. Kolom input kosong = ikut default. Harga/Koli = harga satuan x isi per koli x (1 - diskon koli).{!pilih && " Harga default diubah di menu Product."}</p>
+        </>
+      )}
+      {riwayat && (
+        <div onClick={() => setRiwayat(null)} style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 14, padding: 18, width: "100%", maxWidth: 760, maxHeight: "80vh", overflow: "auto" }}>
+            <h3 className="disp" style={{ margin: "0 0 10px" }}>Riwayat harga {pilih}</h3>
+            {riwayat.length === 0 ? <EmptyState text="Belum ada riwayat." /> : (
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                <thead><tr style={{ background: "#F7F5F1" }}>{["Tanggal", "Produk", "Harga", "Diskon Koli", "Cashback"].map((h) => <th key={h} style={{ padding: "8px 10px", textAlign: "left", fontSize: 11, color: "#6B6F75" }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {riwayat.map((r) => {
+                    const pr = produk.find((x) => x.id === r.product_id);
+                    const ub = (a, b, f) => `${a === null || a === undefined ? "default" : f(a)} → ${b === null || b === undefined ? "default" : f(b)}`;
+                    return (
+                      <tr key={r.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                        <td style={{ padding: "7px 10px" }}>{fmtTglAngka(r.berubah_at)}</td>
+                        <td style={{ padding: "7px 10px", fontWeight: 600 }}>{pr ? pr.kode : "-"}</td>
+                        <td style={{ padding: "7px 10px" }}>{ub(r.harga_lama, r.harga_baru, rupiah)}</td>
+                        <td style={{ padding: "7px 10px" }}>{ub(r.diskon_lama, r.diskon_baru, (v) => v + "%")}</td>
+                        <td style={{ padding: "7px 10px" }}>{ub(r.cashback_lama, r.cashback_baru, rupiah)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+            <button onClick={() => setRiwayat(null)} style={{ marginTop: 12, padding: "9px 18px", borderRadius: 9, border: "1px solid #D9D5CB", background: "#fff", fontWeight: 700, cursor: "pointer" }}>Tutup</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
