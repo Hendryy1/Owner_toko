@@ -5765,7 +5765,7 @@ function PricelistPage({ token }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: "#F7F5F1" }}>
-                  {["Kode", "Nama Barang", "Satuan", "Min Order", "Harga Asli", "Harga Default", ...(pilih ? ["Harga " + pilih, "Diskon %"] : ["Diskon %"])].map((h) => (
+                  {["Kode", "Nama Barang", "Satuan", "Min Order", "Isi/Koli", "Harga Asli", "Harga Default", ...(pilih ? ["Harga " + pilih, "Diskon %"] : ["Diskon %"])].map((h) => (
                     <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, color: "#6B6F75", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -5780,6 +5780,7 @@ function PricelistPage({ token }) {
                       <td style={{ padding: "8px 12px" }}>{p.nama}{kotaAda[p.id] ? <span title="Ada harga per kota yang lebih diutamakan aplikasi toko" style={{ marginLeft: 6, fontSize: 10, color: "#8A6A1A", background: "#EFE1BE", padding: "1px 6px", borderRadius: 999 }}>ada harga kota</span> : null}</td>
                       <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.satuan}</td>
                       <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.minimal_order || 1}</td>
+                      <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.isi_per_koli || "-"}</td>
                       <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{Number(p.harga_asli) > 0 ? rupiah(p.harga_asli) : "-"}</td>
                       <td style={{ padding: "8px 12px", fontWeight: 600 }}>{rupiah(p.harga_jual)}</td>
                       {pilih ? (
