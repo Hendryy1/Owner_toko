@@ -5815,6 +5815,8 @@ function RekapKomisiSalesPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [buka, setBuka] = useState(null);
+  const [cairMap, setCairMap] = useState({});
+  const [proses, setProses] = useState(false);
   const NAMA_BLN = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
   async function load() {
@@ -5830,10 +5832,40 @@ function RekapKomisiSalesPage({ token }) {
       (sales || []).forEach((x) => { m[x.id] = x; });
       setSalesMap(m);
       setRows(orders || []);
+      try {
+        const cair = await supabaseFetch(token, "komisi_dicairkan?select=order_id,jumlah,tanggal&limit=20000");
+        const cm = {};
+        (cair || []).forEach((c) => { cm[c.order_id] = c; });
+        setCairMap(cm);
+      } catch (e) { setCairMap({}); }
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, [tahun, bulan]);
+
+  async function tandaiCair(daftarNota) {
+    if (daftarNota.length === 0) return;
+    if (!window.confirm(`Tandai ${daftarNota.length} nota sebagai komisi sudah dicairkan?`)) return;
+    setProses(true); setError("");
+    try {
+      const tgl = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+      await supabaseFetch(token, "komisi_dicairkan", {
+        method: "POST",
+        body: JSON.stringify(daftarNota.map((n) => ({ order_id: n.id, jumlah: Math.round(n.komisi), tanggal: tgl }))),
+      });
+      await load();
+    } catch (e) { setError(e.message); }
+    setProses(false);
+  }
+  async function batalCair(n) {
+    if (!window.confirm(`Batalkan status dicairkan untuk nota ${n.no_nota}?`)) return;
+    setProses(true); setError("");
+    try {
+      await supabaseFetch(token, `komisi_dicairkan?order_id=eq.${n.id}`, { method: "DELETE" });
+      await load();
+    } catch (e) { setError(e.message); }
+    setProses(false);
+  }
 
   const SKIP = ["ditolak", "dibatalkan", "batal"];
   const grup = {};
@@ -5843,22 +5875,23 @@ function RekapKomisiSalesPage({ token }) {
     const kunci = o.sales_id || "__tanpa";
     if (!grup[kunci]) {
       const sl = salesMap[o.sales_id];
-      grup[kunci] = { kunci, nama: sl ? sl.nama : "Tanpa Sales", kode: sl?.kode || "", nota: [], cair: 0, tertahan: 0, retur: 0 };
+      grup[kunci] = { kunci, nama: sl ? sl.nama : "Tanpa Sales", kode: sl?.kode || "", nota: [], cair: 0, dicairkan: 0, tertahan: 0, retur: 0 };
     }
     let jenis, alasan = "";
     if (o.status === "diretur") { jenis = "retur"; alasan = "Diretur"; }
-    else if (o.status === "selesai" && o.status_bayar === "lunas") { jenis = "cair"; }
+    else if (o.status === "selesai" && o.status_bayar === "lunas") { jenis = cairMap[o.id] ? "dicairkan" : "cair"; }
     else {
       jenis = "tertahan";
       alasan = o.status_bayar !== "lunas" && o.status !== "selesai" ? "Belum lunas & belum selesai" : (o.status_bayar !== "lunas" ? "Belum lunas" : "Pesanan belum selesai");
     }
-    grup[kunci][jenis] += komisi;
-    grup[kunci].nota.push({ ...o, komisi, jenis, alasan });
+    const nilai = jenis === "dicairkan" ? Number(cairMap[o.id].jumlah) || 0 : komisi;
+    grup[kunci][jenis] += nilai;
+    grup[kunci].nota.push({ ...o, komisi: nilai, jenis, alasan, tglCair: cairMap[o.id]?.tanggal });
   });
   const daftar = Object.values(grup).sort((a, b) => b.cair - a.cair);
-  const tot = daftar.reduce((a, g) => ({ cair: a.cair + g.cair, tertahan: a.tertahan + g.tertahan, retur: a.retur + g.retur }), { cair: 0, tertahan: 0, retur: 0 });
-  const warna = { cair: "#28685D", tertahan: "#B7791F", retur: "#C0392B" };
-  const label = { cair: "Bisa Cair", tertahan: "Tertahan", retur: "Retur (dipotong)" };
+  const tot = daftar.reduce((a, g) => ({ cair: a.cair + g.cair, dicairkan: a.dicairkan + g.dicairkan, tertahan: a.tertahan + g.tertahan, retur: a.retur + g.retur }), { cair: 0, dicairkan: 0, tertahan: 0, retur: 0 });
+  const warna = { cair: "#28685D", dicairkan: "#2F6FB0", tertahan: "#B7791F", retur: "#C0392B" };
+  const label = { cair: "Siap Cair", dicairkan: "Sudah Dicairkan", tertahan: "Tertahan", retur: "Retur (dipotong)" };
 
   function cetak() {
     const w = window.open("", "_blank");
@@ -5866,8 +5899,9 @@ function RekapKomisiSalesPage({ token }) {
     const bagian = daftar.map((g) => `
       <h3>${g.nama} ${g.kode ? "(" + g.kode + ")" : ""}</h3>
       <table><thead><tr><th>Tgl Nota</th><th>No Nota</th><th>Toko</th><th>Status</th><th style="text-align:right">Komisi</th></tr></thead><tbody>
-      ${g.nota.map((n) => `<tr><td>${fmtTglAngka(n.created_at)}</td><td>${n.no_nota}</td><td>${n.clients?.nama || ""}</td><td>${label[n.jenis]}${n.alasan ? " - " + n.alasan : ""}</td><td style="text-align:right">${rupiah(n.komisi)}</td></tr>`).join("")}
-      </tbody><tfoot><tr><td colspan="4"><b>Komisi Bisa Cair</b></td><td style="text-align:right"><b>${rupiah(g.cair)}</b></td></tr>
+      ${g.nota.map((n) => `<tr><td>${fmtTglAngka(n.created_at)}</td><td>${n.no_nota}</td><td>${n.clients?.nama || ""}</td><td>${label[n.jenis]}${n.alasan ? " - " + n.alasan : ""}${n.tglCair ? " (" + fmtTglAngka(n.tglCair) + ")" : ""}</td><td style="text-align:right">${rupiah(n.komisi)}</td></tr>`).join("")}
+      </tbody><tfoot><tr><td colspan="4"><b>Siap Cair (belum dicairkan)</b></td><td style="text-align:right"><b>${rupiah(g.cair)}</b></td></tr>
+      <tr><td colspan="4">Sudah Dicairkan</td><td style="text-align:right">${rupiah(g.dicairkan)}</td></tr>
       <tr><td colspan="4">Tertahan</td><td style="text-align:right">${rupiah(g.tertahan)}</td></tr>
       <tr><td colspan="4">Retur (dipotong)</td><td style="text-align:right">${rupiah(g.retur)}</td></tr></tfoot></table>`).join("");
     w.document.write(`<html><head><title>Rekap Komisi Sales</title><style>body{font-family:Arial,sans-serif;font-size:11px;padding:20px}table{width:100%;border-collapse:collapse;margin-bottom:14px}th,td{border:1px solid #999;padding:4px 6px;text-align:left}th{background:#eee}h2,h3{margin:6px 0}</style></head><body><h2>PT INDO GARUDA ABADI</h2><h2>Rekap Komisi Sales - ${NAMA_BLN[bulan - 1]} ${tahun}</h2>${bagian}<script>window.onload=function(){window.print()}<\/script></body></html>`);
@@ -5891,7 +5925,7 @@ function RekapKomisiSalesPage({ token }) {
       {loading ? <LoadingState /> : (
         <>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginBottom: 16 }}>
-            {["cair", "tertahan", "retur"].map((k) => (
+            {["cair", "dicairkan", "tertahan", "retur"].map((k) => (
               <Card key={k} style={{ padding: 14 }}>
                 <div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>{label[k]}</div>
                 <div className="disp" style={{ fontSize: 20, fontWeight: 800, color: warna[k] }}>{rupiah(tot[k])}</div>
@@ -5904,7 +5938,11 @@ function RekapKomisiSalesPage({ token }) {
               <div onClick={() => setBuka(buka === g.kunci ? null : g.kunci)} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div style={{ fontWeight: 700 }}>{g.nama} <span style={{ color: "#6B6F75", fontWeight: 500, fontSize: 12 }}>{g.kode} - {g.nota.length} nota</span></div>
                 <div style={{ display: "flex", gap: 14, fontSize: 12.5 }}>
-                  <span style={{ color: warna.cair, fontWeight: 800 }}>Cair {rupiah(g.cair)}</span>
+                  <span style={{ color: warna.cair, fontWeight: 800 }}>Siap Cair {rupiah(g.cair)}</span>
+                  <span style={{ color: warna.dicairkan }}>Dicairkan {rupiah(g.dicairkan)}</span>
+                  {g.nota.some((n) => n.jenis === "cair") && (
+                    <button disabled={proses} onClick={(e) => { e.stopPropagation(); tandaiCair(g.nota.filter((n) => n.jenis === "cair")); }} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 11.5, cursor: "pointer" }}>Cairkan semua</button>
+                  )}
                   <span style={{ color: warna.tertahan }}>Tertahan {rupiah(g.tertahan)}</span>
                   <span style={{ color: warna.retur }}>Retur {rupiah(g.retur)}</span>
                 </div>
@@ -5912,7 +5950,7 @@ function RekapKomisiSalesPage({ token }) {
               {buka === g.kunci && (
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                   <thead><tr style={{ background: "#F7F5F1" }}>
-                    {["Tgl Nota", "No Nota", "Toko", "Status", "Komisi"].map((h) => <th key={h} style={{ padding: "9px 12px", textAlign: "left", fontSize: 11, color: "#6B6F75" }}>{h}</th>)}
+                    {["Tgl Nota", "No Nota", "Toko", "Status", "Komisi", "Aksi"].map((h) => <th key={h} style={{ padding: "9px 12px", textAlign: "left", fontSize: 11, color: "#6B6F75" }}>{h}</th>)}
                   </tr></thead>
                   <tbody>
                     {g.nota.map((n) => (
@@ -5920,8 +5958,12 @@ function RekapKomisiSalesPage({ token }) {
                         <td style={{ padding: "9px 12px" }}>{fmtTglAngka(n.created_at)}</td>
                         <td style={{ padding: "9px 12px", fontWeight: 600 }}>{n.no_nota}</td>
                         <td style={{ padding: "9px 12px" }}>{n.clients?.nama || "-"}</td>
-                        <td style={{ padding: "9px 12px", color: warna[n.jenis], fontWeight: 600 }}>{label[n.jenis]}{n.alasan ? ` - ${n.alasan}` : ""}</td>
+                        <td style={{ padding: "9px 12px", color: warna[n.jenis], fontWeight: 600 }}>{label[n.jenis]}{n.alasan ? ` - ${n.alasan}` : ""}{n.tglCair ? ` (${fmtTglAngka(n.tglCair)})` : ""}</td>
                         <td style={{ padding: "9px 12px", fontWeight: 700 }}>{rupiah(n.komisi)}</td>
+                        <td style={{ padding: "9px 12px" }}>
+                          {n.jenis === "cair" && <button disabled={proses} onClick={() => tandaiCair([n])} style={{ padding: "4px 10px", borderRadius: 7, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, fontSize: 11.5, cursor: "pointer" }}>Tandai Cair</button>}
+                          {n.jenis === "dicairkan" && <button disabled={proses} onClick={() => batalCair(n)} style={{ padding: "4px 10px", borderRadius: 7, border: "1px solid #D9D5CB", background: "#fff", fontWeight: 600, fontSize: 11.5, cursor: "pointer" }}>Batalkan</button>}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
