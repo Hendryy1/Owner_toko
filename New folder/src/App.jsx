@@ -2160,7 +2160,7 @@ function OverviewPage({ token, setPage }) {
       const nextYear = filterMonth === 12 ? filterYear + 1 : filterYear;
       const endBulan = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
-      const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni, rekapOmzetSales, semuaTokoKota, keuangan12Bulan, pajakPembayaran, investorsAktif, bungaPembayaran, chatCasesOpen, semuaOrderTanggal] = await Promise.all([
+      const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni, rekapOmzetSales, semuaTokoKota, keuangan12Bulan, pajakPembayaran, investorsAktif, bungaPembayaran, chatCasesOpen, semuaOrderTanggal, orderPiutangBulan] = await Promise.all([
         supabaseFetch(token, "orders?select=id&status=eq.menunggu_persetujuan"),
         supabaseFetch(token, "clients?select=id&status=eq.pending"),
         supabaseFetch(token, `v_laporan_keuangan_bulanan?select=*&bulan=eq.${startBulan}`),
@@ -2176,7 +2176,13 @@ function OverviewPage({ token, setPage }) {
         supabaseFetch(token, "bunga_investor_pembayaran?select=investor_id,bulan,sudah_dibayar"),
         supabaseFetch(token, "chat_cases?select=id,no_case,client_id,updated_at,clients(nama)&status=eq.open"),
         supabaseFetch(token, "orders?select=client_id,tanggal&status=neq.ditolak&order=tanggal.desc"),
+        // Piutang yang belum lunas dari nota yang dibuat di bulan terpilih (definisi sama dengan menu Piutang)
+        supabaseFetch(token, `orders?select=id,order_items(subtotal_setelah_diskon)&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&created_at=gte.${startBulan}&created_at=lt.${endBulan}`),
       ]);
+      const piutangBulanDipilih = (orderPiutangBulan || []).reduce(
+        (sum, o) => sum + (o.order_items || []).reduce((s, it) => s + Number(it.subtotal_setelah_diskon || 0), 0), 0
+      );
+      const jumlahNotaPiutangBulan = (orderPiutangBulan || []).length;
       const totalPiutang = piutang.reduce((a, b) => a + Number(b.total_piutang || 0), 0);
       const melebihiLimit = piutang.filter((p) => p.melebihi_limit).length;
 
@@ -2254,7 +2260,7 @@ function OverviewPage({ token, setPage }) {
         pendingOrders: pendingOrders.length,
         pendingClients: pendingClients.length,
         bulanIni: keuanganBulanIni[0] || null,
-        totalPiutang, melebihiLimit,
+        totalPiutang, melebihiLimit, piutangBulanDipilih, jumlahNotaPiutangBulan,
         ringkasanKunjungan,
         ringkasanKota,
         todoList,
@@ -2311,6 +2317,18 @@ function OverviewPage({ token, setPage }) {
             <MiniStat label="Biaya Operasional" value={rupiah(data.bulanIni.biaya_operasional)} />
             <MiniStat label="PPh Final UMKM" value={rupiah(data.bulanIni.pph_final_umkm)} />
           </div>
+        </Card>
+      )}
+
+      {data.piutangBulanDipilih > 0 && (
+        <Card style={{ marginTop: 16, borderColor: "#F0CFCB" }}>
+          <p style={{ fontSize: 12, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 8px" }}>
+            Piutang Belum Lunas - {bulanDipilihIniBerjalan ? "Bulan Ini" : labelBulanDipilih}
+          </p>
+          <p className="disp" style={{ fontSize: 24, fontWeight: 700, color: "#C0392B", margin: 0 }}>
+            {rupiah(data.piutangBulanDipilih)}
+            <span style={{ fontSize: 12.5, fontWeight: 600, color: "#9CA0A6", marginLeft: 10 }}>dari {data.jumlahNotaPiutangBulan} nota</span>
+          </p>
         </Card>
       )}
 
