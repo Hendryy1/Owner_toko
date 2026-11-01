@@ -5839,7 +5839,7 @@ function RekapKomisiSalesPage({ token }) {
       const mulai = `${tahun}-${String(bulan).padStart(2, "0")}-01`;
       const next = bulan === 12 ? `${tahun + 1}-01-01` : `${tahun}-${String(bulan + 1).padStart(2, "0")}-01`;
       const [orders, sales] = await Promise.all([
-        supabaseFetch(token, `orders?select=id,no_nota,created_at,status,status_bayar,sales_id,clients(nama,kode),order_items(qty,subtotal_setelah_diskon,products(kode,nama,komisi_persen))&created_at=gte.${mulai}T00:00:00%2B07:00&created_at=lt.${next}T00:00:00%2B07:00&order=created_at.asc&limit=5000`),
+        supabaseFetch(token, `orders?select=id,no_nota,created_at,status,status_bayar,jumlah_bayar,alasan_retur,sales_id,clients(nama,kode),order_items(qty,subtotal_setelah_diskon,products(kode,nama,komisi_persen))&created_at=gte.${mulai}T00:00:00%2B07:00&created_at=lt.${next}T00:00:00%2B07:00&order=created_at.asc&limit=5000`),
         supabaseFetch(token, "sales?select=id,kode,nama"),
       ]);
       const m = {};
@@ -5892,11 +5892,14 @@ function RekapKomisiSalesPage({ token }) {
       grup[kunci] = { kunci, nama: sl ? sl.nama : "Tanpa Sales", kode: sl?.kode || "", nota: [], cair: 0, dicairkan: 0, tertahan: 0, retur: 0 };
     }
     let jenis, alasan = "";
-    if (o.status === "diretur") { jenis = "retur"; alasan = "Diretur"; }
-    else if (o.status === "selesai" && o.status_bayar === "lunas") { jenis = cairMap[o.id] ? "dicairkan" : "cair"; }
+    const totalNota = (o.order_items || []).reduce((a, it) => a + (Number(it.subtotal_setelah_diskon) || 0), 0);
+    const sisaNota = Math.max(0, totalNota - (Number(o.jumlah_bayar) || 0));
+    const lunas = o.status_bayar === "lunas" || (totalNota > 0 && sisaNota <= 0);
+    if (o.status === "diretur" || o.alasan_retur) { jenis = "retur"; alasan = "Diretur"; }
+    else if (o.status === "selesai" && lunas) { jenis = cairMap[o.id] ? "dicairkan" : "cair"; }
     else {
       jenis = "tertahan";
-      alasan = o.status_bayar !== "lunas" && o.status !== "selesai" ? "Belum lunas & belum selesai" : (o.status_bayar !== "lunas" ? "Belum lunas" : "Pesanan belum selesai");
+      alasan = !lunas && o.status !== "selesai" ? "Belum lunas & belum selesai" : (!lunas ? `Belum lunas (sisa ${rupiah(sisaNota)})` : "Pesanan belum selesai");
     }
     const nilai = jenis === "dicairkan" ? Number(cairMap[o.id].jumlah) || 0 : komisi;
     grup[kunci][jenis] += nilai;
