@@ -15981,25 +15981,39 @@ function LaporanPeriodikSalesOwnerPage({ token }) {
   const [salesList, setSalesList] = useState([]);
   const [laporanMingguan, setLaporanMingguan] = useState([]);
   const [laporanBulanan, setLaporanBulanan] = useState([]);
+  const now = new Date();
+  const [filterYear, setFilterYear] = useState(now.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
+  const NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const yearsAvailable = Array.from({ length: 5 }, (_, i) => now.getFullYear() - i);
 
-  function getSeninMingguIni() {
-    const d = new Date();
-    const day = d.getDay();
-    const diff = day === 0 ? -6 : 1 - day;
-    d.setDate(d.getDate() + diff);
+  function formatTgl(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
-  const seninMingguIni = getSeninMingguIni();
-  const now = new Date();
+
+  // Semua hari Senin (awal minggu) yang jatuh di bulan yang dipilih
+  function senenDiBulan(year, month) {
+    const hasil = [];
+    const jumlahHari = new Date(year, month, 0).getDate();
+    for (let d = 1; d <= jumlahHari; d++) {
+      const tgl = new Date(year, month - 1, d);
+      if (tgl.getDay() === 1) hasil.push(formatTgl(tgl));
+    }
+    return hasil;
+  }
 
   async function load() {
     setLoading(true);
     setError("");
     try {
+      const startBulan = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+      const nextMonth = filterMonth === 12 ? 1 : filterMonth + 1;
+      const nextYear = filterMonth === 12 ? filterYear + 1 : filterYear;
+      const endBulan = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
       const [sales, mingguan, bulanan] = await Promise.all([
-        supabaseFetch(token, "sales?select=id,nama,kode&order=nama.asc"),
-        supabaseFetch(token, `laporan_mingguan_sales?select=*,sales(nama,kode)&minggu_mulai=eq.${seninMingguIni}`),
-        supabaseFetch(token, `laporan_bulanan_sales?select=*,sales(nama,kode)&bulan=eq.${now.getMonth() + 1}&tahun=eq.${now.getFullYear()}`),
+        supabaseFetch(token, "sales?select=id,nama,kode,aktif&order=nama.asc"),
+        supabaseFetch(token, `laporan_mingguan_sales?select=*,sales(nama,kode)&minggu_mulai=gte.${startBulan}&minggu_mulai=lt.${endBulan}&order=minggu_mulai.desc`),
+        supabaseFetch(token, `laporan_bulanan_sales?select=*,sales(nama,kode)&bulan=eq.${filterMonth}&tahun=eq.${filterYear}`),
       ]);
       setSalesList(sales);
       setLaporanMingguan(mingguan);
@@ -16007,51 +16021,94 @@ function LaporanPeriodikSalesOwnerPage({ token }) {
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [filterYear, filterMonth]);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
 
-  const dataAktif = tab === "mingguan" ? laporanMingguan : laporanBulanan;
-  const sudahIsiIds = new Set(dataAktif.map((l) => l.sales_id));
-  const belumIsi = salesList.filter((s) => !sudahIsiIds.has(s.id));
+  // Sales yang sudah nonaktif (akun dihapus) tidak ikut dihitung "belum isi"
+  const salesAktif = salesList.filter((s) => s.aktif !== false);
+  const hariIni = formatTgl(now);
+
+  const dataBulanan = laporanBulanan;
+  const belumIsiBulanan = salesAktif.filter((s) => !new Set(dataBulanan.map((l) => l.sales_id)).has(s.id));
+
+  // Mingguan: satu blok per hari Senin di bulan yang dipilih (minggu yang
+  // belum dimulai tidak ditandai "belum isi")
+  const blokMinggu = senenDiBulan(filterYear, filterMonth)
+    .filter((senin) => senin <= hariIni || laporanMingguan.some((l) => l.minggu_mulai === senin))
+    .reverse()
+    .map((senin) => {
+      const laporan = laporanMingguan.filter((l) => l.minggu_mulai === senin);
+      const sudahIsi = new Set(laporan.map((l) => l.sales_id));
+      return { senin, laporan, belumIsi: salesAktif.filter((s) => !sudahIsi.has(s.id)) };
+    });
+
+  const kartuLaporan = (l) => (
+    <Card key={l.id} style={{ marginBottom: 12 }}>
+      <p style={{ fontSize: 13.5, fontWeight: 700, color: "#8A6A1A", margin: "0 0 8px" }}>{l.sales?.nama} ({l.sales?.kode})</p>
+      <p style={{ fontSize: 13, color: "#24272B", margin: "0 0 8px", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{l.hambatan}</p>
+      <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>
+        {new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
+      </p>
+    </Card>
+  );
+
+  const bannerBelumIsi = (daftar) => daftar.length > 0 && (
+    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+      <AlertCircle size={16} color="#C0392B" style={{ flexShrink: 0, marginTop: 1 }} />
+      <p style={{ fontSize: 12.5, color: "#C0392B", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
+        Belum isi periode ini: {daftar.map((s) => s.nama).join(", ")}
+      </p>
+    </div>
+  );
+
+  const tabStyle = (aktif) => ({ padding: "9px 18px", borderRadius: 9, border: aktif ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: aktif ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 });
+  const selectStyle = { padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, fontWeight: 600, background: "#fff" };
 
   return (
     <div>
       <PageHeader
         title="Laporan Mingguan/Bulanan Sales"
-        subtitle={tab === "mingguan" ? `Minggu berjalan (mulai ${new Date(seninMingguIni + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "long" })})` : `Bulan ${now.toLocaleDateString("id-ID", { month: "long", year: "numeric" })}`}
+        subtitle={tab === "mingguan" ? `Laporan mingguan - ${NAMA_BULAN[filterMonth]} ${filterYear}` : `Laporan bulanan - ${NAMA_BULAN[filterMonth]} ${filterYear}`}
       />
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-        <button onClick={() => setTab("mingguan")} style={{ padding: "9px 18px", borderRadius: 9, border: tab === "mingguan" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: tab === "mingguan" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}>
-          Mingguan
-        </button>
-        <button onClick={() => setTab("bulanan")} style={{ padding: "9px 18px", borderRadius: 9, border: tab === "bulanan" ? "1.5px solid #E8A426" : "1.5px solid #E4E1DA", background: tab === "bulanan" ? "#FBF0D9" : "#fff", color: "#24272B", fontSize: 13, fontWeight: 700 }}>
-          Bulanan
-        </button>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap", alignItems: "center" }}>
+        <button onClick={() => setTab("mingguan")} style={tabStyle(tab === "mingguan")}>Mingguan</button>
+        <button onClick={() => setTab("bulanan")} style={tabStyle(tab === "bulanan")}>Bulanan</button>
+        <span style={{ width: 1, height: 24, background: "#E4E1DA", margin: "0 6px" }} />
+        <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={selectStyle}>
+          {NAMA_BULAN.slice(1).map((b, i) => <option key={i + 1} value={i + 1}>{b}</option>)}
+        </select>
+        <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} style={selectStyle}>
+          {yearsAvailable.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
       </div>
 
-      {belumIsi.length > 0 && (
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", background: "#FBEAEA", borderRadius: 10, padding: 12, marginBottom: 20 }}>
-          <AlertCircle size={16} color="#C0392B" style={{ flexShrink: 0, marginTop: 1 }} />
-          <p style={{ fontSize: 12.5, color: "#C0392B", margin: 0, fontWeight: 600, lineHeight: 1.5 }}>
-            Belum isi periode ini: {belumIsi.map((s) => s.nama).join(", ")}
-          </p>
-        </div>
-      )}
-
-      {dataAktif.length === 0 ? (
-        <EmptyState text={`Belum ada laporan ${tab} untuk periode ini.`} />
+      {tab === "bulanan" ? (
+        <>
+          {bannerBelumIsi(belumIsiBulanan)}
+          {dataBulanan.length === 0 ? (
+            <EmptyState text={`Belum ada laporan bulanan untuk ${NAMA_BULAN[filterMonth]} ${filterYear}.`} />
+          ) : (
+            dataBulanan.map(kartuLaporan)
+          )}
+        </>
+      ) : blokMinggu.length === 0 ? (
+        <EmptyState text={`Belum ada minggu yang berjalan di ${NAMA_BULAN[filterMonth]} ${filterYear}.`} />
       ) : (
-        dataAktif.map((l) => (
-          <Card key={l.id} style={{ marginBottom: 12 }}>
-            <p style={{ fontSize: 13.5, fontWeight: 700, color: "#8A6A1A", margin: "0 0 8px" }}>{l.sales?.nama} ({l.sales?.kode})</p>
-            <p style={{ fontSize: 13, color: "#24272B", margin: "0 0 8px", lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{l.hambatan}</p>
-            <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>
-              {new Date(l.created_at).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" })}
-            </p>
-          </Card>
+        blokMinggu.map((m) => (
+          <div key={m.senin} style={{ marginBottom: 24 }}>
+            <h2 className="disp" style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 10px" }}>
+              Minggu mulai {new Date(m.senin + "T00:00:00").toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+            </h2>
+            {bannerBelumIsi(m.belumIsi)}
+            {m.laporan.length === 0 ? (
+              <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: 0 }}>Belum ada laporan di minggu ini.</p>
+            ) : (
+              m.laporan.map(kartuLaporan)
+            )}
+          </div>
         ))
       )}
     </div>
