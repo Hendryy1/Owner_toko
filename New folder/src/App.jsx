@@ -5832,6 +5832,7 @@ function RekapKomisiSalesPage({ token }) {
   const [buka, setBuka] = useState(null);
   const [cairMap, setCairMap] = useState({});
   const [proses, setProses] = useState(false);
+  const [filterSalesKomisi, setFilterSalesKomisi] = useState(""); // "" = semua sales
   const [notaSettings, setNotaSettings] = useState(null);
   const [notaTampil, setNotaTampil] = useState(null);
   const [bukaNotaId, setBukaNotaId] = useState(null);
@@ -5921,7 +5922,8 @@ function RekapKomisiSalesPage({ token }) {
     grup[kunci][jenis] += nilai;
     grup[kunci].nota.push({ ...o, komisi: nilai, jenis, alasan, tglCair: cairMap[o.id]?.tanggal });
   });
-  const daftar = Object.values(grup).sort((a, b) => b.cair - a.cair);
+  const semuaGrup = Object.values(grup).sort((a, b) => b.cair - a.cair);
+  const daftar = filterSalesKomisi ? semuaGrup.filter((g) => g.kunci === filterSalesKomisi) : semuaGrup;
   const tot = daftar.reduce((a, g) => ({ cair: a.cair + g.cair, dicairkan: a.dicairkan + g.dicairkan, tertahan: a.tertahan + g.tertahan, retur: a.retur + g.retur }), { cair: 0, dicairkan: 0, tertahan: 0, retur: 0 });
   const warna = { cair: "#28685D", dicairkan: "#2F6FB0", tertahan: "#B7791F", retur: "#C0392B" };
   const label = { cair: "Siap Cair", dicairkan: "Sudah Dicairkan", tertahan: "Tertahan", retur: "Retur (dipotong)" };
@@ -5951,6 +5953,10 @@ function RekapKomisiSalesPage({ token }) {
         </select>
         <select value={tahun} onChange={(e) => setTahun(Number(e.target.value))} style={{ ...fieldStyle, width: "auto" }}>
           {tahunList.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <select value={filterSalesKomisi} onChange={(e) => setFilterSalesKomisi(e.target.value)} style={{ ...fieldStyle, width: "auto" }}>
+          <option value="">Semua Sales</option>
+          {semuaGrup.map((g) => <option key={g.kunci} value={g.kunci}>{g.nama}{g.kode ? ` (${g.kode})` : ""}</option>)}
         </select>
         <button onClick={cetak} style={{ padding: "9px 16px", borderRadius: 9, border: "1px solid #D9D5CB", background: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>Cetak</button>
       </div>
