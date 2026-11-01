@@ -2139,21 +2139,31 @@ function OverviewPage({ token, setPage }) {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const nowOverview = new Date();
+  const [filterYear, setFilterYear] = useState(nowOverview.getFullYear());
+  const [filterMonth, setFilterMonth] = useState(nowOverview.getMonth() + 1);
+  const NAMA_BULAN = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const yearsAvailable = Array.from({ length: 5 }, (_, i) => nowOverview.getFullYear() - i);
+  const labelBulanDipilih = `${NAMA_BULAN[filterMonth]} ${filterYear}`;
+  const bulanDipilihIniBerjalan = filterYear === nowOverview.getFullYear() && filterMonth === nowOverview.getMonth() + 1;
 
   async function load() {
     setLoading(true);
     setError("");
     try {
       const now = new Date();
-      const startBulan = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-      const nextMonth = now.getMonth() === 11 ? 1 : now.getMonth() + 2;
-      const nextYear = now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear();
+      // Bulan BERJALAN (asli) - dipakai buat "Yang Perlu Dikerjakan" (bunga investor bulan ini)
+      const startBulanBerjalan = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      // Bulan yang DIPILIH owner - dipakai buat laporan keuangan & tabel sales
+      const startBulan = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
+      const nextMonth = filterMonth === 12 ? 1 : filterMonth + 1;
+      const nextYear = filterMonth === 12 ? filterYear + 1 : filterYear;
       const endBulan = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
       const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni, rekapOmzetSales, semuaTokoKota, keuangan12Bulan, pajakPembayaran, investorsAktif, bungaPembayaran, chatCasesOpen, semuaOrderTanggal] = await Promise.all([
         supabaseFetch(token, "orders?select=id&status=eq.menunggu_persetujuan"),
         supabaseFetch(token, "clients?select=id&status=eq.pending"),
-        supabaseFetch(token, "v_laporan_keuangan_bulanan?select=*&order=bulan.desc&limit=1"),
+        supabaseFetch(token, `v_laporan_keuangan_bulanan?select=*&bulan=eq.${startBulan}`),
         supabaseFetch(token, "v_piutang_client?select=total_piutang,melebihi_limit"),
         supabaseFetch(token, "sales?select=id,kode,nama&status_verifikasi=eq.terverifikasi&aktif=eq.true&order=nama.asc"),
         supabaseFetch(token, "clients?select=id,sales_id,kota&sales_id=not.is.null"),
@@ -2208,9 +2218,9 @@ function OverviewPage({ token, setPage }) {
       });
       // Bunga investor bulan berjalan yang belum dibayar
       investorsAktif.forEach((inv) => {
-        const sudahMulai = !inv.tanggal_mulai || inv.tanggal_mulai <= startBulan || inv.tanggal_mulai.slice(0, 7) === startBulan.slice(0, 7);
+        const sudahMulai = !inv.tanggal_mulai || inv.tanggal_mulai <= startBulanBerjalan || inv.tanggal_mulai.slice(0, 7) === startBulanBerjalan.slice(0, 7);
         if (!sudahMulai) return;
-        const status = bungaPembayaran.find((p) => p.investor_id === inv.id && p.bulan === startBulan);
+        const status = bungaPembayaran.find((p) => p.investor_id === inv.id && p.bulan === startBulanBerjalan);
         if (!status?.sudah_dibayar) {
           const bunga = Number(inv.modal_investasi) * (Number(inv.bunga_persen) / 100);
           todoList.push({ label: `Bayar bunga investor ${inv.nama} bulan ini (${rupiah(bunga)})`, urgent: false, page: "bunga_investor" });
@@ -2255,7 +2265,7 @@ function OverviewPage({ token, setPage }) {
     setLoading(false);
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [filterYear, filterMonth]);
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorBox error={error} onRetry={load} />;
@@ -2270,10 +2280,30 @@ function OverviewPage({ token, setPage }) {
         <StatCard label="Toko Lebihi Limit" value={data.melebihiLimit} color="#C0392B" bg="#FBEAEA" />
       </div>
 
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14, flexWrap: "wrap" }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: "#6B6F75" }}>Periode laporan:</span>
+        <select value={filterMonth} onChange={(e) => setFilterMonth(Number(e.target.value))} style={{ padding: "8px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, fontWeight: 600, background: "#fff" }}>
+          {NAMA_BULAN.slice(1).map((b, i) => <option key={i + 1} value={i + 1}>{b}</option>)}
+        </select>
+        <select value={filterYear} onChange={(e) => setFilterYear(Number(e.target.value))} style={{ padding: "8px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, fontWeight: 600, background: "#fff" }}>
+          {yearsAvailable.map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+        {!bulanDipilihIniBerjalan && (
+          <button onClick={() => { setFilterYear(nowOverview.getFullYear()); setFilterMonth(nowOverview.getMonth() + 1); }} style={{ padding: "8px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", background: "#fff", color: "#24272B", fontSize: 12.5, fontWeight: 600 }}>
+            Kembali ke bulan ini
+          </button>
+        )}
+      </div>
+
+      {!data.bulanIni && (
+        <Card>
+          <p style={{ fontSize: 13, color: "#9CA0A6", margin: 0 }}>Belum ada data laporan keuangan untuk {labelBulanDipilih}.</p>
+        </Card>
+      )}
       {data.bulanIni && (
         <Card>
           <p style={{ fontSize: 12, fontWeight: 700, color: "#9CA0A6", textTransform: "uppercase", margin: "0 0 14px" }}>
-            Laporan Keuangan Bulan Ini
+            Laporan Keuangan {bulanDipilihIniBerjalan ? "Bulan Ini" : labelBulanDipilih}
           </p>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 20 }}>
             <MiniStat label="Omzet Bersih" value={rupiah(data.bulanIni.omzet_bersih)} />
@@ -2286,7 +2316,7 @@ function OverviewPage({ token, setPage }) {
 
       {data.ringkasanKunjungan && data.ringkasanKunjungan.length > 0 && (
         <>
-          <h2 className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "24px 0 12px" }}>Ringkasan Omzet dan Kunjungan Sales Bulan Ini</h2>
+          <h2 className="disp" style={{ fontSize: 18, fontWeight: 700, color: "#24272B", margin: "24px 0 12px" }}>Ringkasan Omzet dan Kunjungan Sales {bulanDipilihIniBerjalan ? "Bulan Ini" : labelBulanDipilih}</h2>
           <Card style={{ padding: 0, overflow: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
