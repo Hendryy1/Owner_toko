@@ -511,6 +511,21 @@ async function supabaseFetch(token, path, options = {}) {
 
 const rupiah = (n) => "Rp" + Math.round(Number(n) || 0).toLocaleString("id-ID");
 
+// Aturan: pesanan TIDAK BOLEH diselesaikan kalau sisa pembayaran belum 0.
+// Cek data terbaru dari server. Kalau gagal baca, jangan blokir (return ok).
+async function cekBolehSelesai(token, orderId) {
+  try {
+    const r = await supabaseFetch(token, `orders?select=no_nota,status_bayar,jumlah_bayar,order_items(subtotal_setelah_diskon)&id=eq.${orderId}`);
+    const o = r && r[0];
+    if (!o) return { ok: true };
+    const total = (o.order_items || []).reduce((a, it) => a + (Number(it.subtotal_setelah_diskon) || 0), 0);
+    const sisa = Math.max(0, total - (Number(o.jumlah_bayar) || 0));
+    if (o.status_bayar !== "lunas" && total > 0 && sisa > 0) return { ok: false, sisa, noNota: o.no_nota };
+    return { ok: true };
+  } catch (e) { return { ok: true }; }
+}
+
+
 // Kompresi gambar sebelum upload (resize + re-encode JPEG kualitas wajar) -
 // dipakai di semua tempat upload foto di Dashboard, supaya file lebih
 // kecil/cepat tapi masih enak dilihat.
@@ -5894,6 +5909,7 @@ function RekapKomisiSalesPage({ token }) {
     let jenis, alasan = "";
     const totalNota = (o.order_items || []).reduce((a, it) => a + (Number(it.subtotal_setelah_diskon) || 0), 0);
     const sisaNota = Math.max(0, totalNota - (Number(o.jumlah_bayar) || 0));
+    // Aturan: pesanan hanya bisa diselesaikan kalau sisa bayar 0, jadi cair = selesai + lunas.
     const lunas = o.status_bayar === "lunas" || (totalNota > 0 && sisaNota <= 0);
     if (o.status === "diretur" || o.alasan_retur) { jenis = "retur"; alasan = "Diretur"; }
     else if (o.status === "selesai" && lunas) { jenis = cairMap[o.id] ? "dicairkan" : "cair"; }
@@ -5928,7 +5944,7 @@ function RekapKomisiSalesPage({ token }) {
   const tahunList = [now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
   return (
     <div>
-      <PageHeader title="Rekap Komisi Sales" subtitle="Komisi = omzet produk x persen komisi. Cair hanya jika nota lunas dan pesanan selesai; masuk ke bulan nota dibuat." onRefresh={load} refreshing={loading} />
+      <PageHeader title="Rekap Komisi Sales" subtitle="Komisi = omzet produk x persen komisi. Cair jika pesanan selesai dan sisa bayar 0; masuk ke bulan nota dibuat." onRefresh={load} refreshing={loading} />
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
         <select value={bulan} onChange={(e) => setBulan(Number(e.target.value))} style={{ ...fieldStyle, width: "auto" }}>
           {NAMA_BLN.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}
@@ -6847,6 +6863,12 @@ function KonfirmasiPembayaranPage({ token }) {
   async function selesaikanPesananCod(orderId) {
     setProcessingId(orderId);
     try {
+      const cek = await cekBolehSelesai(token, orderId);
+      if (!cek.ok) {
+        alert(`Pesanan ${cek.noNota} belum bisa diselesaikan: sisa pembayaran masih ${rupiah(cek.sisa)}. Lunasi dulu (isi Jumlah Bayar di Rekap Nota).`);
+        setProcessingId(null);
+        return;
+      }
       await supabaseFetch(token, `orders?id=eq.${orderId}`, {
         method: "PATCH",
         body: JSON.stringify({ status: "selesai" }),
@@ -8048,6 +8070,12 @@ function ProsesPengirimanPage({ token, role }) {
   async function confirmTelahSampai(orderId) {
     setProcessingId(orderId);
     try {
+      const cek = await cekBolehSelesai(token, orderId);
+      if (!cek.ok) {
+        alert(`Pesanan ${cek.noNota} belum bisa diselesaikan: sisa pembayaran masih ${rupiah(cek.sisa)}. Lunasi dulu (isi Jumlah Bayar di Rekap Nota).`);
+        setProcessingId(null);
+        return;
+      }
       await supabaseFetch(token, `orders?id=eq.${orderId}`, { method: "PATCH", body: JSON.stringify({ status: "selesai" }) });
       setOrders((prev) => prev.filter((o) => o.id !== orderId));
     } catch (e) { alert("Gagal update: " + e.message); }
