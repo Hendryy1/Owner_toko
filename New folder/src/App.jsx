@@ -15660,8 +15660,15 @@ function LaporanKunjunganOwnerPage({ token }) {
                   style={{ width: "100%", height: 160, objectFit: "cover", borderRadius: 10, marginBottom: 12, cursor: "pointer" }}
                 />
               )}
-              <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>{k.clients?.nama}</p>
-              <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 8px" }}>{k.clients?.kode}</p>
+              <p style={{ fontSize: 13.5, fontWeight: 700, color: "#24272B", margin: "0 0 2px" }}>
+                {k.clients?.nama || k.nama_toko_manual || "Toko tanpa nama"}
+                {!k.clients && k.nama_toko_manual && (
+                  <span style={{ marginLeft: 8, fontSize: 10, fontWeight: 700, color: "#8A6A1A", background: "#FBF0D9", padding: "2px 7px", borderRadius: 999 }}>Toko belum terdaftar</span>
+                )}
+              </p>
+              <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 8px" }}>
+                {k.clients ? k.clients.kode : (k.alamat_toko_manual || "")}
+              </p>
               {k.perlu_review_gps && (
                 <div style={{ display: "flex", alignItems: "center", gap: 6, background: "#FBEAEA", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
                   <AlertCircle size={14} color="#C0392B" style={{ flexShrink: 0 }} />
