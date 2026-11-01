@@ -2160,7 +2160,7 @@ function OverviewPage({ token, setPage }) {
       const nextYear = filterMonth === 12 ? filterYear + 1 : filterYear;
       const endBulan = `${nextYear}-${String(nextMonth).padStart(2, "0")}-01`;
 
-      const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni, rekapOmzetSales, semuaTokoKota, keuangan12Bulan, pajakPembayaran, investorsAktif, bungaPembayaran, chatCasesOpen, semuaOrderTanggal, orderPiutangBulan] = await Promise.all([
+      const [pendingOrders, pendingClients, keuanganBulanIni, piutang, allSales, allClients, kunjunganBulanIni, rekapOmzetSales, semuaTokoKota, keuangan12Bulan, pajakPembayaran, investorsAktif, bungaPembayaran, chatCasesOpen, semuaOrderTanggal, orderPiutangBulan, topupInvestorRows] = await Promise.all([
         supabaseFetch(token, "orders?select=id&status=eq.menunggu_persetujuan"),
         supabaseFetch(token, "clients?select=id&status=eq.pending"),
         supabaseFetch(token, `v_laporan_keuangan_bulanan?select=*&bulan=eq.${startBulan}`),
@@ -2178,6 +2178,7 @@ function OverviewPage({ token, setPage }) {
         supabaseFetch(token, "orders?select=client_id,tanggal&status=neq.ditolak&order=tanggal.desc"),
         // Piutang yang belum lunas dari nota yang dibuat di bulan terpilih (definisi sama dengan menu Piutang)
         supabaseFetch(token, `orders?select=id,jumlah_bayar,order_items(subtotal_setelah_diskon)&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&created_at=gte.${startBulan}&created_at=lt.${endBulan}`),
+        supabaseFetch(token, "investor_tambah_modal?select=investor_id,tanggal,jumlah").catch(() => []),
       ]);
       const piutangBulanDipilih = (orderPiutangBulan || []).reduce(
         (sum, o) => sum + Math.max(0, (o.order_items || []).reduce((s, it) => s + Number(it.subtotal_setelah_diskon || 0), 0) - Number(o.jumlah_bayar || 0)), 0
@@ -2228,7 +2229,7 @@ function OverviewPage({ token, setPage }) {
         if (!sudahMulai) return;
         const status = bungaPembayaran.find((p) => p.investor_id === inv.id && p.bulan === startBulanBerjalan);
         if (!status?.sudah_dibayar) {
-          const bunga = Number(inv.modal_investasi) * (Number(inv.bunga_persen) / 100);
+          const bunga = hitungBungaInvestor(inv, (topupInvestorRows || []).filter((t) => t.investor_id === inv.id), startBulanBerjalan);
           todoList.push({ label: `Bayar bunga investor ${inv.nama} bulan ini (${rupiah(bunga)})`, urgent: false, page: "bunga_investor" });
         }
       });
@@ -12470,6 +12471,141 @@ function PajakPage({ token }) {
 // ============================================================
 // BUNGA INVESTOR (khusus Owner) - kelola investor & lacak bunga bulanan
 // ============================================================
+// ============================================================
+// HITUNG BUNGA INVESTOR - modal awal + tambahan modal (dengan tanggal mulai
+// masing-masing). Bulan saat modal mulai dihitung PRO-RATA sesuai sisa hari,
+// bulan-bulan sesudahnya dihitung penuh. Bulan sebelum modal mulai = 0.
+// ============================================================
+function hitungKontribusiBunga(modal, bungaPersen, tanggalMulai, bulan) {
+  const bungaFull = Number(modal || 0) * (Number(bungaPersen || 0) / 100);
+  if (!tanggalMulai) return bungaFull;
+  const mulai = new Date(tanggalMulai + "T00:00:00");
+  const b = new Date(bulan + "T00:00:00");
+  const selisihBulan = (mulai.getFullYear() - b.getFullYear()) * 12 + (mulai.getMonth() - b.getMonth());
+  if (selisihBulan > 0) return 0; // modal ini belum mulai di bulan tersebut
+  if (selisihBulan < 0) return bungaFull;
+  const totalHariBulan = new Date(b.getFullYear(), b.getMonth() + 1, 0).getDate();
+  const hariMulai = mulai.getDate();
+  if (hariMulai <= 1) return bungaFull;
+  return bungaFull * ((totalHariBulan - hariMulai + 1) / totalHariBulan);
+}
+
+function hitungBungaInvestor(inv, topups, bulan) {
+  let total = hitungKontribusiBunga(inv.modal_investasi, inv.bunga_persen, inv.tanggal_mulai, bulan);
+  (topups || []).forEach((t) => { total += hitungKontribusiBunga(t.jumlah, inv.bunga_persen, t.tanggal, bulan); });
+  return total;
+}
+
+// Total modal yang sudah berjalan sampai akhir bulan tertentu (bulan = "YYYY-MM-01");
+// tanpa parameter bulan = total seluruh modal (awal + semua tambahan).
+function totalModalInvestor(inv, topups, bulan) {
+  let total = Number(inv.modal_investasi || 0);
+  (topups || []).forEach((t) => {
+    if (!bulan || (t.tanggal || "").slice(0, 7) <= bulan.slice(0, 7)) total += Number(t.jumlah || 0);
+  });
+  return total;
+}
+
+function TambahModalInvestorModal({ token, investor, topups, onClose, onUpdate }) {
+  const hariIniLokal = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  const [tanggal, setTanggal] = useState(hariIniLokal);
+  const [jumlah, setJumlah] = useState("");
+  const [keterangan, setKeterangan] = useState("");
+  const [saving, setSaving] = useState(false);
+  const fieldStyle = { width: "100%", padding: "9px 11px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, outline: "none", boxSizing: "border-box" };
+
+  async function tambah() {
+    const nilai = Number(jumlah);
+    if (!tanggal || !jumlah || isNaN(nilai) || nilai <= 0) {
+      alert("Isi tanggal mulai dan jumlah tambahan modal (harus lebih dari 0).");
+      return;
+    }
+    setSaving(true);
+    try {
+      const inserted = await supabaseFetch(token, "investor_tambah_modal", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ investor_id: investor.id, tanggal, jumlah: nilai, keterangan: keterangan.trim() || null }),
+      });
+      const baru = Array.isArray(inserted) ? inserted[0] : inserted;
+      onUpdate([...topups, baru].sort((a, b) => (a.tanggal < b.tanggal ? -1 : a.tanggal > b.tanggal ? 1 : 0)));
+      setJumlah("");
+      setKeterangan("");
+    } catch (e) {
+      alert("Gagal simpan tambahan modal: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function hapus(t) {
+    if (!confirm(`Hapus tambahan modal ${rupiah(t.jumlah)} (mulai ${fmtTglAngka(t.tanggal)})?`)) return;
+    setSaving(true);
+    try {
+      await supabaseFetch(token, `investor_tambah_modal?id=eq.${t.id}`, { method: "DELETE" });
+      onUpdate(topups.filter((x) => x.id !== t.id));
+    } catch (e) {
+      alert("Gagal hapus: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 20, width: "100%", maxWidth: 460, maxHeight: "88vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+          <div>
+            <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>Tambah Modal - {investor.nama}</p>
+            <p style={{ fontSize: 12, color: "#6B6F75", margin: "2px 0 0" }}>Bunga {investor.bunga_persen}% per bulan</p>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#9CA0A6", padding: 4 }}><X size={20} /></button>
+        </div>
+
+        <div style={{ background: "#F7F5F1", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 12.5 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <span style={{ color: "#6B6F75" }}>Modal awal{investor.tanggal_mulai ? ` (mulai ${fmtTglAngka(investor.tanggal_mulai)})` : ""}</span>
+            <span style={{ fontWeight: 700 }}>{rupiah(investor.modal_investasi)}</span>
+          </div>
+          {topups.map((t) => (
+            <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 4 }}>
+              <span style={{ color: "#6B6F75", flex: 1 }}>
+                + Tambahan mulai {fmtTglAngka(t.tanggal)}{t.keterangan ? ` - ${t.keterangan}` : ""}
+              </span>
+              <span style={{ fontWeight: 700, color: "#28685D" }}>{rupiah(t.jumlah)}</span>
+              <button onClick={() => hapus(t)} disabled={saving} style={{ background: "none", border: "none", color: "#C0392B", fontSize: 11, fontWeight: 700 }}>Hapus</button>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid #E4E1DA", paddingTop: 6, marginTop: 6 }}>
+            <span style={{ fontWeight: 700 }}>Total modal sekarang</span>
+            <span style={{ fontWeight: 700 }}>{rupiah(totalModalInvestor(investor, topups))}</span>
+          </div>
+        </div>
+
+        <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Tambahan modal baru</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <div>
+            <label style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", display: "block", marginBottom: 4 }}>MULAI TANGGAL</label>
+            <input type="date" value={tanggal} onChange={(e) => setTanggal(e.target.value)} style={fieldStyle} />
+          </div>
+          <div>
+            <label style={{ fontSize: 10.5, fontWeight: 700, color: "#9CA0A6", display: "block", marginBottom: 4 }}>JUMLAH (RP)</label>
+            <input type="number" value={jumlah} onChange={(e) => setJumlah(e.target.value)} placeholder="misal 50000000" style={fieldStyle} />
+          </div>
+        </div>
+        <input value={keterangan} onChange={(e) => setKeterangan(e.target.value)} placeholder="Keterangan (opsional)" style={{ ...fieldStyle, marginBottom: 8 }} />
+        <p style={{ fontSize: 11, color: "#9CA0A6", margin: "0 0 12px", lineHeight: 1.5 }}>
+          Bunga atas tambahan ini dihitung mulai tanggal tersebut (pro-rata di bulan itu), lalu penuh di bulan-bulan berikutnya. Bunga bulan-bulan sebelumnya tidak berubah.
+        </p>
+        <button onClick={tambah} disabled={saving} style={{ width: "100%", padding: 11, borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+          {saving ? "Menyimpan..." : "Simpan Tambahan Modal"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function BungaInvestorPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -12478,6 +12614,8 @@ function BungaInvestorPage({ token }) {
   const [showForm, setShowForm] = useState(false);
   const [editingInvestor, setEditingInvestor] = useState(null);
   const [selectedInvestor, setSelectedInvestor] = useState(null); // buka riwayat bunga investor ini
+  const [topupMap, setTopupMap] = useState({}); // { investor_id: [{id, tanggal, jumlah, keterangan}] } tambahan modal
+  const [topupInvestor, setTopupInvestor] = useState(null); // investor yang sedang dibuka modal "Tambah Modal"-nya
   const [saving, setSaving] = useState(false);
   const [savingBulan, setSavingBulan] = useState(null);
   const [form, setForm] = useState({ nama: "", modalInvestasi: "", bungaPersen: "", tanggalMulai: "", keterangan: "" });
@@ -12496,6 +12634,13 @@ function BungaInvestorPage({ token }) {
       ]);
       setInvestors(rows);
       setPembayaranSemua(pembayaranRows);
+      // Tambahan modal - kalau tabelnya belum dibuat, halaman tetap jalan (dianggap kosong)
+      try {
+        const topupRows = await supabaseFetch(token, "investor_tambah_modal?select=*&order=tanggal.asc");
+        const peta = {};
+        (topupRows || []).forEach((t) => { (peta[t.investor_id] = peta[t.investor_id] || []).push(t); });
+        setTopupMap(peta);
+      } catch { setTopupMap({}); }
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -12503,24 +12648,10 @@ function BungaInvestorPage({ token }) {
 
   const bulanTerpilih = `${filterYear}-${String(filterMonth).padStart(2, "0")}-01`;
 
-  // Hitung bunga untuk bulan tertentu - kalau bulan itu adalah bulan
-  // PERTAMA investor mulai invest (dan mulainya bukan tanggal 1), bunganya
-  // dihitung PRO-RATA sesuai sisa hari di bulan itu, bukan full 1 bulan.
+  // Hitung bunga untuk bulan tertentu: modal awal + semua tambahan modal,
+  // masing-masing pro-rata di bulan mulainya (lihat hitungBungaInvestor).
   function hitungBungaBulan(investor, bulan) {
-    const bungaFull = Number(investor.modal_investasi) * (Number(investor.bunga_persen) / 100);
-    if (!investor.tanggal_mulai) return bungaFull;
-
-    const mulai = new Date(investor.tanggal_mulai + "T00:00:00");
-    const bulanDate = new Date(bulan + "T00:00:00");
-    const sameMonth = mulai.getFullYear() === bulanDate.getFullYear() && mulai.getMonth() === bulanDate.getMonth();
-    if (!sameMonth) return bungaFull;
-
-    const totalHariBulan = new Date(mulai.getFullYear(), mulai.getMonth() + 1, 0).getDate();
-    const tanggalMulaiHari = mulai.getDate();
-    if (tanggalMulaiHari <= 1) return bungaFull; // mulai tanggal 1, tidak perlu pro-rata
-
-    const sisaHari = totalHariBulan - tanggalMulaiHari + 1;
-    return bungaFull * (sisaHari / totalHariBulan);
+    return hitungBungaInvestor(investor, topupMap[investor.id], bulan);
   }
 
   function statusInvestorBulan(investorId, bulan) {
@@ -12650,7 +12781,7 @@ function BungaInvestorPage({ token }) {
               return (
                 <tr key={inv.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                   <td style={{ padding: "12px 14px", fontWeight: 700 }}>{inv.nama}</td>
-                  <td style={{ padding: "12px 14px" }}>{rupiah(inv.modal_investasi)}</td>
+                  <td style={{ padding: "12px 14px" }}>{rupiah(totalModalInvestor(inv, topupMap[inv.id], bulanTerpilih))}</td>
                   <td style={{ padding: "12px 14px" }}>{inv.bunga_persen}%</td>
                   <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(bungaPerBulan)}</td>
                   <td style={{ padding: "12px 14px" }}>
@@ -12678,7 +12809,8 @@ function BungaInvestorPage({ token }) {
       <h2 className="disp" style={{ fontSize: 17, fontWeight: 700, color: "#24272B", margin: "0 0 12px" }}>Kelola Investor</h2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 14 }}>
         {investors.map((inv) => {
-          const bungaPerBulan = Number(inv.modal_investasi) * (Number(inv.bunga_persen) / 100);
+          const topupsInv = topupMap[inv.id] || [];
+          const bungaPerBulan = totalModalInvestor(inv, topupsInv) * (Number(inv.bunga_persen) / 100);
           return (
             <Card key={inv.id}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
@@ -12686,7 +12818,13 @@ function BungaInvestorPage({ token }) {
                 {!inv.aktif && <span style={{ fontSize: 10, fontWeight: 700, color: "#9CA0A6", background: "#F7F5F1", padding: "2px 8px", borderRadius: 999 }}>Nonaktif</span>}
               </div>
               <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 4px" }}>Modal Investasi</p>
-              <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: "0 0 10px" }}>{rupiah(inv.modal_investasi)}</p>
+              <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: topupsInv.length > 0 ? "0 0 4px" : "0 0 10px" }}>{rupiah(totalModalInvestor(inv, topupsInv))}</p>
+              {topupsInv.length > 0 && (
+                <p style={{ fontSize: 11, color: "#6B6F75", margin: "0 0 10px", lineHeight: 1.5 }}>
+                  Modal awal {rupiah(inv.modal_investasi)}
+                  {topupsInv.map((t) => ` + ${rupiah(t.jumlah)} (mulai ${fmtTglAngka(t.tanggal)})`).join("")}
+                </p>
+              )}
               <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 14 }}>
                 <div>
                   <p style={{ fontSize: 11, color: "#9CA0A6", margin: 0 }}>Bunga/Bulan</p>
@@ -12697,6 +12835,9 @@ function BungaInvestorPage({ token }) {
                   <p style={{ fontSize: 13, fontWeight: 700, color: "#28685D", margin: 0 }}>{rupiah(bungaPerBulan)}</p>
                 </div>
               </div>
+              <button onClick={() => setTopupInvestor(inv)} style={{ width: "100%", padding: "8px", borderRadius: 8, border: "1.5px solid #E8A426", background: "#FBF0D9", color: "#24272B", fontSize: 12, fontWeight: 700, marginBottom: 8 }}>
+                + Tambah Modal
+              </button>
               <div style={{ display: "flex", gap: 8 }}>
                 <button onClick={() => setSelectedInvestor(inv)} style={{ flex: 1, padding: "8px", borderRadius: 8, border: "none", background: "#E8A426", color: "#24272B", fontSize: 12, fontWeight: 700 }}>
                   Riwayat Bunga
@@ -12750,6 +12891,16 @@ function BungaInvestorPage({ token }) {
         </div>
       )}
 
+      {topupInvestor && (
+        <TambahModalInvestorModal
+          token={token}
+          investor={topupInvestor}
+          topups={topupMap[topupInvestor.id] || []}
+          onClose={() => setTopupInvestor(null)}
+          onUpdate={(daftarBaru) => setTopupMap((prev) => ({ ...prev, [topupInvestor.id]: daftarBaru }))}
+        />
+      )}
+
       {showForm && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(36,39,43,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}>
           <div style={{ background: "#fff", borderRadius: 14, width: 480, maxHeight: "88vh", overflowY: "auto", padding: 28 }}>
@@ -12762,8 +12913,9 @@ function BungaInvestorPage({ token }) {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
               <div>
-                <label style={labelStyle}>Modal Investasi (Rp)</label>
+                <label style={labelStyle}>{editingInvestor ? "Modal Awal (Rp)" : "Modal Investasi (Rp)"}</label>
                 <input type="number" value={form.modalInvestasi} onChange={(e) => setForm({ ...form, modalInvestasi: e.target.value })} style={fieldStyle} />
+                {editingInvestor && <p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "4px 0 0", lineHeight: 1.4 }}>Untuk investor yang nambah modal, pakai tombol "Tambah Modal" di kartu investor, bukan ubah angka ini.</p>}
               </div>
               <div>
                 <label style={labelStyle}>Bunga per Bulan (%)</label>
@@ -12800,6 +12952,7 @@ function RiwayatBungaInvestorPage({ token, investor, onBack }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pembayaran, setPembayaran] = useState([]);
+  const [topups, setTopups] = useState([]);
   const [saving, setSaving] = useState(null);
 
   const bulanList = Array.from({ length: 12 }, (_, i) => {
@@ -12815,26 +12968,16 @@ function RiwayatBungaInvestorPage({ token, investor, onBack }) {
     try {
       const rows = await supabaseFetch(token, `bunga_investor_pembayaran?select=*&investor_id=eq.${investor.id}`);
       setPembayaran(rows);
+      try {
+        setTopups(await supabaseFetch(token, `investor_tambah_modal?select=*&investor_id=eq.${investor.id}&order=tanggal.asc`));
+      } catch { setTopups([]); }
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, []);
 
   function hitungBungaBulan(bulan) {
-    const bungaFull = Number(investor.modal_investasi) * (Number(investor.bunga_persen) / 100);
-    if (!investor.tanggal_mulai) return bungaFull;
-
-    const mulai = new Date(investor.tanggal_mulai + "T00:00:00");
-    const bulanDate = new Date(bulan + "T00:00:00");
-    const sameMonth = mulai.getFullYear() === bulanDate.getFullYear() && mulai.getMonth() === bulanDate.getMonth();
-    if (!sameMonth) return bungaFull;
-
-    const totalHariBulan = new Date(mulai.getFullYear(), mulai.getMonth() + 1, 0).getDate();
-    const tanggalMulaiHari = mulai.getDate();
-    if (tanggalMulaiHari <= 1) return bungaFull;
-
-    const sisaHari = totalHariBulan - tanggalMulaiHari + 1;
-    return bungaFull * (sisaHari / totalHariBulan);
+    return hitungBungaInvestor(investor, topups, bulan);
   }
 
   function statusBulan(bulan) {
@@ -12872,7 +13015,7 @@ function RiwayatBungaInvestorPage({ token, investor, onBack }) {
       <button onClick={onBack} style={{ display: "flex", alignItems: "center", gap: 4, background: "none", border: "none", color: "#6B6F75", fontSize: 13, marginBottom: 14, padding: 0 }}>
         <ChevronLeft size={16} /> Kembali
       </button>
-      <PageHeader title={`Riwayat Bunga - ${investor.nama}`} subtitle={`Modal ${rupiah(investor.modal_investasi)} - Bunga ${investor.bunga_persen}%/bulan (${rupiah(Number(investor.modal_investasi) * (Number(investor.bunga_persen) / 100))})`} />
+      <PageHeader title={`Riwayat Bunga - ${investor.nama}`} subtitle={`Modal ${rupiah(totalModalInvestor(investor, topups))}${topups.length > 0 ? ` (awal ${rupiah(investor.modal_investasi)} + tambahan)` : ""} - Bunga ${investor.bunga_persen}%/bulan (${rupiah(totalModalInvestor(investor, topups) * (Number(investor.bunga_persen) / 100))})`} />
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
