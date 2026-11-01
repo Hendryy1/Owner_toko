@@ -3624,6 +3624,7 @@ function PiutangPage({ token }) {
   const [expandedId, setExpandedId] = useState(null); // client_id yang lagi dibuka
   const [detailMap, setDetailMap] = useState({}); // { client_id: [order,...] }
   const [loadingDetail, setLoadingDetail] = useState(null);
+  const [riwayatBayarDetail, setRiwayatBayarDetail] = useState({}); // { order_id: [{tanggal, jumlah, catatan}] }
   const [filterSales, setFilterSales] = useState("");
   const [urutan, setUrutan] = useState("jatuh_tempo"); // jatuh_tempo | total_piutang
   const [orderPiutangList, setOrderPiutangList] = useState([]); // per-order, buat cetak (1 order = 1 baris)
@@ -3733,6 +3734,17 @@ function PiutangPage({ token }) {
           `orders?select=id,no_nota,created_at,jatuh_tempo,jumlah_bayar,order_items(subtotal_setelah_diskon)&client_id=eq.${clientId}&metode_bayar=in.(cod,tempo)&status_bayar=eq.belum_lunas&status=in.(menunggu_pengiriman,siap_dikirim,proses_dikirim)&order=created_at.asc`
         );
         setDetailMap((prev) => ({ ...prev, [clientId]: orders }));
+        // Riwayat pembayaran bertahap (tanggal tiap cicilan) - opsional, tidak
+        // boleh menggagalkan rincian kalau tabelnya belum ada.
+        try {
+          if (orders.length > 0) {
+            const idList = orders.map((o) => o.id).join(",");
+            const riwayat = await supabaseFetch(token, `riwayat_pembayaran_nota?select=order_id,tanggal,jumlah,catatan&order_id=in.(${idList})&order=tanggal.asc`);
+            const peta = {};
+            (riwayat || []).forEach((r) => { (peta[r.order_id] = peta[r.order_id] || []).push(r); });
+            setRiwayatBayarDetail((prev) => ({ ...prev, ...peta }));
+          }
+        } catch { /* abaikan */ }
       } catch (e) {
         alert("Gagal muat rincian: " + e.message);
       }
@@ -4037,7 +4049,8 @@ function PiutangPage({ token }) {
                               const sisaHariOrder = jt && jt >= new Date() ? Math.ceil((jt - new Date()) / (1000 * 60 * 60 * 24)) : null;
                               const akanJatuhTempoOrder = sisaHariOrder !== null && sisaHariOrder <= 3;
                               return (
-                                <tr key={o.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                                <React.Fragment key={o.id}>
+                                <tr style={{ borderTop: "1px solid #EDEAE3" }}>
                                   <td style={{ padding: "6px 10px", fontWeight: 700 }}>{o.no_nota}</td>
                                   <td style={{ padding: "6px 10px", color: "#6B6F75" }}>
                                     {new Date(o.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
@@ -4059,6 +4072,14 @@ function PiutangPage({ token }) {
                                   <td style={{ padding: "6px 10px", color: Number(o.jumlah_bayar || 0) > 0 ? "#28685D" : "#9CA0A6" }}>{rupiah(Number(o.jumlah_bayar || 0))}</td>
                                   <td style={{ padding: "6px 10px", fontWeight: 700, color: "#C0392B" }}>{rupiah(Math.max(0, nilai - Number(o.jumlah_bayar || 0)))}</td>
                                 </tr>
+                                {(riwayatBayarDetail[o.id] || []).length > 0 && (
+                                  <tr key={`${o.id}-riwayat`}>
+                                    <td colSpan={6} style={{ padding: "0 10px 8px 24px", fontSize: 11, color: "#28685D" }}>
+                                      Pembayaran bertahap: {riwayatBayarDetail[o.id].map((r) => `${new Date(r.tanggal + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })} - ${rupiah(r.jumlah)}`).join("  |  ")}
+                                    </td>
+                                  </tr>
+                                )}
+                                </React.Fragment>
                               );
                             })}
                           </tbody>
@@ -5769,6 +5790,8 @@ function RekapNotaPage({ token }) {
   const [editingCashbackId, setEditingCashbackId] = useState(null);
   const [editCashbackValue, setEditCashbackValue] = useState("");
   const [savingCashback, setSavingCashback] = useState(false);
+  const [riwayatBayarMap, setRiwayatBayarMap] = useState({}); // { order_id: [{id, tanggal, jumlah, catatan}] } - riwayat pembayaran bertahap
+  const [bayarModalOrderId, setBayarModalOrderId] = useState(null);
 
   useEffect(() => {
     supabaseFetch(token, "nota_settings?select=*&limit=1")
@@ -5785,6 +5808,14 @@ function RekapNotaPage({ token }) {
         "orders?select=id,client_id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,jumlah_bayar,cara_bayar_aktual,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,alasan_dibatalkan,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran,sales!clients_sales_id_fkey(kode,nama)),order_items(*,products(kode,nama,satuan,nomor_produk,harga_jual)),cashback_ledger(id,nilai_cashback,status)&order=created_at.desc&limit=500"
       );
       setOrders(rows);
+      // Riwayat pembayaran bertahap (cicilan) per nota - kalau tabelnya belum
+      // dibuat, halaman tetap jalan normal (riwayat dianggap kosong).
+      try {
+        const riwayatRows = await supabaseFetch(token, "riwayat_pembayaran_nota?select=id,order_id,tanggal,jumlah,catatan&order=tanggal.asc,created_at.asc&limit=5000");
+        const peta = {};
+        (riwayatRows || []).forEach((r) => { (peta[r.order_id] = peta[r.order_id] || []).push(r); });
+        setRiwayatBayarMap(peta);
+      } catch { setRiwayatBayarMap({}); }
     } catch (e) { setError(e.message); }
     setLoading(false);
   }
@@ -6242,24 +6273,13 @@ function RekapNotaPage({ token }) {
                   </td>
                   <td style={{ padding: "12px 14px", fontWeight: 700 }}>{rupiah(orderTotal(o))}</td>
                   <td style={{ padding: "12px 14px" }}>
-                    {editingBayarId === o.id ? (
-                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                        <input
-                          type="number" value={editBayarValue} onChange={(e) => setEditBayarValue(e.target.value)}
-                          autoFocus
-                          style={{ width: 110, padding: "6px 8px", borderRadius: 7, border: "1.5px solid #E4E1DA", fontSize: 12.5 }}
-                        />
-                        <button onClick={() => saveJumlahBayar(o.id)} disabled={savingBayar} style={{ padding: "6px 10px", borderRadius: 7, border: "none", background: "#E8A426", color: "#24272B", fontSize: 11.5, fontWeight: 700 }}>
-                          Simpan
-                        </button>
-                        <button onClick={() => setEditingBayarId(null)} style={{ padding: "6px 10px", borderRadius: 7, border: "1px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontSize: 11.5 }}>
-                          Batal
-                        </button>
-                      </div>
-                    ) : (
-                      <button onClick={() => startEditBayar(o)} style={{ background: "none", border: "none", padding: 0, color: "#24272B", fontSize: 12.5, cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted" }}>
-                        {o.jumlah_bayar ? rupiah(o.jumlah_bayar) : "Isi Jumlah Bayar"}
-                      </button>
+                    <button onClick={() => setBayarModalOrderId(o.id)} style={{ background: "none", border: "none", padding: 0, color: "#24272B", fontSize: 12.5, cursor: "pointer", textDecoration: "underline", textDecorationStyle: "dotted", textAlign: "left" }}>
+                      {o.jumlah_bayar ? rupiah(o.jumlah_bayar) : "Isi Jumlah Bayar"}
+                    </button>
+                    {(riwayatBayarMap[o.id] || []).length > 0 && (
+                      <span style={{ display: "block", fontSize: 10.5, color: "#28685D", fontWeight: 600, marginTop: 3 }}>
+                        {riwayatBayarMap[o.id].length}x bayar - terakhir {new Date(riwayatBayarMap[o.id][riwayatBayarMap[o.id].length - 1].tanggal + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short" })}
+                      </span>
                     )}
                   </td>
                   <td style={{ padding: "12px 14px", fontWeight: 700, color: (orderTotal(o) - Number(o.jumlah_bayar || 0)) > 0 ? "#C0392B" : "#28685D" }}>
@@ -6327,6 +6347,147 @@ function RekapNotaPage({ token }) {
       )}
 
       {printingOrder && <NotaPrintModal order={printingOrder} type={printingType} settings={notaSettings} onClose={() => setPrintingOrder(null)} />}
+
+      {bayarModalOrderId && (() => {
+        const ordModal = orders.find((x) => x.id === bayarModalOrderId);
+        if (!ordModal) return null;
+        return (
+          <RiwayatBayarModal
+            token={token}
+            order={ordModal}
+            total={orderTotal(ordModal)}
+            riwayat={riwayatBayarMap[ordModal.id] || []}
+            onClose={() => setBayarModalOrderId(null)}
+            onUpdate={(orderId, riwayatBaru, jumlahBayarBaru) => {
+              setRiwayatBayarMap((prev) => ({ ...prev, [orderId]: riwayatBaru }));
+              setOrders((prev) => prev.map((x) => (x.id === orderId ? { ...x, jumlah_bayar: jumlahBayarBaru } : x)));
+            }}
+          />
+        );
+      })()}
+    </div>
+  );
+}
+
+// ============================================================
+// RIWAYAT PEMBAYARAN BERTAHAP (CICILAN) PER NOTA
+// Setiap pembayaran dicatat dengan tanggal; orders.jumlah_bayar selalu
+// = total semua pembayaran (ditambah saldo lama yang dulu diisi tanpa tanggal).
+// ============================================================
+function RiwayatBayarModal({ token, order, total, riwayat, onClose, onUpdate }) {
+  const hariIniLokal = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  })();
+  const [tanggal, setTanggal] = useState(hariIniLokal);
+  const [jumlah, setJumlah] = useState("");
+  const [catatan, setCatatan] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const jumlahBayarSekarang = Number(order.jumlah_bayar || 0);
+  const totalRiwayat = riwayat.reduce((sum, r) => sum + Number(r.jumlah || 0), 0);
+  const saldoTanpaTanggal = Math.max(0, jumlahBayarSekarang - totalRiwayat); // pembayaran lama yang diisi sebelum ada pencatatan tanggal
+  const sisa = Math.max(0, total - jumlahBayarSekarang);
+  const fieldStyle = { width: "100%", padding: "9px 11px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, outline: "none", boxSizing: "border-box" };
+  const formatTgl = (t) => new Date(t + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+
+  async function tambah() {
+    const nilai = Number(jumlah);
+    if (!tanggal || !jumlah || isNaN(nilai) || nilai <= 0) {
+      alert("Isi tanggal dan jumlah pembayaran (harus lebih dari 0).");
+      return;
+    }
+    setSaving(true);
+    try {
+      const inserted = await supabaseFetch(token, "riwayat_pembayaran_nota", {
+        method: "POST",
+        headers: { Prefer: "return=representation" },
+        body: JSON.stringify({ order_id: order.id, tanggal, jumlah: nilai, catatan: catatan.trim() || null }),
+      });
+      const baru = Array.isArray(inserted) ? inserted[0] : inserted;
+      const jumlahBayarBaru = jumlahBayarSekarang + nilai;
+      await supabaseFetch(token, `orders?id=eq.${order.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ jumlah_bayar: jumlahBayarBaru }),
+      });
+      const riwayatBaru = [...riwayat, baru].sort((a, b) => (a.tanggal < b.tanggal ? -1 : a.tanggal > b.tanggal ? 1 : 0));
+      onUpdate(order.id, riwayatBaru, jumlahBayarBaru);
+      setJumlah("");
+      setCatatan("");
+    } catch (e) {
+      alert("Gagal simpan pembayaran: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  async function hapus(r) {
+    if (!confirm(`Hapus pembayaran ${rupiah(r.jumlah)} tanggal ${formatTgl(r.tanggal)}?`)) return;
+    setSaving(true);
+    try {
+      await supabaseFetch(token, `riwayat_pembayaran_nota?id=eq.${r.id}`, { method: "DELETE" });
+      const jumlahBayarBaru = Math.max(0, jumlahBayarSekarang - Number(r.jumlah || 0));
+      await supabaseFetch(token, `orders?id=eq.${order.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ jumlah_bayar: jumlahBayarBaru }),
+      });
+      onUpdate(order.id, riwayat.filter((x) => x.id !== r.id), jumlahBayarBaru);
+    } catch (e) {
+      alert("Gagal hapus pembayaran: " + e.message);
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 16, padding: 20, width: "100%", maxWidth: 460, maxHeight: "88vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+          <div>
+            <p style={{ fontSize: 15, fontWeight: 700, color: "#24272B", margin: 0 }}>Riwayat Pembayaran</p>
+            <p style={{ fontSize: 12, color: "#6B6F75", margin: "2px 0 0" }}>{order.no_nota} - {order.clients?.nama}</p>
+          </div>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "#9CA0A6", padding: 4 }}><X size={20} /></button>
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, background: "#F7F5F1", borderRadius: 10, padding: 12, marginBottom: 14 }}>
+          <div><p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700 }}>TOTAL NOTA</p><p style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>{rupiah(total)}</p></div>
+          <div><p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700 }}>SUDAH DIBAYAR</p><p style={{ fontSize: 13, fontWeight: 700, margin: 0, color: "#28685D" }}>{rupiah(jumlahBayarSekarang)}</p></div>
+          <div><p style={{ fontSize: 10.5, color: "#9CA0A6", margin: "0 0 2px", fontWeight: 700 }}>SISA</p><p style={{ fontSize: 13, fontWeight: 700, margin: 0, color: sisa > 0 ? "#C0392B" : "#28685D" }}>{rupiah(sisa)}</p></div>
+        </div>
+
+        <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Pembayaran yang sudah masuk</p>
+        {riwayat.length === 0 && saldoTanpaTanggal === 0 ? (
+          <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 14px" }}>Belum ada pembayaran tercatat.</p>
+        ) : (
+          <div style={{ marginBottom: 14 }}>
+            {saldoTanpaTanggal > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", borderBottom: "1px solid #EDEAE3", fontSize: 12.5 }}>
+                <span style={{ color: "#9CA0A6" }}>Pembayaran sebelumnya (tanpa tanggal)</span>
+                <span style={{ fontWeight: 700 }}>{rupiah(saldoTanpaTanggal)}</span>
+              </div>
+            )}
+            {riwayat.map((r) => (
+              <div key={r.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, padding: "8px 0", borderBottom: "1px solid #EDEAE3", fontSize: 12.5 }}>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: 600 }}>{formatTgl(r.tanggal)}</span>
+                  {r.catatan && <span style={{ display: "block", fontSize: 11, color: "#6B6F75" }}>{r.catatan}</span>}
+                </div>
+                <span style={{ fontWeight: 700, color: "#28685D" }}>{rupiah(r.jumlah)}</span>
+                <button onClick={() => hapus(r)} disabled={saving} style={{ background: "none", border: "none", color: "#C0392B", fontSize: 11, fontWeight: 700 }}>Hapus</button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <p style={{ fontSize: 11, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 8px" }}>Tambah pembayaran</p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
+          <input type="date" value={tanggal} onChange={(e) => setTanggal(e.target.value)} style={fieldStyle} />
+          <input type="number" value={jumlah} onChange={(e) => setJumlah(e.target.value)} placeholder="Jumlah (Rp)" style={fieldStyle} />
+        </div>
+        <input value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="Catatan (opsional, misal: transfer BCA)" style={{ ...fieldStyle, marginBottom: 12 }} />
+        <button onClick={tambah} disabled={saving} style={{ width: "100%", padding: "11px", borderRadius: 10, border: "none", background: "#E8A426", color: "#24272B", fontWeight: 700, fontSize: 13.5 }}>
+          {saving ? "Menyimpan..." : "Simpan Pembayaran"}
+        </button>
+      </div>
     </div>
   );
 }
