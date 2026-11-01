@@ -5386,13 +5386,14 @@ function StockItemPage({ token, role }) {
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState([]);
   const [error, setError] = useState("");
+  const [filterKategori, setFilterKategori] = useState(""); // klik kartu brand untuk filter tabel (nama state lama dipertahankan)
 
   async function load() {
     setLoading(true);
     setError("");
     try {
       const [products, stock] = await Promise.all([
-        supabaseFetch(token, "products?select=id,kode,nama,kategori,satuan,harga_modal,stock_minimum&aktif=eq.true&order=kode.asc"),
+        supabaseFetch(token, "products?select=id,kode,nama,kategori,brand,satuan,harga_modal,stock_minimum&aktif=eq.true&order=kode.asc"),
         supabaseFetch(token, "v_stock_akhir?select=product_id,stock_akhir"),
       ]);
       const stockMap = {};
@@ -5416,6 +5417,17 @@ function StockItemPage({ token, role }) {
   const kolomTabel = sembunyikanModal ? ["Kode", "Nama Barang", "Kategori", "Satuan", "Stock"] : ["Kode", "Nama Barang", "Kategori", "Satuan", "Stock", "Harga Modal", "Total Modal"];
   const rowsMenipis = rows.filter((r) => Number(r.stock_minimum) > 0 && r.stock_akhir <= Number(r.stock_minimum));
 
+  // Total modal per BRAND (stock akhir x harga modal, dijumlah per brand)
+  const modalPerKategori = Object.values(rows.reduce((acc, r) => {
+    const nama = (r.brand || "").trim() || "Tanpa Brand";
+    if (!acc[nama]) acc[nama] = { nama, totalModal: 0, jumlahProduk: 0 };
+    acc[nama].totalModal += r.total_modal;
+    acc[nama].jumlahProduk += 1;
+    return acc;
+  }, {})).sort((a, b) => b.totalModal - a.totalModal);
+  const namaKategoriRow = (r) => (r.brand || "").trim() || "Tanpa Brand";
+  const rowsTampil = filterKategori ? rows.filter((r) => namaKategoriRow(r) === filterKategori) : rows;
+
   return (
     <div>
       <PageHeader title="Stock Item" subtitle={sembunyikanModal ? "Stock akhir tiap barang" : "Nilai modal barang berdasarkan stock akhir - data rahasia, hanya Owner"} />
@@ -5427,6 +5439,16 @@ function StockItemPage({ token, role }) {
             <p className="disp" style={{ fontSize: 26, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(grandTotal)}</p>
           </Card>
         )}
+        {!sembunyikanModal && modalPerKategori.map((k) => (
+          <Card
+            key={k.nama}
+            onClick={() => setFilterKategori(filterKategori === k.nama ? "" : k.nama)}
+            style={{ display: "inline-block", cursor: "pointer", border: filterKategori === k.nama ? "1.5px solid #E8A426" : "1px solid #EDEAE3", background: filterKategori === k.nama ? "#FBF0D9" : "#fff" }}
+          >
+            <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 6px", fontWeight: 600 }}>Modal {k.nama} <span style={{ fontWeight: 500 }}>({k.jumlahProduk} produk)</span></p>
+            <p className="disp" style={{ fontSize: 22, fontWeight: 700, color: "#24272B", margin: 0 }}>{rupiah(k.totalModal)}</p>
+          </Card>
+        ))}
         {rowsMenipis.length > 0 && (
           <Card style={{ display: "inline-block", background: "#FBEAEA", border: "1.5px solid #F0CFC7" }}>
             <p style={{ fontSize: 11.5, color: "#C0392B", margin: "0 0 6px", fontWeight: 700 }}>⚠️ Stock Menipis</p>
@@ -5434,6 +5456,12 @@ function StockItemPage({ token, role }) {
           </Card>
         )}
       </div>
+      {filterKategori && (
+        <p style={{ fontSize: 12.5, color: "#6B6F75", margin: "0 0 12px" }}>
+          Menampilkan: <b>{filterKategori}</b> -{" "}
+          <button onClick={() => setFilterKategori("")} style={{ background: "none", border: "none", padding: 0, color: "#2C5985", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>Tampilkan semua</button>
+        </p>
+      )}
 
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
@@ -5445,7 +5473,7 @@ function StockItemPage({ token, role }) {
             </tr>
           </thead>
           <tbody>
-            {[...rows].sort((a, b) => {
+            {[...rowsTampil].sort((a, b) => {
               const aMenipis = Number(a.stock_minimum) > 0 && a.stock_akhir <= Number(a.stock_minimum);
               const bMenipis = Number(b.stock_minimum) > 0 && b.stock_akhir <= Number(b.stock_minimum);
               if (aMenipis === bMenipis) return 0;
@@ -9505,7 +9533,7 @@ function ProductPage({ token }) {
 function ProductFormModal({ token, product, onClose, onSaved }) {
   const isNew = !product.id;
   const [form, setForm] = useState({
-    kode: product.kode || "", nama: product.nama || "", kategori: product.kategori || "", satuan: product.satuan || "",
+    kode: product.kode || "", nama: product.nama || "", kategori: product.kategori || "", brand: product.brand || "", satuan: product.satuan || "",
     hargaJual: product.harga_jual || "", hargaAsli: product.harga_asli || "", hargaModal: product.harga_modal || "",
     stockAwal: product.stock_awal ?? 0, stockMinimum: product.stock_minimum ?? 0, isiPerKoli: product.isi_per_koli || "", diskonKoliPct: product.diskon_koli_pct ? Number(product.diskon_koli_pct) * 100 : "",
     minimalOrder: product.minimal_order ?? 1,
@@ -9638,7 +9666,7 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
     setSaving(true);
     try {
       const body = {
-        kode: form.kode.trim().toUpperCase(), nama: form.nama.trim(), kategori: form.kategori || null, satuan: form.satuan.trim(),
+        kode: form.kode.trim().toUpperCase(), nama: form.nama.trim(), kategori: form.kategori || null, brand: form.brand.trim() || null, satuan: form.satuan.trim(),
         harga_jual: Number(form.hargaJual), harga_asli: form.hargaAsli ? Number(form.hargaAsli) : null,
         harga_modal: form.hargaModal ? Number(form.hargaModal) : null, stock_awal: Number(form.stockAwal) || 0,
         stock_minimum: Number(form.stockMinimum) || 0,
@@ -9726,6 +9754,10 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
             <label style={labelStyle}>Kategori</label>
             <input value={form.kategori} onChange={set("kategori")} placeholder="misal Sparepart" style={fieldStyle} />
           </div>
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Brand</label>
+          <input value={form.brand} onChange={set("brand")} placeholder="misal Kozel" style={fieldStyle} />
         </div>
 
         <div style={{ marginBottom: 12 }}>
@@ -9888,8 +9920,8 @@ function ImportCSVModal({ token, onClose, onSelesai }) {
 
   function unduhTemplate() {
     const template = [
-      "kode,nama,kategori,satuan,harga_jual,harga_asli,harga_modal,stock_awal,isi_per_koli,diskon_koli_pct,cashback_per_koli",
-      "KZ-99,Contoh Produk Baru,Kategori Contoh,pcs,50000,60000,35000,100,12,5,2000",
+      "kode,nama,kategori,satuan,harga_jual,harga_asli,harga_modal,stock_awal,isi_per_koli,diskon_koli_pct,cashback_per_koli,brand",
+      "KZ-99,Contoh Produk Baru,Kategori Contoh,pcs,50000,60000,35000,100,12,5,2000,Kozel",
     ].join("\r\n");
     const blob = new Blob(["\uFEFF" + template], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -9938,6 +9970,7 @@ function ImportCSVModal({ token, onClose, onSelesai }) {
         kode: r.kode.trim().toUpperCase(),
         nama: r.nama.trim(),
         kategori: r.kategori?.trim() || null,
+        brand: r.brand?.trim() || null,
         satuan: r.satuan.trim(),
         harga_jual: Number(r.harga_jual),
         harga_asli: r.harga_asli ? Number(r.harga_asli) : null,
