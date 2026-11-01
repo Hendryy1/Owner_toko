@@ -5445,6 +5445,47 @@ function StockItemPage({ token, role }) {
   const namaKategoriRow = (r) => (r.brand || "").trim() || "Tanpa Brand";
   const rowsTampil = filterKategori ? rows.filter((r) => namaKategoriRow(r) === filterKategori) : rows;
 
+  function cetakStockItem() {
+    const w = window.open("", "_blank");
+    if (!w) { alert("Pop-up diblokir browser. Izinkan pop-up untuk mencetak."); return; }
+    const urut = [...rowsTampil].sort((a, b) => {
+      const am = Number(a.stock_minimum) > 0 && a.stock_akhir <= Number(a.stock_minimum);
+      const bm = Number(b.stock_minimum) > 0 && b.stock_akhir <= Number(b.stock_minimum);
+      if (am === bm) return 0;
+      return am ? -1 : 1;
+    });
+    const totalTampil = urut.reduce((a, r) => a + r.total_modal, 0);
+    const tgl = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Jakarta" });
+    const th = ["Kode", "Nama Barang", "Brand", "Kategori", "Satuan", "Stock"].concat(sembunyikanModal ? [] : ["Harga Modal", "Total Modal"]);
+    const barisHtml = urut.map((r) => {
+      const menipis = Number(r.stock_minimum) > 0 && r.stock_akhir <= Number(r.stock_minimum);
+      return `<tr>
+        <td>${r.kode || ""}</td><td>${r.nama || ""}</td><td>${(r.brand || "").trim() || "-"}</td><td>${r.kategori || ""}</td><td>${r.satuan || ""}</td>
+        <td style="text-align:right;${r.stock_akhir < 0 || menipis ? "color:#C0392B;font-weight:700" : ""}">${r.stock_akhir}${menipis ? " (menipis)" : ""}</td>
+        ${sembunyikanModal ? "" : `<td style="text-align:right">${rupiah(r.harga_modal)}</td><td style="text-align:right">${rupiah(r.total_modal)}</td>`}
+      </tr>`;
+    }).join("");
+    const ringkasBrand = sembunyikanModal ? "" : `
+      <h3>Modal per Brand</h3>
+      <table style="width:auto"><tbody>${modalPerKategori.filter((k) => !filterKategori || k.nama === filterKategori).map((k) => `<tr><td>${k.nama} (${k.jumlahProduk} produk)</td><td style="text-align:right">${rupiah(k.totalModal)}</td></tr>`).join("")}</tbody></table>`;
+    w.document.write(`<html><head><title>Stock Item</title><style>
+      body{font-family:Arial,sans-serif;font-size:11px;padding:20px}
+      table{width:100%;border-collapse:collapse;margin-bottom:14px}
+      th,td{border:1px solid #999;padding:4px 6px;text-align:left}
+      th{background:#eee} h2,h3{margin:4px 0} @page{margin:12mm}
+    </style></head><body>
+      <h2>PT INDO GARUDA ABADI</h2>
+      <h2>Stock Item${filterKategori ? " - Brand " + filterKategori : ""}</h2>
+      <p>Dicetak: ${tgl} - ${urut.length} produk</p>
+      <table><thead><tr>${th.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${barisHtml}</tbody>
+      ${sembunyikanModal ? "" : `<tfoot><tr><td colspan="7"><b>Total Modal${filterKategori ? " (" + filterKategori + ")" : ""}</b></td><td style="text-align:right"><b>${rupiah(totalTampil)}</b></td></tr></tfoot>`}
+      </table>
+      ${ringkasBrand}
+      <script>window.onload=function(){window.print()}<\/script>
+    </body></html>`);
+    w.document.close();
+  }
+
   return (
     <div>
       <PageHeader title="Stock Item" subtitle={sembunyikanModal ? "Stock akhir tiap barang" : "Nilai modal barang berdasarkan stock akhir - data rahasia, hanya Owner"} />
@@ -5480,6 +5521,9 @@ function StockItemPage({ token, role }) {
         </p>
       )}
 
+      <div style={{ marginBottom: 12 }}>
+        <button onClick={cetakStockItem} style={{ padding: "9px 16px", borderRadius: 9, border: "1px solid #D9D5CB", background: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>Cetak</button>
+      </div>
       <Card style={{ padding: 0, overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
           <thead>
