@@ -5605,7 +5605,7 @@ function PricelistPage({ token }) {
     setLoading(true); setError("");
     try {
       const [prods, cl, hp] = await Promise.all([
-        supabaseFetch(token, "products?select=id,kode,nama,brand,satuan,harga_jual,harga_asli,harga_modal,isi_per_koli&aktif=eq.true&order=kode.asc"),
+        supabaseFetch(token, "products?select=id,kode,nama,brand,satuan,minimal_order,harga_jual,harga_asli,harga_modal,isi_per_koli&aktif=eq.true&order=kode.asc"),
         supabaseFetch(token, "clients?select=provinsi&limit=10000"),
         supabaseFetch(token, "harga_produk_provinsi?select=provinsi&limit=20000"),
       ]);
@@ -5712,11 +5712,11 @@ function PricelistPage({ token }) {
     const tgl = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Jakarta" });
     const tr = tampil.map((p) => {
       const h = hargaEfektif(p), dk = diskonDari(p, h);
-      return `<tr><td>${p.kode}</td><td>${p.nama}</td><td>${p.brand || "-"}</td><td>${p.satuan || ""}</td><td style="text-align:right">${p.isi_per_koli || "-"}</td><td style="text-align:right">${Number(p.harga_asli) > 0 ? rupiah(p.harga_asli) : "-"}</td><td style="text-align:right">${dk !== null && dk > 0 ? dk + "%" : "-"}</td><td style="text-align:right"><b>${rupiah(h)}</b></td></tr>`;
+      return `<tr><td>${p.kode}</td><td>${p.nama}</td><td>${p.satuan || ""}</td><td style="text-align:right">${p.minimal_order || 1}</td><td style="text-align:right">${p.isi_per_koli || "-"}</td><td style="text-align:right">${Number(p.harga_asli) > 0 ? rupiah(p.harga_asli) : "-"}</td><td style="text-align:right">${dk !== null && dk > 0 ? dk + "%" : "-"}</td><td style="text-align:right"><b>${rupiah(h)}</b></td></tr>`;
     }).join("");
     w.document.write(`<html><head><title>${judul}</title><style>body{font-family:Arial,sans-serif;font-size:11px;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:4px 6px;text-align:left}th{background:#eee}h2{margin:4px 0}@page{margin:12mm}</style></head><body>
       <h2>PT INDO GARUDA ABADI</h2><h2>${judul}</h2><p>Berlaku per ${tgl}</p>
-      <table><thead><tr><th>Kode</th><th>Nama Barang</th><th>Brand</th><th>Satuan</th><th>Isi/Koli</th><th>Harga Asli</th><th>Diskon</th><th>Harga Jual</th></tr></thead><tbody>${tr}</tbody></table>
+      <table><thead><tr><th>Kode</th><th>Nama Barang</th><th>Satuan</th><th>Min Order</th><th>Isi/Koli</th><th>Harga Asli</th><th>Diskon</th><th>Harga Jual</th></tr></thead><tbody>${tr}</tbody></table>
       <script>window.onload=function(){window.print()}<\/script></body></html>`);
     w.document.close();
   }
@@ -5765,7 +5765,7 @@ function PricelistPage({ token }) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: "#F7F5F1" }}>
-                  {["Kode", "Nama Barang", "Brand", "Satuan", "Harga Asli", "Harga Default", ...(pilih ? ["Harga " + pilih, "Diskon %"] : ["Diskon %"])].map((h) => (
+                  {["Kode", "Nama Barang", "Satuan", "Min Order", "Harga Asli", "Harga Default", ...(pilih ? ["Harga " + pilih, "Diskon %"] : ["Diskon %"])].map((h) => (
                     <th key={h} style={{ padding: "10px 12px", textAlign: "left", fontSize: 11, color: "#6B6F75", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -5778,8 +5778,8 @@ function PricelistPage({ token }) {
                     <tr key={p.id} style={{ borderTop: "1px solid #EDEAE3", background: rugi ? "#FBEAEA" : "transparent" }}>
                       <td style={{ padding: "8px 12px", fontWeight: 700 }}>{p.kode}</td>
                       <td style={{ padding: "8px 12px" }}>{p.nama}{kotaAda[p.id] ? <span title="Ada harga per kota yang lebih diutamakan aplikasi toko" style={{ marginLeft: 6, fontSize: 10, color: "#8A6A1A", background: "#EFE1BE", padding: "1px 6px", borderRadius: 999 }}>ada harga kota</span> : null}</td>
-                      <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.brand || "-"}</td>
                       <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.satuan}</td>
+                      <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{p.minimal_order || 1}</td>
                       <td style={{ padding: "8px 12px", color: "#6B6F75" }}>{Number(p.harga_asli) > 0 ? rupiah(p.harga_asli) : "-"}</td>
                       <td style={{ padding: "8px 12px", fontWeight: 600 }}>{rupiah(p.harga_jual)}</td>
                       {pilih ? (
