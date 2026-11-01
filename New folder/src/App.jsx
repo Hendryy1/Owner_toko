@@ -5907,6 +5907,7 @@ function RekapNotaPage({ token }) {
           <td>${o.clients?.nama || "-"} (${o.clients?.kode || "-"})</td>
           <td>${o.no_nota}</td>
           <td>${fmtTglAngka(o.created_at)}</td>
+          <td>${o.jatuh_tempo ? fmtTglAngka(o.jatuh_tempo) : "-"}</td>
           <td>${metodeBayarLabel}</td>
           <td>${jenisPembayaranLabel}</td>
           <td style="text-align:right">${rupiah(total)}</td>
@@ -5956,9 +5957,9 @@ function RekapNotaPage({ token }) {
       return `
         <h3 class="grup">${judulGrup}</h3>
         <table>
-          <thead><tr><th>Toko</th><th>No. Nota</th><th>Tanggal</th><th>Metode Bayar</th><th>Jenis Pembayaran</th><th>Total</th><th>Jumlah Bayar</th><th>Sisa Bayar</th><th>Cashback</th></tr></thead>
+          <thead><tr><th>Toko</th><th>No. Nota</th><th>Tanggal</th><th>Jatuh Tempo</th><th>Metode Bayar</th><th>Jenis Pembayaran</th><th>Total</th><th>Jumlah Bayar</th><th>Sisa Bayar</th><th>Cashback</th></tr></thead>
           <tbody>${baris}</tbody>
-          <tfoot><tr><td colspan="5">Subtotal ${judulGrup}</td><td style="text-align:right">${rupiah(totalGrup)}</td><td style="text-align:right">${rupiah(bayarGrup)}</td><td style="text-align:right">${rupiah(sisaGrup)}</td><td></td></tr></tfoot>
+          <tfoot><tr><td colspan="6">Subtotal ${judulGrup}</td><td style="text-align:right">${rupiah(totalGrup)}</td><td style="text-align:right">${rupiah(bayarGrup)}</td><td style="text-align:right">${rupiah(sisaGrup)}</td><td></td></tr></tfoot>
         </table>`;
     }).join("");
 
