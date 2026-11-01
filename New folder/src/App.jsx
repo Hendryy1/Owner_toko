@@ -5792,6 +5792,7 @@ function RekapNotaPage({ token }) {
   const [savingCashback, setSavingCashback] = useState(false);
   const [riwayatBayarMap, setRiwayatBayarMap] = useState({}); // { order_id: [{id, tanggal, jumlah, catatan}] } - riwayat pembayaran bertahap
   const [bayarModalOrderId, setBayarModalOrderId] = useState(null);
+  const [filterSales, setFilterSales] = useState(""); // "" = semua, "__tanpa" = tanpa sales, selain itu = kode sales
 
   useEffect(() => {
     supabaseFetch(token, "nota_settings?select=*&limit=1")
@@ -5970,7 +5971,7 @@ function RekapNotaPage({ token }) {
       </style></head><body>
       <h1>PT INDO GARUDA ABADI</h1>
       <h2 class="judul">Rekap Nota</h2>
-      <p class="sub">Dicetak ${tanggalCetak} - ${keteranganPeriode}${filterStatus !== "semua" ? ` - Status: ${filterStatus}` : ""} - Total ${filtered.length} nota</p>
+      <p class="sub">Dicetak ${tanggalCetak} - ${keteranganPeriode}${filterStatus !== "semua" ? ` - Status: ${filterStatus}` : ""}${filterSales ? ` - Sales: ${filterSales === "__tanpa" ? "Tanpa Sales" : filterSales}` : ""} - Total ${filtered.length} nota</p>
       ${blokSales || "<p>Tidak ada data nota.</p>"}
       <p class="total-akhir">Total Omzet (tidak termasuk yang ditolak): ${rupiah(totalSemua)} - Jumlah Bayar: ${rupiah(totalBayarSemua)} - Sisa Bayar: ${rupiah(totalSisaSemua)}</p>
       </body></html>`;
@@ -6010,6 +6011,10 @@ function RekapNotaPage({ token }) {
       if (filterMonth !== 0 && d.getMonth() + 1 !== Number(filterMonth)) return false;
     }
     if (filterStatus !== "semua" && o.status !== filterStatus) return false;
+    if (filterSales) {
+      const kodeSalesNota = o.clients?.sales?.kode || "__tanpa";
+      if (kodeSalesNota !== filterSales) return false;
+    }
     return true;
   }).sort((a, b) => {
     // Urutan: tanggal nota dari yang paling AWAL (tanggal 1 di bulan itu) ke
@@ -6165,6 +6170,13 @@ function RekapNotaPage({ token }) {
             Hapus Filter Tanggal
           </button>
         )}
+        <select value={filterSales} onChange={(e) => setFilterSales(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
+          <option value="">Semua Sales</option>
+          {Array.from(new Map(orders.filter((o) => o.clients?.sales?.kode).map((o) => [o.clients.sales.kode, o.clients.sales.nama])).entries())
+            .sort((a, b) => (a[1] || "").localeCompare(b[1] || ""))
+            .map(([kode, nama]) => <option key={kode} value={kode}>{nama} ({kode})</option>)}
+          <option value="__tanpa">Tanpa Sales</option>
+        </select>
         {activeTab === "nota" && (
           <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} style={{ padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, background: "#fff" }}>
             <option value="semua">Semua Status</option>
