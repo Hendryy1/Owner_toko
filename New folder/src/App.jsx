@@ -1229,6 +1229,7 @@ function OwnerDashboardInner() {
         {page === "riwayat" && <RiwayatOrderPage token={token} />}
         {page === "transaksi" && <TransaksiPage token={token} />}
         {page === "rekap_nota" && <RekapNotaPage token={token} />}
+        {page === "rekap_komisi" && <RekapKomisiSalesPage token={token} />}
         {page === "clients" && <ClientsPage token={token} />}
         {page === "verifikasi_toko" && <VerifikasiTokoPage token={token} />}
         {page === "keuangan" && <KeuanganPage token={token} />}
@@ -1397,7 +1398,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     },
     {
       label: "Sales",
-      items: ["laporan_kunjungan_owner", "rekap_absen", "laporan_periodik_sales", "area_sales", "request_area"],
+      items: ["rekap_komisi", "laporan_kunjungan_owner", "rekap_absen", "laporan_periodik_sales", "area_sales", "request_area"],
     },
     {
       label: "Kurir",
@@ -1454,6 +1455,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "outbound", label: "Outbound", icon: ScanLine, roles: ["owner", "staff_gudang"] },
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "transaksi", label: "Transaksi", icon: Table2, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
+    { key: "rekap_komisi", label: "Rekap Komisi Sales", icon: Wallet, roles: ["owner"] },
     { key: "rekap_nota", label: "Rekap Nota", icon: Receipt, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
     { key: "clients", label: "Approve Toko Baru", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "verifikasi_toko", label: "Verifikasi Toko", icon: Eye, roles: ["owner"] },
@@ -5796,6 +5798,142 @@ function InboundPage({ token }) {
   );
 }
 
+
+// ============================================================
+// REKAP KOMISI SALES
+// Komisi = SUM(subtotal_setelah_diskon x komisi_persen/100 produk) per nota, masuk ke bulan
+// nota DIBUAT. Cair hanya jika nota sudah lunas DAN pesanan selesai.
+// Nota diretur = komisi 0 (dipotong). Lainnya = tertahan.
+// ============================================================
+function RekapKomisiSalesPage({ token }) {
+  const now = new Date();
+  const [tahun, setTahun] = useState(now.getFullYear());
+  const [bulan, setBulan] = useState(now.getMonth() + 1);
+  const [rows, setRows] = useState([]);
+  const [salesMap, setSalesMap] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [buka, setBuka] = useState(null);
+  const NAMA_BLN = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+
+  async function load() {
+    setLoading(true); setError("");
+    try {
+      const mulai = `${tahun}-${String(bulan).padStart(2, "0")}-01`;
+      const next = bulan === 12 ? `${tahun + 1}-01-01` : `${tahun}-${String(bulan + 1).padStart(2, "0")}-01`;
+      const [orders, sales] = await Promise.all([
+        supabaseFetch(token, `orders?select=id,no_nota,created_at,status,status_bayar,sales_id,clients(nama,kode),order_items(qty,subtotal_setelah_diskon,products(kode,nama,komisi_persen))&created_at=gte.${mulai}T00:00:00%2B07:00&created_at=lt.${next}T00:00:00%2B07:00&order=created_at.asc&limit=5000`),
+        supabaseFetch(token, "sales?select=id,kode,nama"),
+      ]);
+      const m = {};
+      (sales || []).forEach((x) => { m[x.id] = x; });
+      setSalesMap(m);
+      setRows(orders || []);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [tahun, bulan]);
+
+  const SKIP = ["ditolak", "dibatalkan", "batal"];
+  const grup = {};
+  rows.forEach((o) => {
+    if (SKIP.includes(o.status)) return;
+    const komisi = (o.order_items || []).reduce((a, it) => a + (Number(it.subtotal_setelah_diskon) || 0) * (Number(it.products?.komisi_persen) || 0) / 100, 0);
+    const kunci = o.sales_id || "__tanpa";
+    if (!grup[kunci]) {
+      const sl = salesMap[o.sales_id];
+      grup[kunci] = { kunci, nama: sl ? sl.nama : "Tanpa Sales", kode: sl?.kode || "", nota: [], cair: 0, tertahan: 0, retur: 0 };
+    }
+    let jenis, alasan = "";
+    if (o.status === "diretur") { jenis = "retur"; alasan = "Diretur"; }
+    else if (o.status === "selesai" && o.status_bayar === "lunas") { jenis = "cair"; }
+    else {
+      jenis = "tertahan";
+      alasan = o.status_bayar !== "lunas" && o.status !== "selesai" ? "Belum lunas & belum selesai" : (o.status_bayar !== "lunas" ? "Belum lunas" : "Pesanan belum selesai");
+    }
+    grup[kunci][jenis] += komisi;
+    grup[kunci].nota.push({ ...o, komisi, jenis, alasan });
+  });
+  const daftar = Object.values(grup).sort((a, b) => b.cair - a.cair);
+  const tot = daftar.reduce((a, g) => ({ cair: a.cair + g.cair, tertahan: a.tertahan + g.tertahan, retur: a.retur + g.retur }), { cair: 0, tertahan: 0, retur: 0 });
+  const warna = { cair: "#28685D", tertahan: "#B7791F", retur: "#C0392B" };
+  const label = { cair: "Bisa Cair", tertahan: "Tertahan", retur: "Retur (dipotong)" };
+
+  function cetak() {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    const bagian = daftar.map((g) => `
+      <h3>${g.nama} ${g.kode ? "(" + g.kode + ")" : ""}</h3>
+      <table><thead><tr><th>Tgl Nota</th><th>No Nota</th><th>Toko</th><th>Status</th><th style="text-align:right">Komisi</th></tr></thead><tbody>
+      ${g.nota.map((n) => `<tr><td>${fmtTglAngka(n.created_at)}</td><td>${n.no_nota}</td><td>${n.clients?.nama || ""}</td><td>${label[n.jenis]}${n.alasan ? " - " + n.alasan : ""}</td><td style="text-align:right">${rupiah(n.komisi)}</td></tr>`).join("")}
+      </tbody><tfoot><tr><td colspan="4"><b>Komisi Bisa Cair</b></td><td style="text-align:right"><b>${rupiah(g.cair)}</b></td></tr>
+      <tr><td colspan="4">Tertahan</td><td style="text-align:right">${rupiah(g.tertahan)}</td></tr>
+      <tr><td colspan="4">Retur (dipotong)</td><td style="text-align:right">${rupiah(g.retur)}</td></tr></tfoot></table>`).join("");
+    w.document.write(`<html><head><title>Rekap Komisi Sales</title><style>body{font-family:Arial,sans-serif;font-size:11px;padding:20px}table{width:100%;border-collapse:collapse;margin-bottom:14px}th,td{border:1px solid #999;padding:4px 6px;text-align:left}th{background:#eee}h2,h3{margin:6px 0}</style></head><body><h2>PT INDO GARUDA ABADI</h2><h2>Rekap Komisi Sales - ${NAMA_BLN[bulan - 1]} ${tahun}</h2>${bagian}<script>window.onload=function(){window.print()}<\/script></body></html>`);
+    w.document.close();
+  }
+
+  const tahunList = [now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
+  return (
+    <div>
+      <PageHeader title="Rekap Komisi Sales" subtitle="Komisi = omzet produk x persen komisi. Cair hanya jika nota lunas dan pesanan selesai; masuk ke bulan nota dibuat." onRefresh={load} refreshing={loading} />
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <select value={bulan} onChange={(e) => setBulan(Number(e.target.value))} style={{ ...fieldStyle, width: "auto" }}>
+          {NAMA_BLN.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}
+        </select>
+        <select value={tahun} onChange={(e) => setTahun(Number(e.target.value))} style={{ ...fieldStyle, width: "auto" }}>
+          {tahunList.map((t) => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <button onClick={cetak} style={{ padding: "9px 16px", borderRadius: 9, border: "1px solid #D9D5CB", background: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>Cetak</button>
+      </div>
+      {error && <div style={{ color: "#C0392B", marginBottom: 12, fontSize: 13 }}>{error}</div>}
+      {loading ? <LoadingState /> : (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginBottom: 16 }}>
+            {["cair", "tertahan", "retur"].map((k) => (
+              <Card key={k} style={{ padding: 14 }}>
+                <div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>{label[k]}</div>
+                <div className="disp" style={{ fontSize: 20, fontWeight: 800, color: warna[k] }}>{rupiah(tot[k])}</div>
+              </Card>
+            ))}
+          </div>
+          {daftar.length === 0 && <EmptyState text="Belum ada nota di bulan ini." />}
+          {daftar.map((g) => (
+            <Card key={g.kunci} style={{ padding: 0, overflow: "hidden", marginBottom: 10 }}>
+              <div onClick={() => setBuka(buka === g.kunci ? null : g.kunci)} style={{ padding: "12px 14px", cursor: "pointer", display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                <div style={{ fontWeight: 700 }}>{g.nama} <span style={{ color: "#6B6F75", fontWeight: 500, fontSize: 12 }}>{g.kode} - {g.nota.length} nota</span></div>
+                <div style={{ display: "flex", gap: 14, fontSize: 12.5 }}>
+                  <span style={{ color: warna.cair, fontWeight: 800 }}>Cair {rupiah(g.cair)}</span>
+                  <span style={{ color: warna.tertahan }}>Tertahan {rupiah(g.tertahan)}</span>
+                  <span style={{ color: warna.retur }}>Retur {rupiah(g.retur)}</span>
+                </div>
+              </div>
+              {buka === g.kunci && (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                  <thead><tr style={{ background: "#F7F5F1" }}>
+                    {["Tgl Nota", "No Nota", "Toko", "Status", "Komisi"].map((h) => <th key={h} style={{ padding: "9px 12px", textAlign: "left", fontSize: 11, color: "#6B6F75" }}>{h}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {g.nota.map((n) => (
+                      <tr key={n.id} style={{ borderTop: "1px solid #EDEAE3" }}>
+                        <td style={{ padding: "9px 12px" }}>{fmtTglAngka(n.created_at)}</td>
+                        <td style={{ padding: "9px 12px", fontWeight: 600 }}>{n.no_nota}</td>
+                        <td style={{ padding: "9px 12px" }}>{n.clients?.nama || "-"}</td>
+                        <td style={{ padding: "9px 12px", color: warna[n.jenis], fontWeight: 600 }}>{label[n.jenis]}{n.alasan ? ` - ${n.alasan}` : ""}</td>
+                        <td style={{ padding: "9px 12px", fontWeight: 700 }}>{rupiah(n.komisi)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 // ============================================================
 // REKAP NOTA (Lunas / Tempo / Cashback)
 // ============================================================
@@ -9533,7 +9671,7 @@ function ProductPage({ token }) {
 function ProductFormModal({ token, product, onClose, onSaved }) {
   const isNew = !product.id;
   const [form, setForm] = useState({
-    kode: product.kode || "", nama: product.nama || "", kategori: product.kategori || "", brand: product.brand || "", satuan: product.satuan || "",
+    kode: product.kode || "", nama: product.nama || "", kategori: product.kategori || "", brand: product.brand || "", komisiPersen: product.komisi_persen || "", satuan: product.satuan || "",
     hargaJual: product.harga_jual || "", hargaAsli: product.harga_asli || "", hargaModal: product.harga_modal || "",
     stockAwal: product.stock_awal ?? 0, stockMinimum: product.stock_minimum ?? 0, isiPerKoli: product.isi_per_koli || "", diskonKoliPct: product.diskon_koli_pct ? Number(product.diskon_koli_pct) * 100 : "",
     minimalOrder: product.minimal_order ?? 1,
@@ -9666,7 +9804,7 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
     setSaving(true);
     try {
       const body = {
-        kode: form.kode.trim().toUpperCase(), nama: form.nama.trim(), kategori: form.kategori || null, brand: form.brand.trim() || null, satuan: form.satuan.trim(),
+        kode: form.kode.trim().toUpperCase(), nama: form.nama.trim(), kategori: form.kategori || null, brand: form.brand.trim() || null, komisi_persen: Number(form.komisiPersen) || 0, satuan: form.satuan.trim(),
         harga_jual: Number(form.hargaJual), harga_asli: form.hargaAsli ? Number(form.hargaAsli) : null,
         harga_modal: form.hargaModal ? Number(form.hargaModal) : null, stock_awal: Number(form.stockAwal) || 0,
         stock_minimum: Number(form.stockMinimum) || 0,
@@ -9758,6 +9896,10 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Brand</label>
           <input value={form.brand} onChange={set("brand")} placeholder="misal Kozel" style={fieldStyle} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Komisi Sales (% dari omzet produk)</label>
+          <input type="number" min="0" max="100" step="0.01" value={form.komisiPersen} onChange={set("komisiPersen")} placeholder="misal 1.5" style={fieldStyle} />
         </div>
 
         <div style={{ marginBottom: 12 }}>
@@ -9920,8 +10062,8 @@ function ImportCSVModal({ token, onClose, onSelesai }) {
 
   function unduhTemplate() {
     const template = [
-      "kode,nama,kategori,satuan,harga_jual,harga_asli,harga_modal,stock_awal,isi_per_koli,diskon_koli_pct,cashback_per_koli,brand",
-      "KZ-99,Contoh Produk Baru,Kategori Contoh,pcs,50000,60000,35000,100,12,5,2000,Kozel",
+      "kode,nama,kategori,satuan,harga_jual,harga_asli,harga_modal,stock_awal,isi_per_koli,diskon_koli_pct,cashback_per_koli,brand,komisi_persen",
+      "KZ-99,Contoh Produk Baru,Kategori Contoh,pcs,50000,60000,35000,100,12,5,2000,Kozel,1.5",
     ].join("\r\n");
     const blob = new Blob(["\uFEFF" + template], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -9971,6 +10113,7 @@ function ImportCSVModal({ token, onClose, onSelesai }) {
         nama: r.nama.trim(),
         kategori: r.kategori?.trim() || null,
         brand: r.brand?.trim() || null,
+        komisi_persen: r.komisi_persen ? Number(r.komisi_persen) : 0,
         satuan: r.satuan.trim(),
         harga_jual: Number(r.harga_jual),
         harga_asli: r.harga_asli ? Number(r.harga_asli) : null,
