@@ -5817,6 +5817,20 @@ function RekapKomisiSalesPage({ token }) {
   const [buka, setBuka] = useState(null);
   const [cairMap, setCairMap] = useState({});
   const [proses, setProses] = useState(false);
+  const [notaSettings, setNotaSettings] = useState(null);
+  const [notaTampil, setNotaTampil] = useState(null);
+  const [bukaNotaId, setBukaNotaId] = useState(null);
+  useEffect(() => {
+    supabaseFetch(token, "nota_settings?select=*&limit=1").then((r) => setNotaSettings(r[0] || null)).catch(() => setNotaSettings(null));
+  }, []);
+  async function bukaNota(id) {
+    setBukaNotaId(id); setError("");
+    try {
+      const r = await supabaseFetch(token, `orders?select=id,client_id,no_nota,created_at,jatuh_tempo,status,status_bayar,metode_bayar,jumlah_bayar,cara_bayar_aktual,is_dropship,nama_pengirim_dropship,tujuan_nama,tujuan_telp,tujuan_alamat,diskon_tambahan_jenis,diskon_tambahan_nilai,diskon_tambahan_keterangan,alasan_retur,alasan_dibatalkan,picking_selesai_at,outbound_verified_at,clients(nama,kode,alamat,telp,jenis_pembayaran,sales!clients_sales_id_fkey(kode,nama)),order_items(*,products(kode,nama,satuan,nomor_produk,harga_jual)),cashback_ledger(id,nilai_cashback,status)&id=eq.${id}`);
+      if (r && r[0]) setNotaTampil(r[0]); else setError("Nota tidak ditemukan.");
+    } catch (e) { setError(e.message); }
+    setBukaNotaId(null);
+  }
   const NAMA_BLN = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
 
   async function load() {
@@ -5956,7 +5970,9 @@ function RekapKomisiSalesPage({ token }) {
                     {g.nota.map((n) => (
                       <tr key={n.id} style={{ borderTop: "1px solid #EDEAE3" }}>
                         <td style={{ padding: "9px 12px" }}>{fmtTglAngka(n.created_at)}</td>
-                        <td style={{ padding: "9px 12px", fontWeight: 600 }}>{n.no_nota}</td>
+                        <td style={{ padding: "9px 12px", fontWeight: 600 }}>
+                          <span onClick={() => bukaNota(n.id)} style={{ color: "#2F6FB0", textDecoration: "underline", cursor: "pointer" }}>{bukaNotaId === n.id ? "Membuka..." : n.no_nota}</span>
+                        </td>
                         <td style={{ padding: "9px 12px" }}>{n.clients?.nama || "-"}</td>
                         <td style={{ padding: "9px 12px", color: warna[n.jenis], fontWeight: 600 }}>{label[n.jenis]}{n.alasan ? ` - ${n.alasan}` : ""}{n.tglCair ? ` (${fmtTglAngka(n.tglCair)})` : ""}</td>
                         <td style={{ padding: "9px 12px", fontWeight: 700 }}>{rupiah(n.komisi)}</td>
@@ -5973,6 +5989,7 @@ function RekapKomisiSalesPage({ token }) {
           ))}
         </>
       )}
+      {notaTampil && <NotaPrintModal order={notaTampil} type="nota" settings={notaSettings} onClose={() => setNotaTampil(null)} />}
     </div>
   );
 }
