@@ -5806,6 +5806,7 @@ function InboundPage({ token }) {
 // Nota diretur = komisi 0 (dipotong). Lainnya = tertahan.
 // ============================================================
 function RekapKomisiSalesPage({ token }) {
+  const fieldStyle = { padding: "9px 12px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13.5, outline: "none", background: "#fff" };
   const now = new Date();
   const [tahun, setTahun] = useState(now.getFullYear());
   const [bulan, setBulan] = useState(now.getMonth() + 1);
