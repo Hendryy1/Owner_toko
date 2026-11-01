@@ -5770,6 +5770,14 @@ function InboundPage({ token }) {
 // ============================================================
 // REKAP NOTA (Lunas / Tempo / Cashback)
 // ============================================================
+// Format tanggal angka pendek: 30/10/26 (dd/mm/yy)
+function fmtTglAngka(v) {
+  if (!v) return "-";
+  const d = typeof v === "string" && v.length === 10 ? new Date(v + "T00:00:00") : (v instanceof Date ? v : new Date(v));
+  if (isNaN(d.getTime())) return "-";
+  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getFullYear()).slice(-2)}`;
+}
+
 function RekapNotaPage({ token }) {
   const [loading, setLoading] = useState(true);
   const [orders, setOrders] = useState([]);
@@ -5856,7 +5864,7 @@ function RekapNotaPage({ token }) {
       const jumlahBayar = Number(o.jumlah_bayar || 0);
       return [
         o.no_nota,
-        new Date(o.created_at).toLocaleDateString("id-ID"),
+        fmtTglAngka(o.created_at),
         o.clients?.kode || "",
         o.clients?.nama || "",
         statusPerjalanan(o).label,
@@ -5882,7 +5890,7 @@ function RekapNotaPage({ token }) {
   function cetakRekapNota() {
     const tanggalCetak = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric" });
     const keteranganPeriode = (tanggalMulai || tanggalAkhir)
-      ? `Periode: ${tanggalMulai ? new Date(tanggalMulai).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "awal"} s/d ${tanggalAkhir ? new Date(tanggalAkhir).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "sekarang"}`
+      ? `Periode: ${tanggalMulai ? fmtTglAngka(tanggalMulai) : "awal"} s/d ${tanggalAkhir ? fmtTglAngka(tanggalAkhir) : "sekarang"}`
       : `Periode: ${BULAN[filterMonth]} ${filterYear}`;
     function baris1Order(o) {
       const total = orderTotal(o);
@@ -5898,7 +5906,7 @@ function RekapNotaPage({ token }) {
         <tr>
           <td>${o.clients?.nama || "-"} (${o.clients?.kode || "-"})</td>
           <td>${o.no_nota}</td>
-          <td>${new Date(o.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
+          <td>${fmtTglAngka(o.created_at)}</td>
           <td>${metodeBayarLabel}</td>
           <td>${jenisPembayaranLabel}</td>
           <td style="text-align:right">${rupiah(total)}</td>
@@ -6231,7 +6239,7 @@ function RekapNotaPage({ token }) {
                     <td style={{ padding: "12px 14px", color: "#6B6F75", fontSize: 12 }}>{o.clients?.alamat}</td>
                     <td style={{ padding: "12px 14px", fontWeight: 700, color: "#28685D" }}>{rupiah(cb?.nilai_cashback)}</td>
                     <td style={{ padding: "12px 14px", color: "#9CA0A6", fontSize: 11.5 }}>
-                      {new Date(o.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}
+                      {fmtTglAngka(o.created_at)}
                     </td>
                   </tr>
                 );
@@ -6264,7 +6272,7 @@ function RekapNotaPage({ token }) {
                       <span style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#8A6A1A" }}>Pakai Poin: {rupiah(Number(o.diskon_tambahan_nilai))}</span>
                     )}
                   </td>
-                  <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>{new Date(o.created_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" })}</td>
+                  <td style={{ padding: "12px 14px", whiteSpace: "nowrap" }}>{fmtTglAngka(o.created_at)}</td>
                   <td style={{ padding: "12px 14px" }}>{o.metode_bayar === "cod" ? "COD" : o.metode_bayar === "tempo" ? "Kredit" : o.clients?.jenis_pembayaran}</td>
                   <td style={{ padding: "12px 14px" }}>
                     <select
@@ -6277,7 +6285,7 @@ function RekapNotaPage({ token }) {
                       <option value="transfer">Transfer</option>
                     </select>
                   </td>
-                  <td style={{ padding: "12px 14px" }}>{o.jatuh_tempo ? new Date(o.jatuh_tempo).toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" }) : "-"}</td>
+                  <td style={{ padding: "12px 14px" }}>{o.jatuh_tempo ? fmtTglAngka(o.jatuh_tempo) : "-"}</td>
                   <td style={{ padding: "12px 14px" }}>
                     <span style={{ background: st.bg, color: st.fg, padding: "3px 10px", borderRadius: 999, fontSize: 11, fontWeight: 700 }}>
                       {st.label}
@@ -6290,7 +6298,7 @@ function RekapNotaPage({ token }) {
                     </button>
                     {(riwayatBayarMap[o.id] || []).length > 0 && (
                       <span style={{ display: "block", fontSize: 10.5, color: "#28685D", fontWeight: 600, marginTop: 3 }}>
-                        {riwayatBayarMap[o.id].length}x bayar - terakhir {new Date(riwayatBayarMap[o.id][riwayatBayarMap[o.id].length - 1].tanggal + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short" })}
+                        {riwayatBayarMap[o.id].length}x bayar - terakhir {fmtTglAngka(riwayatBayarMap[o.id][riwayatBayarMap[o.id].length - 1].tanggal)}
                       </span>
                     )}
                   </td>
@@ -6401,7 +6409,7 @@ function RiwayatBayarModal({ token, order, total, riwayat, onClose, onUpdate }) 
   const saldoTanpaTanggal = Math.max(0, jumlahBayarSekarang - totalRiwayat); // pembayaran lama yang diisi sebelum ada pencatatan tanggal
   const sisa = Math.max(0, total - jumlahBayarSekarang);
   const fieldStyle = { width: "100%", padding: "9px 11px", borderRadius: 9, border: "1.5px solid #E4E1DA", fontSize: 13, outline: "none", boxSizing: "border-box" };
-  const formatTgl = (t) => new Date(t + "T00:00:00").toLocaleDateString("id-ID", { day: "2-digit", month: "short", year: "numeric" });
+  const formatTgl = (t) => fmtTglAngka(t);
 
   async function tambah() {
     const nilai = Number(jumlah);
