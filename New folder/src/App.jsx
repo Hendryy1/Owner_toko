@@ -5005,6 +5005,7 @@ function RekapTokoPage({ token }) {
   const [hanyaTidakAktif, setHanyaTidakAktif] = useState(false);
   const [filterSales, setFilterSales] = useState("");
   const [urutan, setUrutan] = useState("nama"); // nama | terlama | terbaru
+  const [cari, setCari] = useState("");
 
   const BATAS_HARI_TIDAK_AKTIF = 30;
 
@@ -5114,6 +5115,13 @@ function RekapTokoPage({ token }) {
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4, flexWrap: "wrap", gap: 10 }}>
         <PageHeader title="Rekap Toko" subtitle="Klik ikon edit untuk ubah Alamat, No HP, Kode Sales, atau Catatan" />
         <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap", marginTop: 4 }}>
+          <input
+            type="search"
+            value={cari}
+            onChange={(e) => setCari(e.target.value)}
+            placeholder="Cari nama toko, kode, alamat, no HP, sales..."
+            style={{ padding: "7px 12px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 12.5, minWidth: 260, outline: "none", background: "#fff" }}
+          />
           <select
             value={filterSales}
             onChange={(e) => setFilterSales(e.target.value)}
@@ -5157,6 +5165,12 @@ function RekapTokoPage({ token }) {
                   if (!(hari === null || hari > BATAS_HARI_TIDAK_AKTIF)) return false;
                 }
                 if (filterSales && c.sales_id !== filterSales) return false;
+                const kataCari = cari.trim().toLowerCase();
+                if (kataCari) {
+                  const gabungan = [c.nama, c.kode, c.alamat, c.telp, c.email, c.nama_owner, c.sales?.nama, c.sales?.kode]
+                    .filter(Boolean).join(" ").toLowerCase();
+                  if (!gabungan.includes(kataCari)) return false;
+                }
                 return true;
               })
               .sort((a, b) => {
