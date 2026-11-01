@@ -5710,13 +5710,16 @@ function PricelistPage({ token }) {
     const w = window.open("", "_blank");
     if (!w) { alert("Pop-up diblokir browser. Izinkan pop-up untuk mencetak."); return; }
     const tgl = new Date().toLocaleDateString("id-ID", { day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Jakarta" });
+    // Penyesuaian tampilan KHUSUS hasil cetak (data produk tidak diubah)
+    const TAMPIL_CETAK = { SP138: { isi: 4, min: 1, satuan: "Lusin" } };
     const tr = tampil.map((p) => {
-      const h = hargaEfektif(p), dk = diskonDari(p, h);
-      return `<tr><td>${p.kode}</td><td>${p.nama}</td><td >${p.isi_per_koli || "-"}</td><td >${p.minimal_order || 1}</td><td>${p.satuan || ""}</td><td >${Number(p.harga_asli) > 0 ? rupiah(p.harga_asli) : "-"}</td><td >${dk !== null && dk > 0 ? dk + "%" : "-"}</td><td ><b>${rupiah(h)}</b></td></tr>`;
+      const h = hargaEfektif(p);
+      const o = TAMPIL_CETAK[String(p.kode || "").toUpperCase()] || {};
+      return `<tr><td>${p.kode}</td><td>${p.nama}</td><td>${o.isi ?? (p.isi_per_koli || "-")}</td><td>${o.min ?? (p.minimal_order || 1)}</td><td>${o.satuan ?? (p.satuan || "")}</td><td><b>${rupiah(h)}</b></td></tr>`;
     }).join("");
     w.document.write(`<html><head><title>${judul}</title><style>body{font-family:Arial,sans-serif;font-size:11px;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:4px 6px;text-align:center;vertical-align:middle}th{background:#eee}h2{margin:4px 0}@page{margin:12mm}</style></head><body>
       <h2>PT INDO GARUDA ABADI</h2><h2>${judul}</h2><p>Berlaku per ${tgl}</p>
-      <table><thead><tr><th>Kode</th><th>Nama Barang</th><th>Isi/Koli</th><th>Min Order</th><th>Satuan</th><th>Harga Asli/pcs</th><th>Diskon</th><th>Harga Jual/pcs</th></tr></thead><tbody>${tr}</tbody></table>
+      <table><thead><tr><th>Kode</th><th>Nama Barang</th><th>Isi/Koli</th><th>Min Order</th><th>Satuan</th><th>Harga Jual/pcs</th></tr></thead><tbody>${tr}</tbody></table>
       <script>window.onload=function(){window.print()}<\/script></body></html>`);
     w.document.close();
   }
