@@ -6012,19 +6012,19 @@ function RekapNotaPage({ token }) {
     if (filterStatus !== "semua" && o.status !== filterStatus) return false;
     return true;
   }).sort((a, b) => {
-    // Urutan: Toko dulu (nama toko A-Z), baru di dalam toko yang sama
-    // diurutkan No. Nota (nomor urut aslinya), baru Tanggal kalau masih sama.
-    const namaTokoA = a.clients?.nama || "";
-    const namaTokoB = b.clients?.nama || "";
-    if (namaTokoA !== namaTokoB) return namaTokoA.localeCompare(namaTokoB);
+    // Urutan: tanggal nota dari yang paling AWAL (tanggal 1 di bulan itu) ke
+    // yang paling akhir. Kalau tanggalnya sama, urutkan nomor urut nota aslinya,
+    // lalu nama toko.
+    const selisihTanggal = new Date(a.created_at) - new Date(b.created_at);
+    if (selisihTanggal !== 0) return selisihTanggal;
     // No. Nota formatnya NT + <kode 3digit> + <tanggal 8digit YYYYMMDD> +
     // <nomor urut> - semuanya digit tanpa pemisah. Lewati "NT" + 11 digit
     // (kode+tanggal), sisanya itu baru nomor urut asli globalnya.
     const nomorA = Number((a.no_nota || "").slice(2 + 11) || 0);
     const nomorB = Number((b.no_nota || "").slice(2 + 11) || 0);
     if (nomorA !== nomorB) return nomorA - nomorB;
-    return new Date(a.created_at) - new Date(b.created_at);
-  }); // diurutkan: Toko, No. Nota, Tanggal
+    return (a.clients?.nama || "").localeCompare(b.clients?.nama || "");
+  }); // diurutkan: Tanggal (awal -> akhir), No. Nota, Toko
 
   const totalCashbackBelumDibayar = filtered.reduce((s, o) => {
     const cb = o.cashback_ledger?.[0];
