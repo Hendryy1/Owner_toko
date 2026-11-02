@@ -5723,7 +5723,12 @@ function PricelistPage({ token }) {
     const TAMPIL_CETAK = { SP138: { isi: 4, min: 1, satuan: "Lusin" } };
     const tr = tampil.map((p) => {
       const h = hargaEfektif(p);
-      const o = TAMPIL_CETAK[String(p.kode || "").toUpperCase()] || {};
+      // Aturan otomatis: satuan pcs & min order kelipatan 12 -> dicetak dalam Lusin
+      // (min order / 12, isi/koli / 12 kalau habis dibagi 12, satuan Lusin). Contoh: min 24 -> 2, isi 48 -> 4.
+      const minP = Number(p.minimal_order), isiP = Number(p.isi_per_koli);
+      const otomatisLusin = String(p.satuan || "").trim().toLowerCase() === "pcs" && minP > 0 && minP % 12 === 0
+        ? { isi: isiP > 0 && isiP % 12 === 0 ? isiP / 12 : (p.isi_per_koli || "-"), min: minP / 12, satuan: "Lusin" } : null;
+      const o = TAMPIL_CETAK[String(p.kode || "").toUpperCase()] || otomatisLusin || {};
       return `<tr><td>${p.kode}</td><td>${p.nama}</td><td>${o.isi ?? (p.isi_per_koli || "-")}</td><td>${o.min ?? (p.minimal_order || 1)}</td><td>${o.satuan ?? (p.satuan || "")}</td><td>${hargaLusinTeks(h, o.satuan ?? p.satuan, o.min ?? p.minimal_order)}</td><td><b>${rupiah(h)}</b></td></tr>`;
     }).join("");
     w.document.write(`<html><head><title>${judul}</title><style>body{font-family:Arial,sans-serif;font-size:11px;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #999;padding:4px 6px;text-align:center;vertical-align:middle}th{background:#eee}h2{margin:4px 0}@page{margin:12mm}</style></head><body>
