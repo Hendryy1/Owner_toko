@@ -6432,11 +6432,11 @@ function RekapGajiSalesPage({ token }) {
   }
   async function tandaiDibayar(sl) {
     const h = hitung(sl);
-    if (!confirm(`Tandai gaji ${sl.nama} ${NAMA_BLN[bulan - 1]} ${tahun} sebagai DIBAYAR?\nTotal diterima ${rupiah(h.total)}; kolom Terbayar diisi penuh. Setelah dibayar data dikunci.`)) return;
+    if (!confirm(`Tandai gaji ${sl.nama} ${NAMA_BLN[bulan - 1]} ${tahun} sebagai DIBAYAR?\nTotal diterima ${rupiah(h.total)}, terbayar ${rupiah(h.terbayar)}, sisa ${rupiah(Math.max(0, h.sisa))}. Setelah dibayar data dikunci.`)) return;
     setBusy(true); setError(""); setInfo("");
     try {
       const tgl = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
-      await upsertGaji(sl, { status: "dibayar", tanggal_bayar: tgl, terbayar: h.total });
+      await upsertGaji(sl, { status: "dibayar", tanggal_bayar: tgl });
       await load(); setInfo(`${sl.nama}: ditandai dibayar.`);
     } catch (e) { setError(e.message); }
     setBusy(false);
@@ -6487,7 +6487,8 @@ function RekapGajiSalesPage({ token }) {
         ${baris("Total Potongan", h.potongan, true)}
       </tbody>
       <tfoot><tr><td><b>TOTAL DITERIMA</b></td><td style="text-align:right"><b>${rupiah(h.total)}</b></td></tr>
-        ${h.terbayar > 0 ? `<tr><td>Sudah Dibayarkan</td><td style="text-align:right">${rupiah(h.terbayar)}</td></tr><tr><td><b>${h.sisa > 0 ? "SISA" : "SISA (LUNAS)"}</b></td><td style="text-align:right"><b>${rupiah(Math.max(0, h.sisa))}</b></td></tr>` : ""}</tfoot></table>
+        <tr><td>Terbayar</td><td style="text-align:right">${rupiah(h.terbayar)}</td></tr>
+        <tr><td><b>Sisa Bayar</b></td><td style="text-align:right"><b>${rupiah(Math.max(0, h.sisa))}</b></td></tr></tfoot></table>
     </div>`;
   }
   function cetak(daftar) {
