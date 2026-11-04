@@ -1245,6 +1245,7 @@ function OwnerDashboardInner() {
         {page === "transaksi" && <TransaksiPage token={token} />}
         {page === "rekap_nota" && <RekapNotaPage token={token} />}
         {page === "rekap_komisi" && <RekapKomisiSalesPage token={token} />}
+        {page === "rekap_gaji" && <RekapGajiSalesPage token={token} />}
         {page === "clients" && <ClientsPage token={token} />}
         {page === "verifikasi_toko" && <VerifikasiTokoPage token={token} />}
         {page === "keuangan" && <KeuanganPage token={token} />}
@@ -1414,7 +1415,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     },
     {
       label: "Sales",
-      items: ["rekap_komisi", "laporan_kunjungan_owner", "rekap_absen", "laporan_periodik_sales", "area_sales", "request_area"],
+      items: ["rekap_komisi", "rekap_gaji", "laporan_kunjungan_owner", "rekap_absen", "laporan_periodik_sales", "area_sales", "request_area"],
     },
     {
       label: "Kurir",
@@ -1472,6 +1473,7 @@ function Sidebar({ page, setPage, profile, onLogout, collapsed, setCollapsed, is
     { key: "riwayat", label: "Riwayat Order", icon: History, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "transaksi", label: "Transaksi", icon: Table2, roles: ["owner", "admin_transaksi", "admin_keuangan"] },
     { key: "rekap_komisi", label: "Rekap Komisi Sales", icon: Wallet, roles: ["owner"] },
+    { key: "rekap_gaji", label: "Rekap Gaji Sales", icon: Receipt, roles: ["owner"] },
     { key: "rekap_nota", label: "Rekap Nota", icon: Receipt, roles: ["owner", "admin_keuangan", "admin_transaksi"] },
     { key: "clients", label: "Approve Toko Baru", icon: Store, roles: ["owner", "admin_keuangan"] },
     { key: "verifikasi_toko", label: "Verifikasi Toko", icon: Eye, roles: ["owner"] },
@@ -6348,6 +6350,241 @@ function RekapKomisiSalesPage({ token }) {
         </>
       )}
       {notaTampil && <NotaPrintModal order={notaTampil} type="nota" settings={notaSettings} onClose={() => setNotaTampil(null)} />}
+    </div>
+  );
+}
+
+// ============================================================
+// REKAP GAJI SALES (Owner)
+// Gaji pokok & bonus target diisi manual per sales per bulan.
+// Komisi otomatis = komisi yang TANGGAL CAIRNYA jatuh di bulan itu
+// (dari Rekap Komisi Sales). Bonus lain & potongan manual (gaji_sales_item).
+// Setelah ditandai Dibayar, komisi disimpan (snapshot) dan data dikunci.
+// ============================================================
+function RekapGajiSalesPage({ token }) {
+  const fieldStyle = { padding: "8px 10px", borderRadius: 8, border: "1.5px solid #E4E1DA", fontSize: 13, outline: "none", background: "#fff" };
+  const now = new Date();
+  const NAMA_BLN = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+  const [tahun, setTahun] = useState(now.getFullYear());
+  const [bulan, setBulan] = useState(now.getMonth() + 1);
+  const [salesList, setSalesList] = useState([]);
+  const [gajiMap, setGajiMap] = useState({}); // sales_id -> row gaji_sales
+  const [itemMap, setItemMap] = useState({}); // sales_id -> [items]
+  const [komisiMap, setKomisiMap] = useState({}); // sales_id -> {total, jumlahNota}
+  const [edit, setEdit] = useState({}); // sales_id -> {gp, bt}
+  const [buka, setBuka] = useState(null);
+  const [formItem, setFormItem] = useState({ jenis: "potongan", keterangan: "", jumlah: "" });
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [info, setInfo] = useState("");
+
+  const periode = `${tahun}-${String(bulan).padStart(2, "0")}-01`;
+  const periodeNext = bulan === 12 ? `${tahun + 1}-01-01` : `${tahun}-${String(bulan + 1).padStart(2, "0")}-01`;
+  const num = (v) => Number(v) || 0;
+  const str = (v) => (v === null || v === undefined ? "" : String(v));
+
+  async function load() {
+    setLoading(true); setError("");
+    try {
+      const [sales, gaji, items] = await Promise.all([
+        supabaseFetch(token, "sales?select=id,kode,nama,aktif&order=kode.asc"),
+        supabaseFetch(token, `gaji_sales?select=*&periode=eq.${periode}`),
+        supabaseFetch(token, `gaji_sales_item?select=*&periode=eq.${periode}&order=created_at.asc`),
+      ]);
+      let kom = [];
+      try { kom = await supabaseFetch(token, `komisi_dicairkan?select=jumlah,tanggal,orders(sales_id,no_nota)&tanggal=gte.${periode}&tanggal=lt.${periodeNext}&limit=20000`); }
+      catch (e) { kom = []; }
+      const gm = {}, ed = {}, im = {}, km = {};
+      (gaji || []).forEach((g) => { gm[g.sales_id] = g; ed[g.sales_id] = { gp: str(g.gaji_pokok), bt: str(g.bonus_target), tb: str(g.terbayar ?? 0) }; });
+      (items || []).forEach((it) => { (im[it.sales_id] = im[it.sales_id] || []).push(it); });
+      (kom || []).forEach((k) => {
+        const sid = k.orders?.sales_id; if (!sid) return;
+        km[sid] = km[sid] || { total: 0, jumlahNota: 0 };
+        km[sid].total += num(k.jumlah); km[sid].jumlahNota += 1;
+      });
+      setSalesList(sales || []); setGajiMap(gm); setItemMap(im); setKomisiMap(km); setEdit(ed);
+    } catch (e) { setError("Gagal memuat (sudah jalankan buat_tabel_gaji_sales.sql?): " + e.message); }
+    setLoading(false);
+  }
+  useEffect(() => { load(); }, [tahun, bulan]);
+
+  // sales yang ditampilkan: aktif, atau punya data bulan ini
+  const tampil = salesList.filter((sl) => sl.aktif !== false || gajiMap[sl.id] || (itemMap[sl.id] || []).length || komisiMap[sl.id]);
+
+  function hitung(sl) {
+    const g = gajiMap[sl.id];
+    const e = edit[sl.id] || { gp: "", bt: "", tb: "" };
+    const dibayar = g?.status === "dibayar";
+    const komisi = dibayar && g.komisi_snapshot !== null && g.komisi_snapshot !== undefined ? num(g.komisi_snapshot) : num(komisiMap[sl.id]?.total);
+    const gp = dibayar ? num(g.gaji_pokok) : num(e.gp);
+    const bt = dibayar ? num(g.bonus_target) : num(e.bt);
+    const items = itemMap[sl.id] || [];
+    const bonusLain = items.filter((i) => i.jenis === "bonus").reduce((a, i) => a + num(i.jumlah), 0);
+    const potongan = items.filter((i) => i.jenis === "potongan").reduce((a, i) => a + num(i.jumlah), 0);
+    const totalDiterima = gp + komisi + bt + bonusLain - potongan;
+    const terbayar = num(e.tb);
+    return { dibayar, komisi, gp, bt, items, bonusLain, potongan, total: totalDiterima, terbayar, sisa: totalDiterima - terbayar, jumlahNota: komisiMap[sl.id]?.jumlahNota || 0, g };
+  }
+
+  async function upsertGaji(sl, extra = {}) {
+    const e = edit[sl.id] || { gp: "", bt: "", tb: "" };
+    await supabaseFetch(token, "gaji_sales?on_conflict=sales_id,periode", {
+      method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
+      body: JSON.stringify({ sales_id: sl.id, periode, gaji_pokok: num(e.gp), bonus_target: num(e.bt), terbayar: num(e.tb), updated_at: new Date().toISOString(), ...extra }),
+    });
+  }
+  async function simpan(sl) {
+    setBusy(true); setError(""); setInfo("");
+    try { await upsertGaji(sl); await load(); setInfo(`Tersimpan: ${sl.nama}`); } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+  async function tandaiDibayar(sl) {
+    const h = hitung(sl);
+    if (!confirm(`Tandai gaji ${sl.nama} ${NAMA_BLN[bulan - 1]} ${tahun} sebagai DIBAYAR?\nTotal diterima ${rupiah(h.total)}; kolom Terbayar diisi penuh. Setelah dibayar data dikunci.`)) return;
+    setBusy(true); setError(""); setInfo("");
+    try {
+      const tgl = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+      await upsertGaji(sl, { status: "dibayar", tanggal_bayar: tgl, komisi_snapshot: h.komisi, terbayar: h.total });
+      await load(); setInfo(`${sl.nama}: ditandai dibayar.`);
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+  async function bukaKunci(sl) {
+    if (!confirm(`Buka kunci gaji ${sl.nama}? Status kembali Draft dan komisi dihitung ulang.`)) return;
+    setBusy(true); setError("");
+    try {
+      await supabaseFetch(token, `gaji_sales?sales_id=eq.${sl.id}&periode=eq.${periode}`, { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ status: "draft", tanggal_bayar: null, komisi_snapshot: null, updated_at: new Date().toISOString() }) });
+      await load();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+  async function tambahItem(sl) {
+    const jml = num(formItem.jumlah);
+    if (!formItem.keterangan.trim() || jml <= 0) { alert("Isi keterangan dan jumlah (lebih dari 0)."); return; }
+    setBusy(true); setError("");
+    try {
+      await supabaseFetch(token, "gaji_sales_item", { method: "POST", prefer: "return=minimal", body: JSON.stringify({ sales_id: sl.id, periode, jenis: formItem.jenis, keterangan: formItem.keterangan.trim(), jumlah: jml }) });
+      setFormItem({ ...formItem, keterangan: "", jumlah: "" });
+      await load();
+    } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+  async function hapusItem(it) {
+    if (!confirm(`Hapus ${it.jenis} "${it.keterangan}" ${rupiah(it.jumlah)}?`)) return;
+    setBusy(true); setError("");
+    try { await supabaseFetch(token, `gaji_sales_item?id=eq.${it.id}`, { method: "DELETE", prefer: "return=minimal" }); await load(); } catch (e) { setError(e.message); }
+    setBusy(false);
+  }
+
+  function htmlSlip(sl, h) {
+    const baris = (label, nilai, tebal) => `<tr><td${tebal ? ' style="font-weight:bold"' : ""}>${label}</td><td style="text-align:right${tebal ? ";font-weight:bold" : ""}">${rupiah(nilai)}</td></tr>`;
+    const bonusRows = h.items.filter((i) => i.jenis === "bonus").map((i) => baris("Bonus - " + i.keterangan, i.jumlah)).join("");
+    const potRows = h.items.filter((i) => i.jenis === "potongan").map((i) => baris(i.keterangan, i.jumlah)).join("");
+    return `<div class="slip">
+      <h2>PT INDO GARUDA ABADI</h2>
+      <h3>SLIP GAJI SALES</h3>
+      <table class="info"><tr><td>Periode</td><td>: ${NAMA_BLN[bulan - 1]} ${tahun}</td></tr>
+      <tr><td>Nama</td><td>: ${sl.nama}</td></tr><tr><td>Kode</td><td>: ${sl.kode || "-"}</td></tr>
+      <tr><td>Status</td><td>: ${h.dibayar ? "Dibayar" + (h.g?.tanggal_bayar ? " (" + fmtTglAngka(h.g.tanggal_bayar) + ")" : "") : "Draft"}</td></tr></table>
+      <table class="rinci"><thead><tr><th colspan="2" style="text-align:left">PENDAPATAN</th></tr></thead><tbody>
+        ${baris("Gaji Pokok", h.gp)}${baris("Komisi" + (h.jumlahNota ? ` (${h.jumlahNota} nota)` : ""), h.komisi)}${baris("Bonus Target", h.bt)}${bonusRows}
+        ${baris("Total Pendapatan", h.gp + h.komisi + h.bt + h.bonusLain, true)}
+      </tbody>
+      <thead><tr><th colspan="2" style="text-align:left">POTONGAN</th></tr></thead><tbody>
+        ${potRows || '<tr><td colspan="2">-</td></tr>'}
+        ${baris("Total Potongan", h.potongan, true)}
+      </tbody>
+      <tfoot><tr><td><b>TOTAL DITERIMA</b></td><td style="text-align:right"><b>${rupiah(h.total)}</b></td></tr>
+        ${h.terbayar > 0 ? `<tr><td>Sudah Dibayarkan</td><td style="text-align:right">${rupiah(h.terbayar)}</td></tr><tr><td><b>${h.sisa > 0 ? "SISA" : "SISA (LUNAS)"}</b></td><td style="text-align:right"><b>${rupiah(Math.max(0, h.sisa))}</b></td></tr>` : ""}</tfoot></table>
+    </div>`;
+  }
+  function cetak(daftar) {
+    const w = window.open("", "_blank");
+    if (!w) { alert("Pop-up diblokir browser. Izinkan pop-up untuk mencetak."); return; }
+    const isi = daftar.map((sl) => htmlSlip(sl, hitung(sl))).join("");
+    w.document.write(`<html><head><title>Slip Gaji ${NAMA_BLN[bulan - 1]} ${tahun}</title><style>
+      body{font-family:Arial,sans-serif;font-size:12px;margin:0}
+      .slip{padding:28px 36px;page-break-after:always}
+      .slip:last-child{page-break-after:auto}
+      h2,h3{margin:4px 0}
+      table{width:100%;border-collapse:collapse;margin-top:12px}
+      .info td{padding:2px 0;border:none}.info td:first-child{width:90px}
+      .rinci th,.rinci td{border:1px solid #999;padding:6px 8px}
+      .rinci th{background:#eee}
+      .rinci tfoot td{background:#f3f3f3;font-size:13px}
+      @page{margin:10mm}
+    </style></head><body>${isi}<script>window.onload=function(){window.print()}<\/script></body></html>`);
+    w.document.close();
+  }
+
+  const tahunList = [now.getFullYear() - 2, now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1];
+  const hitungan = tampil.map((sl) => ({ sl, h: hitung(sl) }));
+  const grandTotal = hitungan.reduce((a, x) => a + x.h.total, 0);
+  const sisaTotal = hitungan.reduce((a, x) => a + Math.max(0, x.h.sisa), 0);
+
+  return (
+    <div>
+      <PageHeader title="Rekap Gaji Sales" subtitle="Gaji pokok, bonus target, bonus lain, dan potongan diisi manual. Komisi otomatis dari komisi yang dicairkan di bulan itu." onRefresh={load} refreshing={loading} />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
+        <select value={bulan} onChange={(e) => setBulan(Number(e.target.value))} style={fieldStyle}>{NAMA_BLN.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}</select>
+        <select value={tahun} onChange={(e) => setTahun(Number(e.target.value))} style={fieldStyle}>{tahunList.map((t) => <option key={t} value={t}>{t}</option>)}</select>
+        <button onClick={() => cetak(tampil)} disabled={tampil.length === 0} style={{ ...fieldStyle, cursor: "pointer", fontWeight: 700 }}>Cetak Semua Slip</button>
+        <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700 }}>Total gaji: {rupiah(grandTotal)} - Sisa belum dibayar: {rupiah(sisaTotal)}</span>
+      </div>
+      {error && <div style={{ color: "#C0392B", marginBottom: 10, fontSize: 13 }}>{error}</div>}
+      {info && <div style={{ color: "#28685D", background: "#D8E9E6", padding: "8px 12px", borderRadius: 9, marginBottom: 10, fontSize: 13 }}>{info}</div>}
+      {loading ? <LoadingState /> : tampil.length === 0 ? <EmptyState text="Belum ada sales." /> : hitungan.map(({ sl, h }) => (
+        <Card key={sl.id} style={{ padding: 0, overflow: "hidden", marginBottom: 10 }}>
+          <div style={{ padding: "12px 14px", display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontWeight: 800 }}>{sl.nama} <span style={{ color: "#6B6F75", fontWeight: 500, fontSize: 12 }}>{sl.kode}</span>
+              <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: h.dibayar ? "#D8E9E6" : "#EFE1BE", color: h.dibayar ? "#28685D" : "#8A6A1A" }}>{h.dibayar ? `DIBAYAR ${h.g?.tanggal_bayar ? fmtTglAngka(h.g.tanggal_bayar) : ""}` : "DRAFT"}</span>
+            </div>
+            <div style={{ fontSize: 13 }}>Total diterima: <b style={{ fontSize: 16, color: "#28685D" }}>{rupiah(h.total)}</b></div>
+          </div>
+          <div style={{ padding: "0 14px 12px", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Gaji Pokok</div>
+              <input type="number" min="0" disabled={h.dibayar} value={h.dibayar ? str(h.g.gaji_pokok) : (edit[sl.id]?.gp ?? "")} onChange={(e) => setEdit((p) => ({ ...p, [sl.id]: { ...(p[sl.id] || { gp: "", bt: "", tb: "" }), gp: e.target.value } }))} placeholder="0" style={{ ...fieldStyle, width: 120 }} /></div>
+            <div><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Bonus Target</div>
+              <input type="number" min="0" disabled={h.dibayar} value={h.dibayar ? str(h.g.bonus_target) : (edit[sl.id]?.bt ?? "")} onChange={(e) => setEdit((p) => ({ ...p, [sl.id]: { ...(p[sl.id] || { gp: "", bt: "", tb: "" }), bt: e.target.value } }))} placeholder="0" style={{ ...fieldStyle, width: 120 }} /></div>
+            <div><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Terbayar</div>
+              <input type="number" min="0" value={edit[sl.id]?.tb ?? ""} onChange={(e) => setEdit((p) => ({ ...p, [sl.id]: { ...(p[sl.id] || { gp: "", bt: "", tb: "" }), tb: e.target.value } }))} placeholder="0" style={{ ...fieldStyle, width: 120 }} /></div>
+            <div style={{ fontSize: 12.5 }}><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Sisa</div><b style={{ color: h.sisa > 0 ? "#C0392B" : "#28685D" }}>{h.sisa > 0 ? rupiah(h.sisa) : h.sisa < 0 ? `Lebih ${rupiah(-h.sisa)}` : "Lunas"}</b></div>
+            <div style={{ fontSize: 12.5 }}><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Komisi (otomatis{h.jumlahNota ? `, ${h.jumlahNota} nota` : ""})</div><b>{rupiah(h.komisi)}</b></div>
+            <div style={{ fontSize: 12.5 }}><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Bonus lain</div><b style={{ color: "#28685D" }}>{rupiah(h.bonusLain)}</b></div>
+            <div style={{ fontSize: 12.5 }}><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Potongan</div><b style={{ color: "#C0392B" }}>{rupiah(h.potongan)}</b></div>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button disabled={busy} onClick={() => simpan(sl)} style={{ ...fieldStyle, cursor: "pointer", fontWeight: 700 }}>Simpan</button>
+              <button onClick={() => setBuka(buka === sl.id ? null : sl.id)} style={{ ...fieldStyle, cursor: "pointer" }}>{buka === sl.id ? "Tutup rincian" : "Bonus / Potongan"}</button>
+              <button onClick={() => cetak([sl])} style={{ ...fieldStyle, cursor: "pointer", fontWeight: 700 }}>Cetak Slip</button>
+              {h.dibayar
+                ? <button disabled={busy} onClick={() => bukaKunci(sl)} style={{ ...fieldStyle, cursor: "pointer" }}>Buka kunci</button>
+                : <button disabled={busy} onClick={() => tandaiDibayar(sl)} style={{ padding: "8px 14px", borderRadius: 8, border: "none", background: "#28685D", color: "#fff", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Tandai Dibayar</button>}
+            </div>
+          </div>
+          {buka === sl.id && (
+            <div style={{ borderTop: "1px solid #EDEAE3", padding: 14, background: "#FAF9F6" }}>
+              {h.items.length === 0 && <div style={{ fontSize: 12.5, color: "#9CA0A6", marginBottom: 8 }}>Belum ada bonus lain / potongan.</div>}
+              {h.items.map((it) => (
+                <div key={it.id} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 13, padding: "5px 0", borderBottom: "1px dashed #E4E1DA" }}>
+                  <span style={{ fontSize: 10.5, fontWeight: 800, padding: "2px 8px", borderRadius: 999, background: it.jenis === "bonus" ? "#D8E9E6" : "#FBEAEA", color: it.jenis === "bonus" ? "#28685D" : "#C0392B" }}>{it.jenis === "bonus" ? "BONUS" : "POTONGAN"}</span>
+                  <span style={{ flex: 1 }}>{it.keterangan}</span>
+                  <b>{rupiah(it.jumlah)}</b>
+                  {!h.dibayar && <button disabled={busy} onClick={() => hapusItem(it)} style={{ border: "none", background: "none", color: "#C0392B", cursor: "pointer", fontWeight: 700 }}>Hapus</button>}
+                </div>
+              ))}
+              {!h.dibayar && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                  <select value={formItem.jenis} onChange={(e) => setFormItem({ ...formItem, jenis: e.target.value })} style={fieldStyle}><option value="potongan">Potongan</option><option value="bonus">Bonus</option></select>
+                  <input value={formItem.keterangan} onChange={(e) => setFormItem({ ...formItem, keterangan: e.target.value })} placeholder="Keterangan (misal Kasbon)" style={{ ...fieldStyle, flex: 1, minWidth: 160 }} />
+                  <input type="number" min="0" value={formItem.jumlah} onChange={(e) => setFormItem({ ...formItem, jumlah: e.target.value })} placeholder="Jumlah (Rp)" style={{ ...fieldStyle, width: 130 }} />
+                  <button disabled={busy} onClick={() => tambahItem(sl)} style={{ ...fieldStyle, cursor: "pointer", fontWeight: 700 }}>+ Tambah</button>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+      ))}
     </div>
   );
 }
