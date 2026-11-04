@@ -6370,7 +6370,6 @@ function RekapGajiSalesPage({ token }) {
   const [salesList, setSalesList] = useState([]);
   const [gajiMap, setGajiMap] = useState({}); // sales_id -> row gaji_sales
   const [itemMap, setItemMap] = useState({}); // sales_id -> [items]
-  const [komisiMap, setKomisiMap] = useState({}); // sales_id -> {total, jumlahNota}
   const [edit, setEdit] = useState({}); // sales_id -> {gp, bt}
   const [buka, setBuka] = useState(null);
   const [formItem, setFormItem] = useState({ jenis: "potongan", keterangan: "", jumlah: "" });
@@ -6392,46 +6391,38 @@ function RekapGajiSalesPage({ token }) {
         supabaseFetch(token, `gaji_sales?select=*&periode=eq.${periode}`),
         supabaseFetch(token, `gaji_sales_item?select=*&periode=eq.${periode}&order=created_at.asc`),
       ]);
-      let kom = [];
-      try { kom = await supabaseFetch(token, `komisi_dicairkan?select=jumlah,tanggal,orders(sales_id,no_nota)&tanggal=gte.${periode}&tanggal=lt.${periodeNext}&limit=20000`); }
-      catch (e) { kom = []; }
       const gm = {}, ed = {}, im = {}, km = {};
-      (gaji || []).forEach((g) => { gm[g.sales_id] = g; ed[g.sales_id] = { gp: str(g.gaji_pokok), bt: str(g.bonus_target), tb: str(g.terbayar ?? 0) }; });
+      (gaji || []).forEach((g) => { gm[g.sales_id] = g; ed[g.sales_id] = { gp: str(g.gaji_pokok), bt: str(g.bonus_target), tb: str(g.terbayar ?? 0), tr: str(g.transport ?? 0) }; });
       (items || []).forEach((it) => { (im[it.sales_id] = im[it.sales_id] || []).push(it); });
-      (kom || []).forEach((k) => {
-        const sid = k.orders?.sales_id; if (!sid) return;
-        km[sid] = km[sid] || { total: 0, jumlahNota: 0 };
-        km[sid].total += num(k.jumlah); km[sid].jumlahNota += 1;
-      });
-      setSalesList(sales || []); setGajiMap(gm); setItemMap(im); setKomisiMap(km); setEdit(ed);
+      setSalesList(sales || []); setGajiMap(gm); setItemMap(im); setEdit(ed);
     } catch (e) { setError("Gagal memuat (sudah jalankan buat_tabel_gaji_sales.sql?): " + e.message); }
     setLoading(false);
   }
   useEffect(() => { load(); }, [tahun, bulan]);
 
   // sales yang ditampilkan: aktif, atau punya data bulan ini
-  const tampil = salesList.filter((sl) => sl.aktif !== false || gajiMap[sl.id] || (itemMap[sl.id] || []).length || komisiMap[sl.id]);
+  const tampil = salesList.filter((sl) => sl.aktif !== false || gajiMap[sl.id] || (itemMap[sl.id] || []).length);
 
   function hitung(sl) {
     const g = gajiMap[sl.id];
-    const e = edit[sl.id] || { gp: "", bt: "", tb: "" };
+    const e = edit[sl.id] || { gp: "", bt: "", tb: "", tr: "" };
     const dibayar = g?.status === "dibayar";
-    const komisi = dibayar && g.komisi_snapshot !== null && g.komisi_snapshot !== undefined ? num(g.komisi_snapshot) : num(komisiMap[sl.id]?.total);
     const gp = dibayar ? num(g.gaji_pokok) : num(e.gp);
     const bt = dibayar ? num(g.bonus_target) : num(e.bt);
+    const tr = dibayar ? num(g.transport) : num(e.tr);
     const items = itemMap[sl.id] || [];
     const bonusLain = items.filter((i) => i.jenis === "bonus").reduce((a, i) => a + num(i.jumlah), 0);
     const potongan = items.filter((i) => i.jenis === "potongan").reduce((a, i) => a + num(i.jumlah), 0);
-    const totalDiterima = gp + komisi + bt + bonusLain - potongan;
+    const totalDiterima = gp + tr + bt + bonusLain - potongan;
     const terbayar = num(e.tb);
-    return { dibayar, komisi, gp, bt, items, bonusLain, potongan, total: totalDiterima, terbayar, sisa: totalDiterima - terbayar, jumlahNota: komisiMap[sl.id]?.jumlahNota || 0, g };
+    return { dibayar, gp, tr, bt, items, bonusLain, potongan, total: totalDiterima, terbayar, sisa: totalDiterima - terbayar, g };
   }
 
   async function upsertGaji(sl, extra = {}) {
-    const e = edit[sl.id] || { gp: "", bt: "", tb: "" };
+    const e = edit[sl.id] || { gp: "", bt: "", tb: "", tr: "" };
     await supabaseFetch(token, "gaji_sales?on_conflict=sales_id,periode", {
       method: "POST", prefer: "resolution=merge-duplicates,return=minimal",
-      body: JSON.stringify({ sales_id: sl.id, periode, gaji_pokok: num(e.gp), bonus_target: num(e.bt), terbayar: num(e.tb), updated_at: new Date().toISOString(), ...extra }),
+      body: JSON.stringify({ sales_id: sl.id, periode, gaji_pokok: num(e.gp), bonus_target: num(e.bt), transport: num(e.tr), terbayar: num(e.tb), updated_at: new Date().toISOString(), ...extra }),
     });
   }
   async function simpan(sl) {
@@ -6445,16 +6436,16 @@ function RekapGajiSalesPage({ token }) {
     setBusy(true); setError(""); setInfo("");
     try {
       const tgl = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
-      await upsertGaji(sl, { status: "dibayar", tanggal_bayar: tgl, komisi_snapshot: h.komisi, terbayar: h.total });
+      await upsertGaji(sl, { status: "dibayar", tanggal_bayar: tgl, terbayar: h.total });
       await load(); setInfo(`${sl.nama}: ditandai dibayar.`);
     } catch (e) { setError(e.message); }
     setBusy(false);
   }
   async function bukaKunci(sl) {
-    if (!confirm(`Buka kunci gaji ${sl.nama}? Status kembali Draft dan komisi dihitung ulang.`)) return;
+    if (!confirm(`Buka kunci gaji ${sl.nama}? Status kembali Draft.`)) return;
     setBusy(true); setError("");
     try {
-      await supabaseFetch(token, `gaji_sales?sales_id=eq.${sl.id}&periode=eq.${periode}`, { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ status: "draft", tanggal_bayar: null, komisi_snapshot: null, updated_at: new Date().toISOString() }) });
+      await supabaseFetch(token, `gaji_sales?sales_id=eq.${sl.id}&periode=eq.${periode}`, { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ status: "draft", tanggal_bayar: null, updated_at: new Date().toISOString() }) });
       await load();
     } catch (e) { setError(e.message); }
     setBusy(false);
@@ -6488,8 +6479,8 @@ function RekapGajiSalesPage({ token }) {
       <tr><td>Nama</td><td>: ${sl.nama}</td></tr><tr><td>Kode</td><td>: ${sl.kode || "-"}</td></tr>
       <tr><td>Status</td><td>: ${h.dibayar ? "Dibayar" + (h.g?.tanggal_bayar ? " (" + fmtTglAngka(h.g.tanggal_bayar) + ")" : "") : "Draft"}</td></tr></table>
       <table class="rinci"><thead><tr><th colspan="2" style="text-align:left">PENDAPATAN</th></tr></thead><tbody>
-        ${baris("Gaji Pokok", h.gp)}${baris("Komisi" + (h.jumlahNota ? ` (${h.jumlahNota} nota)` : ""), h.komisi)}${baris("Bonus Target", h.bt)}${bonusRows}
-        ${baris("Total Pendapatan", h.gp + h.komisi + h.bt + h.bonusLain, true)}
+        ${baris("Gaji Pokok", h.gp)}${baris("Transport", h.tr)}${baris("Bonus Target", h.bt)}${bonusRows}
+        ${baris("Total Pendapatan", h.gp + h.tr + h.bt + h.bonusLain, true)}
       </tbody>
       <thead><tr><th colspan="2" style="text-align:left">POTONGAN</th></tr></thead><tbody>
         ${potRows || '<tr><td colspan="2">-</td></tr>'}
@@ -6525,7 +6516,7 @@ function RekapGajiSalesPage({ token }) {
 
   return (
     <div>
-      <PageHeader title="Rekap Gaji Sales" subtitle="Gaji pokok, bonus target, bonus lain, dan potongan diisi manual. Komisi otomatis dari komisi yang dicairkan di bulan itu." onRefresh={load} refreshing={loading} />
+      <PageHeader title="Rekap Gaji Sales" subtitle="Gaji pokok, transport, bonus target, bonus lain, dan potongan diisi manual. Komisi tidak termasuk (dibuat di Rekap Komisi Sales)." onRefresh={load} refreshing={loading} />
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 14 }}>
         <select value={bulan} onChange={(e) => setBulan(Number(e.target.value))} style={fieldStyle}>{NAMA_BLN.map((n, i) => <option key={n} value={i + 1}>{n}</option>)}</select>
         <select value={tahun} onChange={(e) => setTahun(Number(e.target.value))} style={fieldStyle}>{tahunList.map((t) => <option key={t} value={t}>{t}</option>)}</select>
@@ -6544,13 +6535,14 @@ function RekapGajiSalesPage({ token }) {
           </div>
           <div style={{ padding: "0 14px 12px", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
             <div><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Gaji Pokok</div>
-              <input type="number" min="0" disabled={h.dibayar} value={h.dibayar ? str(h.g.gaji_pokok) : (edit[sl.id]?.gp ?? "")} onChange={(e) => setEdit((p) => ({ ...p, [sl.id]: { ...(p[sl.id] || { gp: "", bt: "", tb: "" }), gp: e.target.value } }))} placeholder="0" style={{ ...fieldStyle, width: 120 }} /></div>
+              <input type="number" min="0" disabled={h.dibayar} value={h.dibayar ? str(h.g.gaji_pokok) : (edit[sl.id]?.gp ?? "")} onChange={(e) => setEdit((p) => ({ ...p, [sl.id]: { ...(p[sl.id] || { gp: "", bt: "", tb: "", tr: "" }), gp: e.target.value } }))} placeholder="0" style={{ ...fieldStyle, width: 120 }} /></div>
+            <div><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Transport</div>
+              <input type="number" min="0" disabled={h.dibayar} value={h.dibayar ? str(h.g.transport ?? 0) : (edit[sl.id]?.tr ?? "")} onChange={(e) => setEdit((p) => ({ ...p, [sl.id]: { ...(p[sl.id] || { gp: "", bt: "", tb: "", tr: "" }), tr: e.target.value } }))} placeholder="0" style={{ ...fieldStyle, width: 120 }} /></div>
             <div><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Bonus Target</div>
-              <input type="number" min="0" disabled={h.dibayar} value={h.dibayar ? str(h.g.bonus_target) : (edit[sl.id]?.bt ?? "")} onChange={(e) => setEdit((p) => ({ ...p, [sl.id]: { ...(p[sl.id] || { gp: "", bt: "", tb: "" }), bt: e.target.value } }))} placeholder="0" style={{ ...fieldStyle, width: 120 }} /></div>
+              <input type="number" min="0" disabled={h.dibayar} value={h.dibayar ? str(h.g.bonus_target) : (edit[sl.id]?.bt ?? "")} onChange={(e) => setEdit((p) => ({ ...p, [sl.id]: { ...(p[sl.id] || { gp: "", bt: "", tb: "", tr: "" }), bt: e.target.value } }))} placeholder="0" style={{ ...fieldStyle, width: 120 }} /></div>
             <div><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Terbayar</div>
-              <input type="number" min="0" value={edit[sl.id]?.tb ?? ""} onChange={(e) => setEdit((p) => ({ ...p, [sl.id]: { ...(p[sl.id] || { gp: "", bt: "", tb: "" }), tb: e.target.value } }))} placeholder="0" style={{ ...fieldStyle, width: 120 }} /></div>
+              <input type="number" min="0" value={edit[sl.id]?.tb ?? ""} onChange={(e) => setEdit((p) => ({ ...p, [sl.id]: { ...(p[sl.id] || { gp: "", bt: "", tb: "", tr: "" }), tb: e.target.value } }))} placeholder="0" style={{ ...fieldStyle, width: 120 }} /></div>
             <div style={{ fontSize: 12.5 }}><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Sisa</div><b style={{ color: h.sisa > 0 ? "#C0392B" : "#28685D" }}>{h.sisa > 0 ? rupiah(h.sisa) : h.sisa < 0 ? `Lebih ${rupiah(-h.sisa)}` : "Lunas"}</b></div>
-            <div style={{ fontSize: 12.5 }}><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Komisi (otomatis{h.jumlahNota ? `, ${h.jumlahNota} nota` : ""})</div><b>{rupiah(h.komisi)}</b></div>
             <div style={{ fontSize: 12.5 }}><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Bonus lain</div><b style={{ color: "#28685D" }}>{rupiah(h.bonusLain)}</b></div>
             <div style={{ fontSize: 12.5 }}><div style={{ fontSize: 11, color: "#6B6F75", fontWeight: 700 }}>Potongan</div><b style={{ color: "#C0392B" }}>{rupiah(h.potongan)}</b></div>
             <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap" }}>
