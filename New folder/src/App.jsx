@@ -5705,7 +5705,15 @@ function PricelistPage({ token }) {
   }
 
   const q = cari.trim().toLowerCase();
-  const tampil = produk.filter((p) => !q || `${p.kode} ${p.nama} ${p.brand || ""}`.toLowerCase().includes(q));
+  // Urut berdasarkan ANGKA di kode (terkecil di atas): KZ-01, ..., SP138. Tanpa angka -> paling bawah.
+  const angkaKode = (k) => { const m = String(k || "").match(/\d+/); return m ? parseInt(m[0], 10) : Infinity; };
+  const tampil = produk
+    .filter((p) => !q || `${p.kode} ${p.nama} ${p.brand || ""}`.toLowerCase().includes(q))
+    .sort((x, y) => {
+      const ax = angkaKode(x.kode), ay = angkaKode(y.kode);
+      if (ax !== ay) return ax < ay ? -1 : 1;
+      return String(x.kode || "").localeCompare(String(y.kode || ""), undefined, { numeric: true });
+    });
   const judul = pilih ? `Pricelist ${pilih}` : "Pricelist Default";
 
   // Harga/Lusin: satuan Lusin -> harga per pcs x 12 (angka saja).
