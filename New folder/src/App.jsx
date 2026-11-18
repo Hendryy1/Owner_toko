@@ -1262,7 +1262,7 @@ function OwnerDashboardInner() {
         {page === "penyesuaian_stok" && <PenyesuaianStokPage token={token} />}
         {page === "cashback" && <CashbackPage token={token} />}
         {page === "ongkir" && <FreeOngkirPage token={token} />}
-        {page === "rekap_toko" && <RekapTokoPage token={token} />}
+        {page === "rekap_toko" && <RekapTokoPage token={token} role={profile?.role} />}
         {page === "sales" && <SalesPage token={token} />}
         {page === "format_nota" && <FormatNotaPage token={token} />}
         {page === "rekening_bank" && <RekeningBankPage token={token} />}
@@ -5068,7 +5068,34 @@ function RiwayatOrderPage({ token }) {
 // ============================================================
 // REKAP TOKO
 // ============================================================
-function RekapTokoPage({ token }) {
+// Ubah password akun login (dipakai Edit Toko). Memakai fungsi server yang sama dengan Kelola Akun Staff.
+async function aturPasswordAkun(userId, passwordBaru) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/kelola-akun-staff`, {
+    method: "POST",
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "reset_password", user_id: userId, password_baru: passwordBaru }),
+  });
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* respons kosong */ }
+  if (!res.ok) throw new Error(data.error || `Gagal (kode ${res.status}). Kemungkinan fungsi server belum mengizinkan akun toko.`);
+  return data;
+}
+
+function RekapTokoPage({ token, role }) {
+  const [passwordTokoBaru, setPasswordTokoBaru] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+  async function simpanPasswordToko(c) {
+    const pw = passwordTokoBaru.trim();
+    if (pw.length < 6) { alert("Password baru minimal 6 karakter."); return; }
+    if (!confirm(`Ubah password login toko "${c.nama}" menjadi password baru ini? Password lama tidak berlaku lagi.`)) return;
+    setSavingPassword(true);
+    try {
+      await aturPasswordAkun(c.id, pw);
+      alert("Password toko berhasil diubah. Sampaikan password barunya ke toko.");
+      setPasswordTokoBaru("");
+    } catch (e) { alert("Gagal ubah password: " + e.message); }
+    setSavingPassword(false);
+  }
   const [loading, setLoading] = useState(true);
   const [clients, setClients] = useState([]);
   const [salesList, setSalesList] = useState([]);
@@ -5116,6 +5143,7 @@ function RekapTokoPage({ token }) {
 
   function startEdit(c) {
     setEditingId(c.id);
+    setPasswordTokoBaru("");
     setEditForm({
       alamat: c.alamat || "", telp: c.telp || "", kodeSales: c.sales?.kode || "", catatan: c.catatan_internal || "",
       namaOwner: c.nama_owner || "", tanggalLahir: c.tanggal_lahir || "", jenisUsaha: c.jenis_usaha || "", provinsi: c.provinsi || "",
@@ -5383,6 +5411,19 @@ function RekapTokoPage({ token }) {
                 <label style={labelStyle}>Catatan Internal</label>
                 <textarea value={editForm.catatan} onChange={(e) => setEditForm({ ...editForm, catatan: e.target.value })} rows={3} placeholder="Catatan bebas..." style={{ ...fieldStyle, resize: "vertical" }} />
               </div>
+
+              {role === "owner" && (
+                <div style={{ marginBottom: 20, padding: 14, borderRadius: 12, background: "#F7F5F1", border: "1px solid #EDEAE3" }}>
+                  <label style={labelStyle}>Atur Password Baru (akun login toko)</label>
+                  <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "0 0 8px", lineHeight: 1.5 }}>Password lama tidak bisa dilihat (tersimpan terenkripsi). Isi password baru lalu klik tombol, lalu sampaikan ke toko. Hanya owner.</p>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input type="text" value={passwordTokoBaru} onChange={(e) => setPasswordTokoBaru(e.target.value)} placeholder="Password baru (min. 6 karakter)" autoComplete="off" style={{ ...fieldStyle, flex: 1 }} />
+                    <button type="button" onClick={() => simpanPasswordToko(c)} disabled={savingPassword} style={{ padding: "0 14px", borderRadius: 9, border: "none", background: savingPassword ? "#E4E1DA" : "#24272B", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer", whiteSpace: "nowrap" }}>
+                      {savingPassword ? "Menyimpan..." : "Ubah Password"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: "flex", gap: 10 }}>
                 <button onClick={() => setEditingId(null)} style={{ flex: 1, padding: 12, borderRadius: 10, border: "1.5px solid #E4E1DA", background: "#fff", color: "#6B6F75", fontWeight: 600, fontSize: 13.5 }}>
