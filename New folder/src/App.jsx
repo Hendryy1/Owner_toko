@@ -10339,7 +10339,7 @@ function ProductPage({ token }) {
 function ProductFormModal({ token, product, onClose, onSaved }) {
   const isNew = !product.id;
   const [form, setForm] = useState({
-    kode: product.kode || "", nama: product.nama || "", kategori: product.kategori || "", brand: product.brand || "", komisiPersen: product.komisi_persen || "", satuan: product.satuan || "",
+    kode: product.kode || "", nama: product.nama || "", kategori: product.kategori || "", brand: product.brand || "", nomorProduk: product.nomor_produk || "", komisiPersen: product.komisi_persen || "", satuan: product.satuan || "",
     hargaJual: product.harga_jual || "", hargaAsli: product.harga_asli || "", hargaModal: product.harga_modal || "",
     stockAwal: product.stock_awal ?? 0, stockMinimum: product.stock_minimum ?? 0, isiPerKoli: product.isi_per_koli || "", diskonKoliPct: product.diskon_koli_pct ? Number(product.diskon_koli_pct) * 100 : "",
     minimalOrder: product.minimal_order ?? 1,
@@ -10472,7 +10472,7 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
     setSaving(true);
     try {
       const body = {
-        kode: form.kode.trim().toUpperCase(), nama: form.nama.trim(), kategori: form.kategori || null, brand: form.brand.trim() || null, komisi_persen: Number(form.komisiPersen) || 0, satuan: form.satuan.trim(),
+        kode: form.kode.trim().toUpperCase(), nama: form.nama.trim(), kategori: form.kategori || null, brand: form.brand.trim() || null, nomor_produk: form.nomorProduk.trim() || null, komisi_persen: Number(form.komisiPersen) || 0, satuan: form.satuan.trim(),
         harga_jual: Number(form.hargaJual), harga_asli: form.hargaAsli ? Number(form.hargaAsli) : null,
         harga_modal: form.hargaModal ? Number(form.hargaModal) : null, stock_awal: Number(form.stockAwal) || 0,
         stock_minimum: Number(form.stockMinimum) || 0,
@@ -10564,6 +10564,11 @@ function ProductFormModal({ token, product, onClose, onSaved }) {
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Brand</label>
           <input value={form.brand} onChange={set("brand")} placeholder="misal Kozel" style={fieldStyle} />
+        </div>
+        <div style={{ marginBottom: 14 }}>
+          <label style={labelStyle}>Nomor Produk (kode barcode di kemasan fisik)</label>
+          <input value={form.nomorProduk} onChange={set("nomorProduk")} placeholder="misal 888260601" style={fieldStyle} />
+          <p style={{ fontSize: 11.5, color: "#9CA0A6", margin: "4px 0 0", lineHeight: 1.5 }}>Dipakai Checker Produk di Picking List untuk mencocokkan barang yang diambil. Isi dengan angka/kode yang tercetak atau terbaca dari barcode di kemasan produk.</p>
         </div>
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Komisi Sales (% dari omzet produk)</label>
@@ -19129,6 +19134,30 @@ function PickingListPage({ token, role, userId }) {
       .catch(() => {}); // biarkan pakai default kalau gagal muat
   }, []);
 
+  // Saklar Checker Produk (disimpan di nota_settings.checker_produk_aktif, berlaku untuk semua staff)
+  const [checkerAktif, setCheckerAktif] = useState(true);
+  const [checkerSettingId, setCheckerSettingId] = useState(null);
+  const [checkerKolomAda, setCheckerKolomAda] = useState(true);
+  const [savingChecker, setSavingChecker] = useState(false);
+  useEffect(() => {
+    supabaseFetch(token, "nota_settings?select=id,checker_produk_aktif&limit=1")
+      .then((rows) => {
+        if (rows && rows[0]) { setCheckerSettingId(rows[0].id); setCheckerAktif(rows[0].checker_produk_aktif !== false); }
+      })
+      .catch(() => { setCheckerKolomAda(false); setCheckerAktif(true); }); // kolom belum dibuat -> checker tetap aktif seperti biasa
+  }, []);
+  async function ubahSaklarChecker() {
+    if (!checkerSettingId) return;
+    const baru = !checkerAktif;
+    if (!confirm(baru ? "Aktifkan Checker Produk lagi? Setelah konfirmasi box, staff wajib scan barcode + kode produk." : "Matikan Checker Produk? Setelah konfirmasi box, staff langsung bisa upload bukti pengemasan tanpa scan.")) return;
+    setSavingChecker(true);
+    try {
+      await supabaseFetch(token, `nota_settings?id=eq.${checkerSettingId}`, { method: "PATCH", prefer: "return=minimal", body: JSON.stringify({ checker_produk_aktif: baru }) });
+      setCheckerAktif(baru);
+    } catch (e) { alert("Gagal mengubah saklar: " + e.message); }
+    setSavingChecker(false);
+  }
+
   const [confirmingBoxOrder, setConfirmingBoxOrder] = useState(null); // order yang picking-nya baru selesai, nunggu konfirmasi jumlah box
   const [jumlahBoxInput, setJumlahBoxInput] = useState("");
   const [savingBox, setSavingBox] = useState(false);
@@ -19304,6 +19333,7 @@ function PickingListPage({ token, role, userId }) {
   // ---------- CHECKER PRODUK - verifikasi barcode kemasan fisik ----------
   function semuaItemSudahDicek() {
     if (!packingSelesaiOrder) return false;
+    if (!checkerAktif) return true; // Checker dimatikan -> langsung lolos
     return pasanganSelesai >= (packingSelesaiOrder.jumlah_box_konfirmasi || 1);
   }
 
@@ -19644,6 +19674,7 @@ function PickingListPage({ token, role, userId }) {
           )}
         </Card>
 
+        {checkerAktif ? (
         <Card style={{ maxWidth: 460, marginBottom: 16 }}>
           <p style={{ fontSize: 11.5, fontWeight: 700, color: "#6B6F75", textTransform: "uppercase", margin: "0 0 4px" }}>Checker Produk</p>
           <p style={{ fontSize: 12.5, color: "#9CA0A6", margin: "0 0 16px", lineHeight: 1.5 }}>
@@ -19708,6 +19739,11 @@ function PickingListPage({ token, role, userId }) {
             </div>
           )}
         </Card>
+        ) : (
+          <Card style={{ maxWidth: 460, marginBottom: 16, background: "#F7F5F1" }}>
+            <p style={{ fontSize: 12.5, color: "#6B6F75", margin: 0, lineHeight: 1.5 }}>Checker Produk sedang dimatikan - tidak perlu scan barcode / kode produk. Langsung upload bukti pengemasan di bawah.</p>
+          </Card>
+        )}
 
         {semuaItemSudahDicek() ? (
         <Card style={{ maxWidth: 460 }}>
@@ -19743,6 +19779,20 @@ function PickingListPage({ token, role, userId }) {
   return (
     <div>
       <PageHeader title="Picking List" subtitle={`${orders.length} pesanan menunggu diambil barangnya`} onRefresh={load} refreshing={loading} showPingPrinter />
+
+      {role === "owner" && (
+        <Card style={{ marginBottom: 14, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+          <div>
+            <p style={{ fontSize: 13, fontWeight: 800, margin: 0 }}>Checker Produk: <span style={{ color: checkerAktif ? "#28685D" : "#C0392B" }}>{checkerAktif ? "AKTIF" : "DIMATIKAN"}</span></p>
+            <p style={{ fontSize: 11.5, color: "#6B6F75", margin: "2px 0 0" }}>{checkerKolomAda ? (checkerAktif ? "Staff wajib scan barcode + kode produk sebelum upload bukti pengemasan." : "Staff langsung upload bukti pengemasan setelah konfirmasi box (tanpa scan).") : "Jalankan checker_produk_on_off.sql di Supabase dulu untuk memakai saklar ini."}</p>
+          </div>
+          {checkerKolomAda && checkerSettingId && (
+            <button onClick={ubahSaklarChecker} disabled={savingChecker} style={{ padding: "9px 16px", borderRadius: 9, border: "none", background: checkerAktif ? "#C0392B" : "#28685D", color: "#fff", fontWeight: 700, fontSize: 12.5, cursor: "pointer" }}>
+              {savingChecker ? "Menyimpan..." : checkerAktif ? "Matikan Checker" : "Aktifkan Checker"}
+            </button>
+          )}
+        </Card>
+      )}
 
       {ordersTertunda.length > 0 && (
         <>
